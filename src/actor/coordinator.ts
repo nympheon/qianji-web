@@ -4,13 +4,14 @@ import { DomainError } from '../shared/errors';
 import { commandDigest, OperationStore, operationView } from '../operations/store';
 import { runMutation } from '../operations/runner';
 import { reconcileMutation } from '../operations/reconcile';
-import { Jobs } from './jobs';
+import { Jobs, type DurableJob } from './jobs';
 
 export class Coordinator {
   readonly store: OperationStore;
   readonly jobs: Jobs;
   #tail: Promise<unknown> = Promise.resolve();
   readonly #reconciliations = new Map<string, Promise<OperationView>>();
+  readonly #jobHandlers = new Map<string, (job: DurableJob) => Promise<void>>();
   constructor(private readonly context: OperationContext, private readonly handlers: ReadonlyMap<string, MutationHandler>) {
     this.store = new OperationStore(context.repository, context.clock);
     this.jobs = new Jobs(context.repository, context.clock);
@@ -65,7 +66,12 @@ export class Coordinator {
       for (const job of this.jobs.listDue()) {
         try { this.context.repository.assertScope(job.scope); }
         catch { this.jobs.remove(job.id); continue; }
-        if (job.kind !== 'mutation' && job.kind !== 'reconcile') continue;
+        if (job.kind !== 'mutation' && job.kind !== 'reconcile') {
+          const handler = this.#jobHandlers.get(job.kind);
+          if (handler) await handler(job);
+          else this.jobs.remove(job.id);
+          continue;
+        }
         const operation = this.store.get(job.scope, job.id);
         const handler = operation && this.handlers.get(operation.action);
         if (!operation || !handler) { this.jobs.remove(job.id); continue; }
@@ -76,6 +82,9 @@ export class Coordinator {
     });
   }
   changeConnection<T>(fn: () => Promise<T>): Promise<T> { return this.exclusive(fn); }
+  registerJobHandler(kind: string, handler: (job: DurableJob) => Promise<void>): void {
+    this.#jobHandlers.set(kind, handler);
+  }
   async recover(): Promise<void> {
     const row = this.context.repository.sql.exec<{ uid: string | null; connection_epoch: string | null }>('SELECT uid,connection_epoch FROM connection WHERE singleton=1').one();
     if (row.uid !== null && row.connection_epoch !== null) {

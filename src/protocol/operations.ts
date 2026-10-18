@@ -3,7 +3,7 @@ interface OperationDefinition {
   act: string;
   constructor: 'normal' | 'sync-string';
   requiresSession: boolean;
-  response: 'object' | 'optional';
+  response: 'object' | 'array' | 'optional';
   timeoutMs: number;
   readOnly: boolean;
 }
@@ -21,6 +21,8 @@ export const OPERATIONS = {
   'syncv2.pull': op('syncv2', 'pull', 'sync-string', true, 'object', true),
   'bill.syncall': op('bill', 'syncall', 'sync-string'),
   'tag.syncall': op('tag', 'syncall', 'sync-string'),
+  'tag.pull': op('tag', 'syncall', 'sync-string', true, 'object', true),
+  'tag.list': op('tag', 'list', 'sync-string', true, 'array', true),
 } as const;
 export type ProtocolOperation = keyof typeof OPERATIONS;
 

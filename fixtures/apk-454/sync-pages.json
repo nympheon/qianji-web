@@ -1,0 +1,13 @@
+{
+  "source": "Synthetic response reconstruction from APK 4.5.4 Leh/b$a.fromJson, Leh/c, Lfh/a; not a captured server response.",
+  "startCursor": "{\"-1\":100,\"10\":101}",
+  "ledger": [
+    "{\"ec\":200,\"data\":{\"bookid\":10,\"pageoffset\":9007199254740993,\"hasmore\":1,\"count\":1,\"pagesign\":\"next-sign\",\"lasttimes\":{\"10\":200},\"categories\":[{\"id\":50,\"bookid\":10,\"name\":\"餐饮\"}],\"changes\":[{\"id\":1792000000123100000,\"bookid\":10,\"type\":0,\"time\":1792000000,\"money\":0.1,\"extra\":{\"rfds\":{\"1792000000123100001\":{\"future\":7}}},\"future\":9007199254740993}],\"deletes\":[1792000000123100002]}}",
+    "{\"ec\":200,\"data\":{\"bookid\":-1,\"pageoffset\":0,\"hasmore\":0,\"count\":0,\"pagesign\":\"\",\"lasttimes\":{\"-1\":201},\"changes\":[],\"deletes\":[],\"categories\":[]}}"
+  ],
+  "tags": [
+    "{\"ec\":200,\"data\":{\"update\":[{\"id\":\"tag-A\",\"name\":\"工作\",\"groupid\":\"group-A\",\"status\":1}],\"delete\":[\"tag-old\"],\"hasmore\":true}}",
+    "{\"ec\":200,\"data\":{\"update\":[],\"delete\":[],\"hasmore\":false}}"
+  ],
+  "groups": "{\"ec\":200,\"data\":[{\"id\":\"group-A\",\"name\":\"用途\",\"tags\":[{\"id\":\"tag-A\",\"name\":\"工作\",\"groupid\":\"group-A\",\"status\":1}]},{\"id\":\"\",\"name\":\"未分组\",\"tags\":[]}]}"
+}

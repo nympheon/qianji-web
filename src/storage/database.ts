@@ -60,6 +60,10 @@ export class Repository {
       if (!dataset) throw new DomainError('DATASET_MISSING', '同步数据集不存在');
       if (domain !== 'ledger' && (page.upserts.length || page.deletes.length)) throw new DomainError('WRONG_SYNC_DOMAIN', '账单只能写入账单数据集');
       let changed = false;
+      for (const resource of page.resourceDeletes ?? []) {
+        const deleted = this.sql.exec('DELETE FROM resources WHERE uid=? AND domain=? AND dataset_id=? AND kind=? AND id=?', scope.uid, domain, datasetId, resource.kind, resource.id);
+        deleted.toArray(); changed = deleted.rowsWritten > 0 || changed;
+      }
       for (const id of page.deletes) {
         this.sql.exec("DELETE FROM bill_relations WHERE uid=? AND domain='ledger' AND dataset_id=? AND bill_id=?", scope.uid, datasetId, id).toArray();
         const deleted = this.sql.exec("DELETE FROM bills WHERE uid=? AND domain='ledger' AND dataset_id=? AND id=?", scope.uid, datasetId, id);

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createTestApp } from '../support/app';
 import { bill, page } from '../support/fixtures';
 import { stringifyWire } from '../../src/shared/wire-json';
-import { migrate } from '../../src/storage/migrations';
+import { migrate, MIGRATIONS } from '../../src/storage/migrations';
 
 describe('SQLite mirrors', () => {
   it('keeps identical bill IDs separate across accounts and dataset switches', async () => {
@@ -112,10 +112,11 @@ describe('SQLite mirrors', () => {
     const app = await createTestApp();
     await app.repository((_repo, storage) => {
       migrate(storage); migrate(storage);
-      expect(storage.sql.exec<{ version: number }>('SELECT MAX(version) AS version FROM schema_version').one().version).toBe(2);
-      expect(() => migrate(storage, [{ version: 3, name: 'broken', sql: 'CREATE TABLE test_broken (id TEXT); INVALID SQL;' }])).toThrow();
+      const latest = MIGRATIONS.at(-1)!.version;
+      expect(storage.sql.exec<{ version: number }>('SELECT MAX(version) AS version FROM schema_version').one().version).toBe(latest);
+      expect(() => migrate(storage, [{ version: latest + 1, name: 'broken', sql: 'CREATE TABLE test_broken (id TEXT); INVALID SQL;' }])).toThrow();
       expect(storage.sql.exec('SELECT name FROM sqlite_master WHERE name = ?', 'test_broken').toArray()).toEqual([]);
-      expect(storage.sql.exec<{ version: number }>('SELECT MAX(version) AS version FROM schema_version').one().version).toBe(2);
+      expect(storage.sql.exec<{ version: number }>('SELECT MAX(version) AS version FROM schema_version').one().version).toBe(latest);
     });
   });
 

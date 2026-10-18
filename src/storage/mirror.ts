@@ -13,6 +13,7 @@ export interface MirrorPage {
   upserts: readonly BillRecord[];
   deletes: readonly Id[];
   resources: readonly ResourceRecord[];
+  resourceDeletes?: readonly Pick<ResourceRecord, 'id' | 'kind'>[];
   pageState: WireJson;
   cursor?: WireJson;
   complete?: boolean;

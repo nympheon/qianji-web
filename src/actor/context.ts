@@ -5,6 +5,7 @@ import { Coordinator } from './coordinator';
 import { CredentialVault } from '../features/connection/vault';
 import { ConnectionService } from '../features/connection/service';
 import type { RouteId } from '../protocol/profile';
+import { SyncService } from '../features/sync/service';
 
 export function createActorContext(storage: DurableObjectStorage, secrets: { QIANJI_CREDENTIAL_KEY?: string } = {}) {
   const repository = new Repository(storage);
@@ -20,5 +21,6 @@ export function createActorContext(storage: DurableObjectStorage, secrets: { QIA
   const instanceId = repository.sql.exec<{ value: string }>("SELECT value FROM instance_meta WHERE key='instance_id'").one().value;
   const vault = new CredentialVault(secrets.QIANJI_CREDENTIAL_KEY, instanceId);
   const connection = new ConnectionService({ repository, client, coordinator, clock, vault });
-  return { repository, clock, client, coordinator, connection };
+  const sync = new SyncService({ repository, client, coordinator, clock, connection });
+  return { repository, clock, client, coordinator, connection, sync };
 }

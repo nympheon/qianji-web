@@ -65,7 +65,7 @@ M1不是最终范围裁剪。某写能力未真实验收时，保留交付目标
 | `src/operations/{contract,store,runner,reconcile}.ts`、`src/actor/{coordinator,jobs}.ts` | UID写键、发送事实、续跑和目标影响，05 |
 | `src/features/<domain>/{contract,service,use-cases}.ts` | 每个业务域的DTO/校验、领域逻辑和用例注册，所属业务任务 |
 | `src/features/sync/{incremental,rebuild,freshness}.ts` | 同步页、完整性、按需刷新，07–08 |
-| `src/storage/cache.ts`、`src/storage/sql/0003-cache.sql` | 查询范围校验、有效空结果、资源代次和迟到响应保护，08 |
+| `src/storage/cache.ts`、`src/storage/sql/0004-cache.sql` | 查询范围校验、有效空结果、资源代次和迟到响应保护，08 |
 | `src/features/ledger/{query,write,transfer,refund,reimbursement,statistics}.ts` | 账单专有算法，09–15；资产借贷算法放对应域 |
 | `src/app/{use-case,registry}.ts`、`src/contracts/actions.ts` | 显式业务注册及调用类型，11及各域增量注册；不接受任意上游路径 |
 | `src/worker/{http,mcp}.ts` | 同一用例的HTTP/MCP映射，11及各业务任务 |
@@ -188,15 +188,15 @@ contract导出MutationCommand/StoredOperation/PreparedMutation/OperationUpdate/R
 **Files:** Create `src/features/sync/{contract,service,use-cases,incremental}.ts`、`fixtures/apk-454/sync-pages.json`、`tests/workers/incremental-sync.test.ts`；Modify protocol.operations。
 **Interfaces:** Consumes Connection/Repository/Coordinator；Produces `SyncService.start(input:SyncInput):Promise<JobView>`、`getJob(scope:ActorScope,id:Id):JobView|null`；SyncInput有domain与`incremental/rebuild`模式，JobView有真实阶段/页进度/完整性，相关类型由sync.contract导出。
 
-- [ ] 写失败断言：各页沿用固定起始lasttimes和真实bookid/pageoffset/pagesign；中途失败不推进成功游标，已应用页不误报空集合；deletes按billid；分类与关联更新随页落库。
-- [ ] Run `pnpm test -- tests/workers/incremental-sync.test.ts`；预期FAIL于分页/落库链缺失。
-- [ ] 按APK实现`syncv2/pull`逐页事务和标签`tag/syncall`独立lasttime/page/分组变更；只在相应域完整后标成功。保留200次账单、40页标签保护及全量页间150–220ms节奏，截断不冒充完整；bootstrap资料并入其真实回执。
-- [ ] 重跑并测重复页、失效分页、标签失败与账单成功独立、未知响应结构不清库、上传阶段不绕过持久操作状态，PASS；记录标签时间窗口真实核验项，不自造安全游标。
-- [ ] 提交：`feat: synchronize Qianji incremental pages and tag groups`。
+- [x] 写失败断言：各页沿用固定起始lasttimes和真实bookid/pageoffset/pagesign；中途失败不推进成功游标，已应用页不误报空集合；deletes按billid；分类与关联更新随页落库。
+- [x] Run `pnpm test -- tests/workers/incremental-sync.test.ts`；预期FAIL于分页/落库链缺失。
+- [x] 按APK实现`syncv2/pull`逐页事务和标签`tag/syncall`独立lasttime/page/分组变更；只在相应域完整后标成功。保留200次账单、40页标签保护及全量页间150–220ms节奏，截断不冒充完整；bootstrap资料并入其真实回执。
+- [x] 重跑并测重复页、失效分页、标签失败与账单成功独立、未知响应结构不清库、上传阶段不绕过持久操作状态，PASS；记录标签时间窗口真实核验项，不自造安全游标。
+- [x] 提交：`feat: synchronize Qianji incremental pages and tag groups`。
 
 ### Task 08：分层缓存、新鲜度合并、全量重建和跨请求连续任务
 
-**Files:** Create `src/features/sync/{freshness,rebuild}.ts`、`src/storage/cache.ts`、`src/storage/sql/0003-cache.sql`、`tests/workers/{cache-policy,sync-lifecycle}.test.ts`；Modify coordinator/jobs、sync.service、Repository及actor.context。
+**Files:** Create `src/features/sync/{freshness,rebuild}.ts`、`src/storage/cache.ts`、`src/storage/sql/0004-cache.sql`、`tests/workers/{cache-policy,sync-lifecycle}.test.ts`；Modify coordinator/jobs、sync.service、Repository及actor.context。
 **Interfaces:** Consumes任务05、07；Produces `ensureFresh(scope:ActorScope,domains:SyncDomain[],mode:FreshnessMode):Promise<FreshnessResult>`、`rebuild(scope:ActorScope,domains:SyncDomain[]):Promise<JobView>`；sync.contract导出FreshnessMode=`normal/manual-incremental`、FreshnessResult含freshness及可空job。仅rebuild任务起点清游标，active集合成功游标保持至切换。
 
 cache.ts导出`CacheKey { domain:SyncDomain; queryKey:string }`、`CacheReadStamp {scope:ActorScope;key:CacheKey;datasetId:Id|null;generation:number}`、`ResourceRefresh {items:ResourceRecord[];complete:boolean;deletes?:Id[]}`及`ResourceCache.captureRead(scope:ActorScope,key:CacheKey):CacheReadStamp`、`applyRead(stamp:CacheReadStamp,result:ResourceRefresh):'applied'|'superseded'`、`invalidateSource(scope:ActorScope,key:CacheKey):void`。ResourceRefresh只表达本查询范围；记录validatedAt/changedAt/complete与源代次。列表、详情、选择器共享相应源域的写入代次和资源行，查询缓存只记录成员关系/顺序，不各存一份对象。业务写开始/回执和同步变更推进相关代次，失效派生结果；只有缺失或不可靠源数据才调用invalidateSource，完整回执不一概失效为需重新拉取。

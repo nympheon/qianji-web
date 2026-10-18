@@ -88,6 +88,9 @@ export class QianjiClient {
       if (operation.response === 'object' && !object(data)) {
         throw new ProtocolError('QIANJI_RESPONSE_INVALID', '钱迹响应缺少预期数据', 'protocol', 'unknown', { upstreamCode: ec });
       }
+      if (operation.response === 'array' && !Array.isArray(data)) {
+        throw new ProtocolError('QIANJI_RESPONSE_INVALID', '钱迹响应缺少预期列表', 'protocol', 'unknown', { upstreamCode: ec });
+      }
       return { ec, data, httpStatus: response.status };
     } catch (error) {
       if (error instanceof ProtocolError) {
