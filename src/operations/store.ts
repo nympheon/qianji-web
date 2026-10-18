@@ -49,7 +49,7 @@ function aggregate(items: readonly OperationItem[]): OperationState {
   return 'uncertain';
 }
 function encodePrepared(prepared: PreparedMutation): string {
-  return stringifyWire({ payload: prepared.payload, affectedIds: [...prepared.affectedIds], affectedDomains: [...prepared.affectedDomains ?? []], items: prepared.items.map((item) => ({ id: item.id, affectedIds: [...item.affectedIds] })) });
+  return stringifyWire({ payload: prepared.payload, affectedIds: [...prepared.affectedIds], affectedDomains: [...prepared.affectedDomains ?? []], items: prepared.items.map((item) => ({ id: item.id, affectedIds: [...item.affectedIds], ...(item.assetEffects ? { assetEffects: item.assetEffects.map((effect) => ({ ...effect })) } : {}) })) });
 }
 
 export class OperationStore {
@@ -79,7 +79,7 @@ export class OperationStore {
   prepare(operation: StoredOperation, prepared: PreparedMutation): StoredOperation {
     this.repository.assertScope(operation.scope); rejectCredentials(prepared.payload);
     if (prepared.items.length === 0 || new Set(prepared.items.map((item) => item.id)).size !== prepared.items.length) throw new DomainError('INVALID_PREPARED_ITEMS', '操作必须包含明确且唯一的项目');
-    const items: OperationItem[] = prepared.items.map((item) => ({ id: item.id, affectedIds: [...item.affectedIds], state: 'queued', error: null }));
+    const items: OperationItem[] = prepared.items.map((item) => ({ ...item, affectedIds: [...item.affectedIds], state: 'queued', error: null }));
     return this.repository.transaction(() => {
       this.repository.sql.exec('UPDATE operations SET prepared=?,items=?,affected_ids=?,updated_ms=? WHERE id=?',
         encodePrepared(prepared),
@@ -94,7 +94,10 @@ export class OperationStore {
     if (operation.sendCount !== 0 || operation.state !== 'queued') throw new DomainError('OPERATION_ALREADY_SENT', '操作已发送，需核查现有结果');
     const items = operation.items.map((item) => ({ ...item, state: 'sending' as const }));
     this.repository.sql.exec("UPDATE operations SET state='sending',items=?,send_count=send_count+1,error=NULL,updated_ms=? WHERE id=? AND send_count=0 AND state='queued'", JSON.stringify(items), this.clock.nowMs(), operation.id).toArray();
-    for (const domain of new Set(operation.prepared?.affectedDomains ?? [])) this.repository.bumpSourceGeneration(operation.scope, domain);
+    for (const domain of new Set(operation.prepared?.affectedDomains ?? [])) {
+      this.repository.bumpSourceGeneration(operation.scope, domain);
+      this.repository.sql.exec('UPDATE source_queries SET invalidated=1 WHERE uid=? AND domain=?', operation.scope.uid, domain).toArray();
+    }
     return this.get(operation.scope, operation.id)!;
   }
   markUnresolved(operation: StoredOperation, state: 'failed' | 'uncertain', error: Problem | null): StoredOperation {
@@ -125,8 +128,8 @@ export class OperationStore {
       JSON.stringify({ ...operation.idMap, ...update.idMap }), update.error ? JSON.stringify(update.error) : null, this.clock.nowMs(), operation.id).toArray();
     return this.get(operation.scope, operation.id)!;
   }
-  setError(operation: StoredOperation, error: Problem): StoredOperation {
-    this.repository.sql.exec('UPDATE operations SET error=?,updated_ms=? WHERE id=?', JSON.stringify(error), this.clock.nowMs(), operation.id).toArray();
+  setError(operation: StoredOperation, error: Problem | null): StoredOperation {
+    this.repository.sql.exec('UPDATE operations SET error=?,updated_ms=? WHERE id=?', error === null ? null : JSON.stringify(error), this.clock.nowMs(), operation.id).toArray();
     return this.get(operation.scope, operation.id)!;
   }
   interrupted(scope: ActorScope): StoredOperation[] {

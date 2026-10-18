@@ -291,9 +291,13 @@ dt { color: var(--muted-foreground); } dd { overflow-wrap: anywhere; }
   .content-section table { font-size: 11px; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; } }
-.editor-dialog { max-height: calc(100dvh - 32px); overflow-y: auto; }
+.editor-dialog { width: calc(100vw - 32px); max-width: 560px; max-height: calc(100dvh - 32px); overflow-y: auto; }
 .editor-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .editor-grid [data-slot=select-trigger], .editor-grid [data-slot=input] { width: 100%; min-width: 0; }
 .operation-status { display: flex; flex-direction: column; gap: 10px; padding: 14px; border: 1px solid var(--border); border-radius: 8px; }
 .operation-status code { overflow-wrap: anywhere; }
+.transfer-amounts { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px 18px; font-size: 13px; }
+.transfer-amounts dd { text-align: right; font-variant-numeric: tabular-nums; }
+.operation-items { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; font-size: 12px; }
+.operation-items li { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--border); padding-top: 12px; overflow-wrap: anywhere; }
 @media (max-width: 400px) { .editor-grid { grid-template-columns: minmax(0, 1fr); gap: 12px; } }

@@ -10,7 +10,8 @@ export function BillDelete({ bill, onComplete }: { bill: BillDetail; onComplete(
   const [draft, setDraft] = useState<BillDraft | null>(null), [operationId, setOperationId] = useState<string | null>(null), [operation, setOperation] = useState<OperationView | null>(null), [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null);
   useEffect(() => { let active = true; void api('ledger.draft.get', { key }).then((reply) => {
     if (!active) return;
-    setDraft(reply.data?.draft ?? { kind: 'edit', requestId: crypto.randomUUID(), fields: {}, billId: bill.id, expectedVersion: bill.editVersion });
+    const saved = reply.data?.draft;
+    setDraft(saved && (saved.kind === 'create' || saved.kind === 'edit') ? saved : { kind: 'edit', requestId: crypto.randomUUID(), fields: {}, billId: bill.id, expectedVersion: bill.editVersion });
     setOperationId(reply.data?.operationId ?? null); setError(reply.error?.message ?? null);
   }); return () => { active = false; }; }, [key]);
   return <div className="flex flex-col gap-4"><p>删除后将同步到钱迹。请核对这笔账单及关联记录。</p><p>{bill.remark || bill.id}</p>{error ? <p role="alert">{error}</p> : null}{operationId ? <OperationStatus operationId={operationId} initial={operation} onChange={(value) => { setOperation(value); if (value.state === 'succeeded') onComplete(); }} /> : null}<Button variant="destructive" disabled={busy || !draft || !!operationId || !draft.expectedVersion} onClick={async () => {

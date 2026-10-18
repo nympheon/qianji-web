@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { isLosslessNumber, LosslessNumber } from 'lossless-json';
-import type { ItemUpdate, MutationHandler, OperationContext, OperationUpdate, PreparedMutation } from '../../operations/contract';
+import type { ExpectedAssetEffect, ItemUpdate, MutationCommand, MutationHandler, OperationContext, OperationUpdate, PreparedMutation } from '../../operations/contract';
 import { DomainError } from '../../shared/errors';
 import { asBillObject, billExtra, billLinks, moneyText, numericText, optionalWireId, type BillObject } from '../../shared/bill-wire';
 import { addMoney, compareMoney, newBillId, subtractMoney } from '../../shared/numbers';
@@ -10,7 +10,8 @@ import type { ProtocolReply } from '../../protocol/client';
 import { projectBill } from '../sync/incremental';
 import { billChangesSchema, createBillsSchema, deleteBillsSchema, editBillsSchema, type BillChanges } from './write-contract';
 
-interface Entry { logicalId: string; mode: 'create' | 'edit' | 'delete'; wire: BillObject; done: boolean }
+export interface BillMutationEntry { logicalId: string; mode: 'create' | 'edit' | 'delete'; wire: BillObject; done: boolean; assetEffects?: ExpectedAssetEffect[]; affectedAssetIds?: string[] }
+type Entry = BillMutationEntry;
 interface Payload { scope: ActorScope; entries: Entry[]; preparedAt: string }
 const numeric = (text: string) => new LosslessNumber(text);
 const abs = (text: string) => text.startsWith('-') ? text.slice(1) : text;
@@ -23,14 +24,21 @@ function decode(prepared: PreparedMutation): Payload {
     entries: payload.entries.map((value) => {
       const row = asBillObject(value);
       if (typeof row.logicalId !== 'string' || !['create', 'edit', 'delete'].includes(String(row.mode)) || typeof row.done !== 'boolean') return fail('BILL_OPERATION_INVALID', '账单操作项目无效');
-      return { logicalId: row.logicalId, mode: row.mode as Entry['mode'], wire: asBillObject(row.wire), done: row.done };
+      const effects = prepared.items.find((item) => item.id === row.logicalId)?.assetEffects;
+      const affectedAssetIds = prepared.items.find((item) => item.id === row.logicalId)?.affectedIds.filter((id) => id.startsWith('asset:')).map((id) => id.slice(6));
+      return { logicalId: row.logicalId, mode: row.mode as Entry['mode'], wire: asBillObject(row.wire), done: row.done, ...(effects ? { assetEffects: effects } : {}), ...(affectedAssetIds ? { affectedAssetIds } : {}) };
     }) };
 }
 function encode(payload: Payload, original?: PreparedMutation): PreparedMutation {
-  const items = payload.entries.map((entry) => ({ id: entry.logicalId, affectedIds: [...new Set([entry.logicalId, numericText(entry.wire.id, '')])] }));
-  return { payload: { scope: { ...payload.scope }, preparedAt: payload.preparedAt, entries: payload.entries.map((entry) => ({ ...entry })) },
-    items, affectedIds: [...new Set([...original?.affectedIds ?? [], ...items.flatMap((item) => item.affectedIds)])], affectedDomains: ['ledger', 'assets'] };
+  const items = payload.entries.map((entry) => ({ id: entry.logicalId,
+    affectedIds: [...new Set([entry.logicalId, numericText(entry.wire.id, ''), ...assetIds(entry.wire).map((id) => `asset:${id}`), ...entry.assetEffects?.map((effect) => `asset:${effect.assetId}`) ?? [], ...entry.affectedAssetIds?.map((id) => `asset:${id}`) ?? []])],
+    ...(entry.assetEffects ? { assetEffects: entry.assetEffects } : {}) }));
+  const affectedIds = [...new Set([...original?.affectedIds ?? [], ...items.flatMap((item) => item.affectedIds)])];
+  return { payload: { scope: { ...payload.scope }, preparedAt: payload.preparedAt, entries: payload.entries.map(({ logicalId, mode, wire, done }) => ({ logicalId, mode, wire, done })) },
+    items, affectedIds, affectedDomains: affectedIds.some((id) => id.startsWith('asset:')) ? ['ledger', 'assets'] : ['ledger'] };
 }
+function assetIds(raw: BillObject): string[] { return [raw.assetid, raw.fromid, raw.targetid].map((value) => numericText(value, '-1')).filter((value) => /^[1-9]\d*$/.test(value)); }
+export function prepareBillEntries(scope: ActorScope, entries: BillMutationEntry[], preparedAtMs: number): PreparedMutation { return encode({ scope, entries, preparedAt: String(preparedAtMs) }); }
 export function restoreBillInput(value: WireJson): unknown {
   if (isLosslessNumber(value)) {
     const integer = Number(value.value);
@@ -41,7 +49,7 @@ export function restoreBillInput(value: WireJson): unknown {
   if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).filter((pair): pair is [string, WireJson] => pair[1] !== undefined).map(([key, child]) => [key, restoreBillInput(child)]));
   return value;
 }
-function nextId(ctx: OperationContext, scope: ActorScope, used: Set<string>): string {
+export function nextBillId(ctx: Pick<OperationContext, 'repository' | 'clock'>, scope: ActorScope, used: Set<string>): string {
   for (let attempt = 0; attempt < 1000; attempt++) {
     const suffix = 100000 + crypto.getRandomValues(new Uint32Array(1))[0]! % 100000;
     const id = newBillId(BigInt(ctx.clock.nowMs()), suffix);
@@ -98,7 +106,7 @@ function buildBill(changes: BillChanges, raw: BillObject, ctx: OperationContext,
   for (const key of ['category', 'fromact', 'targetact', 'paytype', 'bookname']) delete raw[key];
   return raw;
 }
-function ensureUnrelated(raw: BillObject) {
+export function ensureBillUnrelated(raw: BillObject) {
   if (billLinks(raw).length || numericText(billExtra(raw).baoxiaoed, '0') === '1') return fail('RELATED_BILL_WRITE_UNAVAILABLE', '该账单有关联退款或报销，请使用对应关联操作');
 }
 interface BillReceipt { uid: string; added: Set<string>; updated: Set<string>; deleted: Set<string>; conflicts: Set<string> }
@@ -126,15 +134,16 @@ function applyBatch(payload: Payload, batch: Entry[], receipt: BillReceipt, ctx:
     deletes: success.filter((entry) => entry.mode === 'delete').map((entry) => numericText(entry.wire.id, '')), resources: [], pageState: repository.syncState(payload.scope, 'ledger', dataset.id)?.pageState ?? null });
   return { items: success.map((entry) => ({ id: entry.logicalId, state: 'succeeded' })) };
 }
-export function createLedgerMutationHandler(dependencies: { reconcileSource?: (context: OperationContext) => Promise<boolean> } = {}): MutationHandler {
+export function createLedgerMutationHandler(dependencies: { reconcileSource?: (context: OperationContext) => Promise<boolean>; prepare?: (command: MutationCommand, context: OperationContext) => PreparedMutation | Promise<PreparedMutation> } = {}): MutationHandler {
   return {
     prepare: async (command, ctx) => {
+      if (dependencies.prepare) return dependencies.prepare(command, ctx);
       const scope = command.scope, used = new Set<string>(), entries: Entry[] = [];
       if (!ctx.repository.dataset(scope, 'ledger')?.complete) return fail('LEDGER_INCOMPLETE', '请先完成账单同步');
       if (command.action === 'ledger.create') {
         const input = createBillsSchema.parse(restoreBillInput(command.input));
         for (const bill of input.bills) {
-          const id = nextId(ctx, scope, used), nowSec = Math.floor(ctx.clock.nowMs() / 1000);
+          const id = nextBillId(ctx, scope, used), nowSec = Math.floor(ctx.clock.nowMs() / 1000);
           const raw: BillObject = { id: numeric(id), bookid: -1, cateid: 0, assetid: -1, fromid: -1, targetid: -1, money: 0, type: 0, time: nowSec, createtime: nowSec, updatetime: nowSec, status: 2, platform: 0, packid: 0, remark: '', extra: {} };
           entries.push({ logicalId: id, mode: 'create', wire: buildBill(bill, raw, ctx, scope), done: false });
         }
@@ -145,10 +154,11 @@ export function createLedgerMutationHandler(dependencies: { reconcileSource?: (c
           const record = ctx.repository.readBill(scope, bill.id);
           if (!record) return fail('BILL_NOT_LOADED', '账单尚未载入');
           if (billVersion(record.raw) !== bill.expectedVersion) return fail('DRAFT_SOURCE_CHANGED', '云端副本已变化，请保留草稿并重新查看账单');
-          const raw = { ...asBillObject(record.raw) }; ensureUnrelated(raw);
+          const raw = { ...asBillObject(record.raw) }; ensureBillUnrelated(raw);
           if (![0, 1, 5].includes(record.type)) return fail('BILL_TYPE_UNSUPPORTED', '请使用对应账单类型的专用操作');
           const changes = 'changes' in bill ? billChangesSchema.parse(bill.changes) : null;
-          entries.push({ logicalId: bill.id, mode: changes ? 'edit' : 'delete', wire: changes ? buildBill(changes, raw, ctx, scope) : raw, done: false });
+          const affectedAssetIds = assetIds(raw);
+          entries.push({ logicalId: bill.id, mode: changes ? 'edit' : 'delete', wire: changes ? buildBill(changes, raw, ctx, scope) : raw, done: false, affectedAssetIds });
         }
       }
       return encode({ scope, entries, preparedAt: String(ctx.clock.nowMs()) });
@@ -168,7 +178,7 @@ export function createLedgerMutationHandler(dependencies: { reconcileSource?: (c
           entry.done = true;
           if (receipt.conflicts.has(id)) {
             if (entry.mode === 'create' && iteration < 4) {
-              const replacement = nextId(ctx, payload.scope, used); entry.wire = { ...entry.wire, id: numeric(replacement) }; entry.done = false;
+              const replacement = nextBillId(ctx, payload.scope, used); entry.wire = { ...entry.wire, id: numeric(replacement) }; entry.done = false;
               idMap[id] = replacement; idMap[entry.logicalId] = replacement;
             } else updates.push({ id: entry.logicalId, state: 'failed', error: { code: entry.mode === 'create' ? 'ID_CONFLICT_LIMIT' : 'EXISTING_ID_REJECTED', message: '钱迹明确拒绝该 ID，已停止原操作' } });
           } else if (!receipt.added.has(id) && !receipt.updated.has(id) && !receipt.deleted.has(id)) updates.push({ id: entry.logicalId, state: 'uncertain', error: { code: 'BILL_ACK_MISSING', message: '回执未确认该项目，请核查原操作' } });

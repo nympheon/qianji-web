@@ -259,17 +259,18 @@ cache.ts导出`CacheKey { domain:SyncDomain; queryKey:string }`、`CacheReadStam
 - [x] 实现APK普通整笔上送/删除及状态回执，普通保存走push-only，不每次先拉全域。网页草稿保存稳定requestId直至结果确定，新增与编辑分开；仅明确新建ID拒绝才换ID并留映射，一轮5批/每批200边界不改成每项5次重试。源子关联删除由14–15接入，之前明确不可操作而非孤立删父行。
 - [x] 重跑及`pnpm test:e2e -- tests/e2e/bill-write.spec.ts`；覆盖刷新/重开草稿、长ID、模拟业务失败、同键异参，PASS。
 - [ ] 执行对应真实小额测试后才启用该写能力：第18步建立专用测试账本后闭环核验，第27步统一真实回归。现有账本保持只读。
-- [ ] 提交：`feat: write bills with stable keys and itemized receipts`。
+- [x] 提交：`feat: write bills with stable keys and itemized receipts`（sanitized-history）。
 
 ### Task 13：转账与信用卡还款
 
 **Files:** Create `src/features/ledger/transfer.ts`、`src/web/components/TransferEditor.tsx`、`tests/workers/transfer.test.ts`；Modify ledger contract/service/use-cases、BillsPage和registry。
 **Interfaces:** Consumes任务12；Produces `LedgerService.transfer(input:TransferInput,meta)`及`repayCard(input:CardRepaymentInput,meta)`；支持编辑与删除同一真实记录，两个动作复用已核对资产变更算法。
 
-- [ ] 写失败断言：输入103/手续费3→本金100、转出-103/转入+100；输入100/优惠-10→本金90、转出-90/转入+100；有curr采用targetValue；两相同或借贷资产拒绝。
-- [ ] Run `pnpm test -- tests/workers/transfer.test.ts`；预期FAIL于转账用例缺失。
-- [ ] 实现type2/3载荷，编辑按资产ID合并旧回滚/新增变动；新信用卡还款仅向前更新lastPayTime，删除不自行恢复上一日期；Web/MCP显示本金、费用、两侧币种的实际含义。
-- [ ] 重跑并测A→B改B→A各资产只更新一次、本金不入普通收支/预算、旧记录未知扩展保留，PASS；真实核对两侧余额和账单，而非只看返回成功。
+- [x] 写失败断言：输入103/手续费3→本金100、转出-103/转入+100；输入100/优惠-10→本金90、转出-90/转入+100；有curr采用targetValue；两相同或借贷资产拒绝。
+- [x] Run `pnpm test -- tests/workers/transfer.test.ts`；预期FAIL于转账用例缺失。
+- [x] 实现type2/3载荷，编辑按资产ID合并旧回滚/新增变动；新信用卡还款仅向前更新lastPayTime，删除不自行恢复上一日期；Web/MCP显示本金、费用、两侧币种的实际含义。资产变动与日期保留为明确的预期值，不覆盖钱迹回读确认值。
+- [x] 重跑并测A→B改B→A各资产只更新一次、本金不入普通收支/预算、旧记录未知扩展保留，PASS；已补备注编辑不清费用、未知操作核清后恢复队列及新旧资产保护回归。
+- [ ] 第16/18步准备专用测试资产与账本后，真实核对两侧余额和账单，第27步统一回归；公开写动作保持未启用。
 - [ ] 提交：`feat: reproduce transfer and card repayment rules`。
 
 ### Task 14：退款创建、编辑与关联删除

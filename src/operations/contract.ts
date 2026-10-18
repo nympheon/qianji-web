@@ -8,12 +8,16 @@ import type { SyncDomain } from '../storage/mirror';
 export type OperationState = 'queued' | 'sending' | 'verifying' | 'succeeded' | 'failed' | 'uncertain' | 'partial';
 export type ItemState = 'queued' | 'sending' | 'succeeded' | 'failed' | 'uncertain';
 export interface MutationCommand { action: string; input: WireJson; scope: ActorScope; requestId: string }
-export interface PreparedItem { id: Id; affectedIds: readonly Id[] }
+export interface ExpectedAssetEffect { assetId: Id; currency: Id; delta: string; balanceBefore: string; expectedBalance: string; expectedLastPayTimeSec?: string; confirmation: 'expected' }
+export interface PreparedItem { id: Id; affectedIds: readonly Id[]; assetEffects?: ExpectedAssetEffect[] }
 export interface PreparedMutation { payload: WireJson; items: readonly PreparedItem[]; affectedIds: readonly Id[]; affectedDomains?: readonly SyncDomain[] }
 export interface OperationItem extends PreparedItem { state: ItemState; error: Problem | null }
 export interface OperationView {
   id: Id; action: string; state: OperationState; items: OperationItem[];
   affectedIds: Id[]; idMap: Record<Id, Id>; error: Problem | null;
+}
+export function operationIsFinal(operation: OperationView): boolean {
+  return operation.state === 'succeeded' || operation.state === 'failed' || (operation.state === 'partial' && operation.items.length > 0 && operation.items.every((item) => item.state === 'succeeded' || item.state === 'failed'));
 }
 export interface StoredOperation extends OperationView {
   scope: ActorScope; requestId: string; input: WireJson; digest: string;

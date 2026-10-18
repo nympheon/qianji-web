@@ -85,7 +85,11 @@ export class Coordinator {
       if (this.#active.has(id)) return operationView(operation);
       const handler = this.handlers.get(operation.action);
       if (!handler) throw new DomainError('ACTION_UNAVAILABLE', '该操作核查暂不可用');
-      try { return operationView(await reconcileMutation(operation, handler, this.context, this.store, this.jobs)); }
+      try {
+        const reconciled = await reconcileMutation(operation, handler, this.context, this.store, this.jobs);
+        await this.wakeReleased(scope);
+        return operationView(reconciled);
+      }
       finally { await this.jobs.refreshAlarm(); }
     })();
     this.#reconciliations.set(key, pending);
@@ -115,6 +119,21 @@ export class Coordinator {
     try { await this.#resuming; } finally { this.#resuming = null; }
   }
   changeConnection<T>(fn: () => Promise<T>): Promise<T> { return this.exclusive(fn); }
+  private async wakeReleased(scope: ActorScope): Promise<void> {
+    const repository = this.context.repository;
+    if (repository.sql.exec<{ state: string }>('SELECT state FROM connection WHERE singleton=1').one().state !== 'connected') return;
+    const held = this.store.queued(scope).filter((operation) => operation.error?.code === 'TARGET_UNCERTAIN' && !this.store.conflict(operation));
+    if (!held.length) return;
+    await this.jobs.persistWithWakeup(() => {
+      repository.assertScope(scope);
+      for (const candidate of held) {
+        const operation = this.store.get(scope, candidate.id);
+        if (!operation || operation.state !== 'queued' || operation.error?.code !== 'TARGET_UNCERTAIN' || this.store.conflict(operation)) continue;
+        this.store.setError(operation, null);
+        this.jobs.put(operation.id, scope, 'mutation', { operationId: operation.id });
+      }
+    });
+  }
   registerJobHandler(kind: string, handler: (job: DurableJob) => Promise<void>): void {
     this.#jobHandlers.set(kind, handler);
   }
@@ -154,6 +173,7 @@ export class Coordinator {
         if (row.state === 'connected' && operation.error?.code !== 'TARGET_UNCERTAIN') this.jobs.put(operation.id, scope, 'mutation', { operationId: operation.id });
         else this.jobs.remove(operation.id);
       }
+      if (row.state === 'connected') await this.wakeReleased(scope);
     }
     await this.jobs.refreshAlarm();
   }

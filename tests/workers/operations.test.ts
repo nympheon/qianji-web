@@ -176,6 +176,31 @@ describe('durable mutation coordinator', () => {
       expect(s.counts.send).toBe(1);
     });
   });
+  it('wakes a held queued intent after the conflicting unknown operation is definitively reconciled', async () => {
+    const s = await scenario(); s.setLoss();
+    await s.withCoordinator(async (coordinator) => {
+      const first = await coordinator.submit(s.command('unknown'));
+      const held = await coordinator.submit(s.command('held'));
+      expect(held.state).toBe('queued'); expect(held.error?.code).toBe('TARGET_UNCERTAIN');
+      s.setReconciled(); expect((await coordinator.reconcileOperation(s.app.scope, first.id)).state).toBe('succeeded');
+      s.clock.advance(1001); await coordinator.resumeJobs();
+      expect(s.counts.send).toBe(2);
+      expect(coordinator.getOperation(s.app.scope, held.id)?.state).toBe('uncertain');
+    });
+  });
+  it('repairs the restart gap between persisting reconciliation and waking an eligible held intent', async () => {
+    const s = await scenario(); s.setLoss();
+    await s.withCoordinator(async (coordinator) => {
+      const first = await coordinator.submit(s.command('unknown-before-restart'));
+      const held = await coordinator.submit(s.command('held-before-restart'));
+      expect(held.error?.code).toBe('TARGET_UNCERTAIN');
+      // A committed receipt survived, but the process stopped before scheduling the held intent.
+      coordinator.store.apply(coordinator.store.get(s.app.scope, first.id)!, { items: [{ id: 'item-1', state: 'succeeded' }] });
+    });
+    await s.app.restart();
+    await s.withCoordinator(async (coordinator) => { await coordinator.recover(); s.clock.advance(1001); await coordinator.resumeJobs(); });
+    expect(s.counts.send).toBe(2);
+  });
 
   it('serializes remote writes and connection changes while cached reads stay available', async () => {
     const s = await scenario();

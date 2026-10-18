@@ -54,7 +54,7 @@ describe('native bill writes', () => {
     expect(numericText(wire.money, '')).toBe('90'); expect(numericText(billExtra(wire).transfee, '')).toBe('-10');
     expect(s.sent()[0]!.text).toMatch(/"id":\d{19}/);
     expect(Number(BigInt(numericText(wire.id, '')) % 1_000_000n)).toBeLessThan(200000);
-    await s.app.repository((repo) => { expect(repo.readBill(s.app.scope, numericText(wire.id, ''))?.money).toBe('90'); expect(numericText(asBillObject(repo.readBill(s.app.scope, numericText(wire.id, ''))!.raw).status, '')).toBe('1'); });
+    await s.app.repository((repo) => { expect(repo.readBill(s.app.scope, numericText(wire.id, ''))?.money).toBe('90'); expect(numericText(asBillObject(repo.readBill(s.app.scope, numericText(wire.id, ''))!.raw).status, '')).toBe('1'); expect(repo.sourceGeneration(s.app.scope, 'assets')).toBe(0); });
   });
 
   it('patches existing whole records without recalculating money or discarding unknown extra/flag fields', async () => {
@@ -171,6 +171,37 @@ describe('native bill writes', () => {
       expect(result.state).toBe('uncertain');
       expect((await coordinator.reconcileOperation(s.app.scope, result.id)).state).toBe('succeeded');
       expect(checked).toBe(true); expect(s.upstream.calls).toHaveLength(1);
+    });
+  });
+  it('allows a new draft after a partial batch whose every item has a definite result', async () => {
+    const s = await scenario();
+    s.upstream.respond(async () => {
+      const ids = s.sent().at(-1)!.changed.map((bill) => numericText(bill.id, ''));
+      return s.upstream.calls.length === 1 ? s.receipt([ids[0]!], [], [], [ids[1]!]) : s.receipt([], [], [], [ids[0]!]);
+    });
+    await s.app.repository(async (repository) => {
+      const coordinator = new Coordinator({ repository, client: s.upstream.client, clock: s.clock }, new Map([['ledger.create', createLedgerMutationHandler()]]));
+      const service = new LedgerWriteService({ repository, coordinator, connection: { scope: () => s.app.scope } });
+      service.saveDraft('batch', { kind: 'create', requestId: 'batch', fields: s.newInput() });
+      const result = await coordinator.submit(s.command('ledger.create', { bills: [s.newInput(), s.newInput()] }, 'batch'));
+      expect(result.state).toBe('partial'); expect(result.items.map((item) => item.state)).toEqual(['succeeded', 'failed']);
+      expect(() => service.saveDraft('batch', { kind: 'create', requestId: 'next-draft', fields: s.newInput() })).not.toThrow();
+    });
+  });
+  it('protects both the old and new assets while an asset-changing bill edit is uncertain', async () => {
+    const s = await scenario(), raw = { ...asBillObject(s.original.raw), assetid: 10 };
+    await s.app.repository((repo) => {
+      repo.createDataset(s.app.scope, 'assets', 'assets');
+      repo.applyPage(s.app.scope, 'assets', { upserts: [], deletes: [], resources: [10, 20].map((id) => ({ id: String(id), kind: 'asset' as const, raw: { id, name: String(id), type: 0, money: 1000 } })), pageState: null, complete: true }, 'assets');
+      repo.switchDataset(s.app.scope, 'assets', 'assets', null);
+      repo.applyPage(s.app.scope, 'ledger', { upserts: [projectBill(raw)], deletes: [], resources: [], pageState: null });
+    });
+    s.upstream.respond(async () => { throw new Error('lost edit response'); });
+    await s.run(async (coordinator) => {
+      const first = await coordinator.submit(s.command('ledger.edit', { bills: [{ id: s.original.id, expectedVersion: version(raw), changes: { assetId: '20' } }] }));
+      expect(first.state).toBe('uncertain'); expect(first.affectedIds).toEqual(expect.arrayContaining(['asset:10', 'asset:20']));
+      const held = await coordinator.submit(s.command('ledger.create', { bills: [s.newInput({ assetId: '10' })] }));
+      expect(held.state).toBe('queued'); expect(held.error?.code).toBe('TARGET_UNCERTAIN'); expect(s.upstream.calls).toHaveLength(1);
     });
   });
 });

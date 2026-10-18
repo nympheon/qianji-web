@@ -27,6 +27,18 @@ describe('shared HTTP actions', () => {
     expect(await (await action('ledger.draft.save', { key: 'new', draft: { kind: 'create', requestId: 'draft-key', fields: { enteredMoney: '1', type: 0 } } })).json()).toMatchObject({ status: 'ready', data: { draft: { requestId: 'draft-key' }, operationId: null } });
     expect(await (await action('ledger.draft.get', { key: 'new' })).json()).toMatchObject({ data: { draft: { fields: { type: 0, enteredMoney: '1' } } } });
   });
+  it('offers typed local transfer previews and keeps both transfer write actions unverified', async () => {
+    await seedActions();
+    await runInDurableObject(env.QIANJI_STATE.getByName('personal'), (_actor, state) => {
+      const ctx = createActorContext(state.storage), scope = ctx.connection.scope()!;
+      ctx.repository.createDataset(scope, 'books', 'books'); ctx.repository.applyPage(scope, 'books', page({ upserts: [], resources: [{ id: '10', kind: 'book', raw: { bookid: 10, name: 'book' } }], complete: true }), 'books'); ctx.repository.switchDataset(scope, 'books', 'books', null);
+      ctx.repository.createDataset(scope, 'assets', 'assets'); ctx.repository.applyPage(scope, 'assets', page({ upserts: [], resources: [{ id: '1', kind: 'asset', raw: { id: 1, name: 'A', currency: 'CNY', money: '1000', type: 0 } }, { id: '2', kind: 'asset', raw: { id: 2, name: 'B', currency: 'CNY', money: '0', type: 2 } }], complete: true }), 'assets'); ctx.repository.switchDataset(scope, 'assets', 'assets', null);
+    });
+    const input = { mode: 'create', bookId: '10', fromAssetId: '1', targetAssetId: '2', enteredMoney: '103', fee: '3', timeSec: 200 };
+    expect(await (await action('ledger.transfer.options')).json()).toMatchObject({ data: { assets: [{ id: '1', money: '1000' }, { id: '2', money: '0' }] } });
+    expect(await (await action('ledger.transfer.preview', { kind: 'transfer', input })).json()).toMatchObject({ data: { principal: '100', fromAmount: '103', targetAmount: '100', effects: [{ delta: '-103', confirmation: 'expected' }, { delta: '100', confirmation: 'expected' }], stale: true } });
+    for (const name of ['ledger.transfer', 'ledger.repayCard']) expect(await (await action(name, { ...input, requestId: 'stable-key' })).json()).toMatchObject({ status: 'unavailable', error: { code: 'WRITE_LIVE_UNVERIFIED' } });
+  });
   it('returns exact canonical query values with no-store freshness', async () => {
     await seedActions(); const response = await action('ledger.list');
     expect(response.status).toBe(200); expect(response.headers.get('cache-control')).toBe('no-store');

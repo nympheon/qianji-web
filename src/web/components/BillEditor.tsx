@@ -3,6 +3,7 @@ import type { BillDetail, LedgerOptions } from '../../features/ledger/contract';
 import type { BillDraft, BillChanges } from '../../features/ledger/write-contract';
 import { newBillSchema } from '../../features/ledger/write-contract';
 import type { OperationView } from '../../operations/contract';
+import { operationIsFinal } from '../../operations/contract';
 import { addMoney } from '../../shared/numbers';
 import { api } from '../api';
 import { Button } from './ui/button';
@@ -31,7 +32,7 @@ export function BillEditor({ options, bill, onComplete }: { options: LedgerOptio
     let active = true; mounted.current = true;
     void api('ledger.draft.get', { key }).then((reply) => {
       if (!active) return;
-      if (reply.data) { setDraft(reply.data.draft); setOperationId(reply.data.operationId); setSaved(true); }
+      if (reply.data && (reply.data.draft.kind === 'create' || reply.data.draft.kind === 'edit')) { setDraft(reply.data.draft); setOperationId(reply.data.operationId); setSaved(true); }
       else if (reply.error) setError(reply.error.message);
       setLoaded(true);
     });
@@ -78,6 +79,6 @@ export function BillEditor({ options, bill, onComplete }: { options: LedgerOptio
     <div className="flex flex-wrap gap-4 text-sm"><label><input type="checkbox" checked={draft.fields.countInStatistics !== false} disabled={disabled} onChange={(event) => change({ countInStatistics: event.target.checked })} /> 计入收支</label><label><input type="checkbox" checked={draft.fields.countInBudget !== false} disabled={disabled} onChange={(event) => change({ countInBudget: event.target.checked })} /> 计入预算</label></div>
     {error ? <p role="alert">{error}</p> : null}{operationId ? <OperationStatus operationId={operationId} initial={operation} onChange={(value) => { setOperation(value); if (value.state === 'succeeded') onComplete(); }} /> : <p className="muted-copy">{saved ? '草稿已保存' : '正在保存草稿…'}</p>}
     <Button type="submit" disabled={disabled}>{busy ? '正在提交…' : '保存账单'}</Button>
-    {operation && ['succeeded', 'failed'].includes(operation.state) ? <Button type="button" variant="outline" onClick={() => { setDraft(initial()); setOperationId(null); setOperation(null); setSaved(false); }}>建立新草稿</Button> : null}
+    {operation && operationIsFinal(operation) ? <Button type="button" variant="outline" onClick={() => { const next = initial(); baseline.current = next.fields; setDraft(next); setOperationId(null); setOperation(null); setSaved(false); }}>建立新草稿</Button> : null}
   </FieldGroup></form>;
 }
