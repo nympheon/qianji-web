@@ -128,11 +128,11 @@ Tailwind CSS 4.3通过`@tailwindcss/vite`编译；唯一全局入口`src/web/sty
 **Files:** Create `src/shared/{model,numbers,wire-json,dates,errors,reply}.ts`、`tests/unit/{wire-json,numbers,dates}.test.ts`、`fixtures/apk-454/numeric-cases.json`。
 **Interfaces:** Consumes 无；Produces 共用类型、`parseWire(text:string):WireJson`、`stringifyWire(value:WireJson):string`、`newBillId(nowMs:bigint,suffix:number):Id`、`businessRange(filter:DateFilter,book:BookPeriod,zone:string):TimeRange`；Money运算返回十进制字符串。
 
-- [ ] 写失败断言：嵌套长整数`1792000000123100000`往返不变；字符串ID`plan-A`不被数值化；`newBillId(1792000000123n,100000)==='1792000000123100000'`；金额`0.1+0.2==='0.3'`。
-- [ ] Run `pnpm test -- tests/unit/wire-json.test.ts tests/unit/numbers.test.ts tests/unit/dates.test.ts`；预期FAIL于上述函数未实现。
-- [ ] 实现上述函数及类型；按APK显式舍入点执行，不统一中间两位；月起日25的十月范围为十月25日零时至十一月25日前一秒。29/30/31及未证实配置由已核对合法配置向量约束，不自行截断；原始扩展字段保持。
-- [ ] 重跑测试；补断言wire数字/嵌套JSON字符串/省略与空值不同、无效精度报错、日期显示不改原时间戳，全部PASS。
-- [ ] 提交：`feat: preserve wire numbers and accounting date contracts`。
+- [x] 写失败断言：嵌套长整数`1792000000123100000`往返不变；字符串ID`plan-A`不被数值化；`newBillId(1792000000123n,100000)==='1792000000123100000'`；金额`0.1+0.2==='0.3'`。
+- [x] Run `pnpm test -- tests/unit/wire-json.test.ts tests/unit/numbers.test.ts tests/unit/dates.test.ts`；预期FAIL于上述函数未实现。
+- [x] 实现上述函数及类型；按APK显式舍入点执行，不统一中间两位；月起日25的十月范围为十月25日零时至十一月25日前一秒。29/30/31及未证实配置由已核对合法配置向量约束，不自行截断；原始扩展字段保持。
+- [x] 重跑测试；补断言wire数字/嵌套JSON字符串/省略与空值不同、无效精度报错、日期显示不改原时间戳，全部PASS。
+- [x] 提交：`feat: preserve wire numbers and accounting date contracts`。
 
 ### Task 03：关闭新版签名及固定协议客户端的可行性
 
