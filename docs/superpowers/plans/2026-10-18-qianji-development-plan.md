@@ -340,11 +340,13 @@ cache.ts导出`CacheKey { domain:SyncDomain; queryKey:string }`、`CacheReadStam
 **Files:** Create `src/features/categories/{contract,service,use-cases}.ts`、`src/web/pages/CategoriesPage.tsx`、`tests/workers/categories.test.ts`；Modify registry。
 **Interfaces:** Consumes BookService/资源镜像；Produces `CategoryService.list/submit/reorder/changeLevel/move/checkDelete/delete`；DeleteCategoryInput明确did、deleteBills及可选newCategoryId，不暴露通用级联选项。
 
-- [ ] 写失败断言：有子类父分类先拒绝删除；check的count/other完整呈现；迁移调用deletev2/newcateid而非本地逐笔重写；其他成员引用不能靠本地数量假定不存在。
-- [ ] Run `pnpm test -- tests/workers/categories.test.ts`；预期FAIL于分类管理缺失。
-- [ ] 实现submitv2/reorder3/changelevel/movesubcate/deletecheckv2/deletev2，保留类型/账本/父ID前提与未知字段；更新源/目标分类及受影响账单、预算和任务的核查范围。
-- [ ] 重跑层级变更与移子类、替换/保留/删除策略、部分/未知结果不盲级联，PASS；网页/MCP相同参数触发相同上游动作。
-- [ ] 提交：`feat: manage category hierarchy and native migration`。
+- [x] 写失败断言：有子类父分类先拒绝删除；check的count/other完整呈现；迁移调用deletev2/newcateid而非本地逐笔重写；其他成员引用不能靠本地数量假定不存在。
+- [x] Run `pnpm test -- tests/workers/categories.test.ts`；预期FAIL于分类管理缺失。
+- [x] 实现submitv2/reorder3/changelevel/movesubcate/deletecheckv2/deletev2，保留类型/账本/父ID前提与未知字段；更新源/目标分类及受影响账单、预算和任务的核查范围。
+- [x] 重跑层级变更与移子类、替换/保留/删除策略、部分/未知结果不盲级联，PASS；网页/MCP相同参数触发相同上游动作。
+- [x] 提交：`feat: manage category hierarchy and native migration`。
+
+实现阶段已验证；实际写入验收仍由 Task27 完成。
 
 ### Task 20：标签、分组、归档与恢复
 

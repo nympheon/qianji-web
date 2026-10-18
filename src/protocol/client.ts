@@ -92,10 +92,14 @@ export class QianjiClient {
         if (flag !== undefined) hasMore = flag === true || flag === 'true' || flag === '1' || isLosslessNumber(flag) && flag.value === '1';
         data = data.list;
       }
-      if (operation.response === 'native-object') {
+      if (operation.response === 'native-object' || operation.response === 'native-integer') {
         if (!object(data)) throw new ProtocolError('QIANJI_RESPONSE_INVALID', '钱迹响应缺少原生对象包装', 'protocol', 'unknown', { upstreamCode: ec });
         if (Object.keys(data).length === 1 && Object.hasOwn(data, 'v')) data = data.v ?? null;
-        if (data !== null && !object(data)) throw new ProtocolError('QIANJI_RESPONSE_INVALID', '钱迹原生对象结构发生变化', 'protocol', 'unknown', { upstreamCode: ec });
+        if (operation.response === 'native-object' && data !== null && !object(data)) throw new ProtocolError('QIANJI_RESPONSE_INVALID', '钱迹原生对象结构发生变化', 'protocol', 'unknown', { upstreamCode: ec });
+        if (operation.response === 'native-integer' && data !== null) {
+          const number = isLosslessNumber(data) ? data.value : typeof data === 'number' && Number.isSafeInteger(data) ? String(data) : '';
+          if (!/^-?(0|[1-9]\d*)$/.test(number) || BigInt(number) < -2147483648n || BigInt(number) > 2147483647n) throw new ProtocolError('QIANJI_RESPONSE_INVALID', '钱迹原生整型回执无法识别', 'protocol', 'unknown', { upstreamCode: ec });
+        }
       }
       if (operation.response === 'object' && !object(data)) {
         throw new ProtocolError('QIANJI_RESPONSE_INVALID', '钱迹响应缺少预期数据', 'protocol', 'unknown', { upstreamCode: ec });

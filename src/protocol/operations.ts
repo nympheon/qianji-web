@@ -3,7 +3,7 @@ interface OperationDefinition {
   act: string;
   constructor: 'normal' | 'sync-string';
   requiresSession: boolean;
-  response: 'object' | 'array' | 'native-list' | 'native-object' | 'optional';
+  response: 'object' | 'array' | 'native-list' | 'native-object' | 'native-integer' | 'optional';
   timeoutMs: number;
   readOnly: boolean;
 }
@@ -51,6 +51,15 @@ export const OPERATIONS = {
   'book.reorder': op('book', 'reorder', 'normal', true, 'optional'),
   'book.members': op('book', 'members', 'normal', true, 'native-list', true),
   'user.configure': op('user', 'updateconfig', 'normal', true, 'optional'),
+  'category.list': op('category', 'listv2', 'normal', true, 'native-list', true),
+  'category.icons': op('category', 'iconlist', 'normal', true, 'native-list', true),
+  'category.submit': op('category', 'submitv2', 'normal', true, 'native-object'),
+  'category.submitMany': op('category', 'submitmultiple', 'normal', true, 'native-list'),
+  'category.changeLevel': op('category', 'changelevel', 'normal', true, 'native-object'),
+  'category.move': op('category', 'movesubcate', 'normal', true, 'native-object'),
+  'category.reorder': op('category', 'reorder3', 'normal', true, 'optional'),
+  'category.deleteCheck': op('category', 'deletecheckv2', 'normal', true, 'object', true),
+  'category.delete': op('category', 'deletev2', 'normal', true, 'native-integer'),
   'tag.syncall': op('tag', 'syncall', 'sync-string'),
   'tag.pull': op('tag', 'syncall', 'sync-string', true, 'object', true),
   'tag.list': op('tag', 'list', 'sync-string', true, 'array', true),

@@ -13,8 +13,13 @@ import { assetDraftSchema, assetDeleteSchema, assetGroupAddSchema, assetGroupDel
 const empty = z.strictObject({}), id = z.string().min(1).max(200);
 import { createDebtSchema, appendPrincipalSchema, editPrincipalSchema, debtPaymentSchema, debtListSchema, debtPreviewSchema, debtDraftSchema, type DebtListView, type DebtPreview, type DebtDraftView } from '../features/debt/contract';
 import { bookListSchema, bookIdSchema, bookSubmitSchema, bookConfigureSchema, bookVisibleSchema, bookDeleteSchema, bookQuitSchema, bookReorderSchema, baseCurrencyInputSchema, bookDraftSchema, type BookListView, type BookTypesView, type BookMembersView, type BookDeleteCheckView, type BookDraftView, type AccountingConfigView } from '../features/books/contract';
+import { categoryListSchema, categoryCheckSchema, categorySubmitSchema, categoryLevelSchema, categoryMoveSchema, categoryReorderSchema, categoryDeleteSchema, categoryDraftSchema, type CategoryDraftView, type CategoryListView, type CategoryDeleteCheckView } from '../features/categories/contract';
 const route = z.strictObject({ route: z.enum(['main', 'backup', 'overseas']) });
 export const actionSchemas = {
+  'categories.submit': z.discriminatedUnion('mode', [categorySubmitSchema.options[0].extend({ requestId: id }), categorySubmitSchema.options[1].safeExtend({ requestId: id })]),
+  'categories.changeLevel': categoryLevelSchema.extend({ requestId: id }), 'categories.move': categoryMoveSchema.extend({ requestId: id }), 'categories.reorder': categoryReorderSchema.safeExtend({ requestId: id }), 'categories.delete': categoryDeleteSchema.safeExtend({ requestId: id }),
+  'categories.draft.get': z.strictObject({ key: z.string().min(1).max(300) }), 'categories.draft.save': z.strictObject({ key: z.string().min(1).max(300), draft: categoryDraftSchema }),
+  'categories.list': categoryListSchema, 'categories.checkDelete': categoryCheckSchema,
   'books.list': bookListSchema, 'books.types': empty, 'books.members': z.strictObject({ id: bookIdSchema }), 'books.deleteCheck': z.strictObject({ id: bookIdSchema }), 'books.accounting': empty,
   'books.submit': z.discriminatedUnion('mode', [bookSubmitSchema.options[0].extend({ requestId: id }), bookSubmitSchema.options[1].safeExtend({ requestId: id })]),
   'books.configure': bookConfigureSchema.extend({ requestId: id }), 'books.setVisible': bookVisibleSchema.extend({ requestId: id }), 'books.delete': bookDeleteSchema.extend({ requestId: id }), 'books.quit': bookQuitSchema.extend({ requestId: id }), 'books.reorder': bookReorderSchema.extend({ requestId: id }), 'books.setBaseCurrency': baseCurrencyInputSchema.extend({ requestId: id }),
@@ -48,6 +53,8 @@ export const actionSchemas = {
 export type ActionName = keyof typeof actionSchemas;
 export type ActionInput<A extends ActionName> = z.infer<typeof actionSchemas[A]>;
 export interface ActionOutputs {
+  'categories.submit': OperationView; 'categories.changeLevel': OperationView; 'categories.move': OperationView; 'categories.reorder': OperationView; 'categories.delete': OperationView; 'categories.draft.get': CategoryDraftView | null; 'categories.draft.save': CategoryDraftView;
+  'categories.list': CategoryListView; 'categories.checkDelete': CategoryDeleteCheckView;
   'books.list': BookListView; 'books.types': BookTypesView; 'books.members': BookMembersView; 'books.deleteCheck': BookDeleteCheckView; 'books.accounting': AccountingConfigView;
   'books.submit': OperationView; 'books.configure': OperationView; 'books.setVisible': OperationView; 'books.delete': OperationView; 'books.quit': OperationView; 'books.reorder': OperationView; 'books.setBaseCurrency': OperationView; 'books.draft.get': BookDraftView | null; 'books.draft.save': BookDraftView;
   'connection.status': ConnectionView; 'connection.check': ConnectionView; 'connection.refresh': ConnectionView; 'connection.logout': ConnectionView;
@@ -72,6 +79,15 @@ const connection = { ...read, kind: 'connection', requiresAccount: false } as co
 const write = { ...read, kind: 'write', readOnly: false, unavailable: { code: 'WRITE_LIVE_UNVERIFIED', reason: '账单写入已完成契约与模拟测试，待专用测试账本真实验收后启用' } } as const;
 const assetWrite = { ...write, unavailable: { code: 'WRITE_LIVE_UNVERIFIED', reason: '资产写入待命名测试资产真实验收后启用' } } as const;
 export const actionDefinitions: Record<ActionName, ActionDefinition> = {
+  'categories.submit': { ...write, title: '新增或编辑分类', description: '按账本及收支类型、编辑版本保存名称和图标，原生v是纯名称文本。新建使用官方返回ID；未知创建不按同名猜测，复用requestId。' },
+  'categories.changeLevel': { ...write, title: '升级或降级分类', description: '明确parentId，null升为一级，同账本同收支一级父分类降为二级。有子项先处理子项；不自动递归迁移。复用requestId。' },
+  'categories.move': { ...write, title: '移动二级分类', description: '按版本把现有二级分类移动到同账本、同收支类型的一级分类，保留真实分类ID与账单引用。复用requestId。' },
+  'categories.reorder': { ...write, title: '排序分类', description: '完整提供各同级ID组，一级组在前；原生reorder3接收二维数字ID数组，不隐式移动层级。只读核对官方顺序，未知不重发。' },
+  'categories.delete': { ...write, destructive: true, title: '删除分类并处理本人账单', description: '先检查子项及官方本人count/其他成员other。明确保留账单、删除本人账单或迁移至指定分类；跨账本迁移必须显式newBookId。仅调用deletev2，不额外上传逐笔修改；分类整数回执与本人账单同步分别核验。复用requestId。' },
+  'categories.draft.get': { ...read, evidence: 'local', title: '读取分类草稿', description: '读取本账号结构化分类草稿及原操作，不请求钱迹。' },
+  'categories.draft.save': { ...read, readOnly: false, evidence: 'local', title: '保存分类草稿', description: '保存本地分类管理输入，未知原操作未核清时禁止更换请求键重复提交。' },
+  'categories.list': { ...read, title: '查询分类层级', description: '按账本及收支类型读取原生listv2，将sublist规范化为同一分类实体和两级关系，保留官方editable、ID及编辑版本。60秒按需来源缓存，失败保留旧资料并标记。' },
+  'categories.checkDelete': { ...read, title: '检查分类删除影响', description: '先读取完整分类树；有子项的父分类先处理子项。官方count/other分别展示本人及其他成员引用数，不用本地计数猜测他人账单不存在。此动作不修改数据。' },
   'books.list': { ...read, title: '查询账本', description: '按原生t=-1读取当前账号全部类型账本，可显式包含隐藏项；保留所有者/成员身份、默认账本及各自过期状态。来源按需60秒缓存，闲置不请求。' },
   'books.types': { ...read, title: '查询账本模板类型', description: '读取官方账本类型、名称、默认封面与账期，不自造模板编码。' },
   'books.members': { ...read, title: '查询账本成员', description: '按真实账本ID读取已有云端成员、姓名及所有者身份，不建设本服务多用户或角色系统。' },
