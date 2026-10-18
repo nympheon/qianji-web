@@ -5,10 +5,11 @@ interface OperationDefinition {
   requiresSession: boolean;
   response: 'object' | 'optional';
   timeoutMs: number;
+  readOnly: boolean;
 }
 
-function op(ctrl: string, act: string, constructor: OperationDefinition['constructor'], requiresSession = true, response: OperationDefinition['response'] = 'object'): OperationDefinition {
-  return Object.freeze({ ctrl, act, constructor, requiresSession, response, timeoutMs: 20_000 });
+function op(ctrl: string, act: string, constructor: OperationDefinition['constructor'], requiresSession = true, response: OperationDefinition['response'] = 'object', readOnly = false): OperationDefinition {
+  return Object.freeze({ ctrl, act, constructor, requiresSession, response, readOnly, timeoutMs: 20_000 });
 }
 
 /** Only APK-confirmed paths; domain tasks extend this table with their evidence. */
@@ -16,8 +17,8 @@ export const OPERATIONS = {
   'account.login': op('account', 'login', 'normal', false),
   'account.refreshtoken': op('account', 'refreshtoken', 'normal'),
   'account.logout': op('account', 'logout', 'normal', true, 'optional'),
-  'client.init': op('client', 'init', 'normal'),
-  'syncv2.pull': op('syncv2', 'pull', 'sync-string'),
+  'client.init': op('client', 'init', 'normal', true, 'object', true),
+  'syncv2.pull': op('syncv2', 'pull', 'sync-string', true, 'object', true),
   'bill.syncall': op('bill', 'syncall', 'sync-string'),
   'tag.syncall': op('tag', 'syncall', 'sync-string'),
 } as const;

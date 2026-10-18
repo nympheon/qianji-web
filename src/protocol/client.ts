@@ -18,6 +18,7 @@ export interface ClientOptions {
   session(scope: ActorScope): Promise<ProtocolSession | null>;
   profile?: Readonly<ClientProfile>;
   fetch?: (url: string, init: RequestInit) => Promise<Response>;
+  readOnly?: boolean;
 }
 
 function object(value: WireJson | undefined): value is WireObject {
@@ -32,8 +33,13 @@ function code(value: WireJson | undefined): string | undefined {
 export class QianjiClient {
   constructor(private readonly options: ClientOptions) {}
 
+  asReadOnly(): QianjiClient { return new QianjiClient({ ...this.options, readOnly: true }); }
+
   async request(op: ProtocolOperation, params: WireObject, scope: ActorScope | null): Promise<ProtocolReply> {
     const operation = operationDefinition(op);
+    if (this.options.readOnly && !operation.readOnly) {
+      throw new ProtocolError('READ_ONLY_PROTOCOL', '结果核查只允许已确认的读取接口', 'protocol', 'not-sent');
+    }
     const session = scope === null ? null : await this.options.session(scope);
     if (scope && (!session || session.scope.uid !== scope.uid || session.scope.connectionEpoch !== scope.connectionEpoch)) {
       throw new ProtocolError('QIANJI_SCOPE_MISMATCH', '请求不属于当前钱迹连接', 'session', 'not-sent');

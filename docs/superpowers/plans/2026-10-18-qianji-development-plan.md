@@ -166,11 +166,11 @@ Tailwind CSS 4.3通过`@tailwindcss/vite`编译；唯一全局入口`src/web/sty
 
 contract导出MutationCommand/StoredOperation/PreparedMutation/OperationUpdate/ReconciliationResult及OperationContext；后者提供repository/client/clock。handler接口为`prepare(command:MutationCommand,ctx:OperationContext):Promise<PreparedMutation>`、`send(prepared:PreparedMutation,ctx:OperationContext):Promise<ProtocolReply>`、`applyReceipt(prepared:PreparedMutation,reply:ProtocolReply,ctx:OperationContext):OperationUpdate`、`reconcile(operation:StoredOperation,ctx:OperationContext):Promise<ReconciliationResult>`；applyReceipt同步本地事务，不在事务中请求上游。runner负责持久状态/发送顺序，各业务只注册本域handler。
 
-- [ ] 写失败断言：`submit(k,x)`两次仅发送一次，同键不同参数拒绝；接收端已执行但丢回执，再restart/runAlarm/同步仍只有一次发送；旧UID同键不命中或发送；部分成功只保留失败/未知项。
-- [ ] Run `pnpm test -- tests/workers/operations.test.ts`；预期FAIL于去重/恢复不变量。
-- [ ] 实现唯一键`(uid,requestId)`、参数摘要、逐项结果、ID映射、发送事实及排队/发送/核验/成功/失败/未知/部分状态；发送前确认持久化。局部网络用例串行而缓存查询可并行处理；恢复不从Bill.status重建发送候选。
-- [ ] 重跑并注入“落库后、安排alarm前”“发送标记后、fetch前”“服务端接受后、回执落库前”等中断；保守归未知而非盲重发。主动reconcileOperation只读核验且合并并发核查；有限核查结束仍未知时保留状态，停止alarm并等待下次使用，不无限后台查询。多个任务共享唯一alarm，剩余任务不被另一任务完成时取消，PASS。
-- [ ] 提交：`feat: coordinate durable mutations and safe recovery`。
+- [x] 写失败断言：`submit(k,x)`两次仅发送一次，同键不同参数拒绝；接收端已执行但丢回执，再restart/runAlarm/同步仍只有一次发送；旧UID同键不命中或发送；部分成功只保留失败/未知项。
+- [x] Run `pnpm test -- tests/workers/operations.test.ts`；预期FAIL于去重/恢复不变量。
+- [x] 实现唯一键`(uid,requestId)`、参数摘要、逐项结果、ID映射、发送事实及排队/发送/核验/成功/失败/未知/部分状态；发送前确认持久化。局部网络用例串行而缓存查询可并行处理；恢复不从Bill.status重建发送候选。
+- [x] 重跑并注入“落库后、安排alarm前”“发送标记后、fetch前”“服务端接受后、回执落库前”等中断；保守归未知而非盲重发。主动reconcileOperation只读核验且合并并发核查；有限核查结束仍未知时保留状态，停止alarm并等待下次使用，不无限后台查询。多个任务共享唯一alarm，剩余任务不被另一任务完成时取消，PASS。
+- [x] 提交：`feat: coordinate durable mutations and safe recovery`。
 
 ### Task 06：真实账号连接、凭证存储与三线路
 

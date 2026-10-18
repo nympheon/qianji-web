@@ -1,6 +1,6 @@
 # 本地开发
 
-当前处于M0基础阶段，尚未接入真实钱迹账号。空页面不会展示演示账单，健康检查只表示本服务运行。
+当前已完成协议、SQLite副本和持久操作队列基础，尚未接入真实钱迹账号。空页面不会展示演示账单，健康检查只表示本服务运行。
 
 ## 工具链
 
@@ -22,7 +22,17 @@
 
 ## 运行结构
 
-一个固定名`personal`的SQLite Durable Object，绑定`QIANJI_STATE`；网页通过`ASSETS`发布。业务HTTP/MCP入口交给Worker，不使用页面fallback。M0不做钱迹网络调用、Cron、D1、后台保活或应用访问鉴权。
+一个固定名`personal`的SQLite Durable Object，绑定`QIANJI_STATE`；网页通过`ASSETS`发布。业务HTTP/MCP入口交给Worker，不使用页面fallback。不使用Cron、D1、后台保活或应用访问鉴权。
+
+## 持久操作与恢复
+
+写键唯一范围为`(uid,requestId)`，摘要包含动作与规范化参数；确认结果保留逐项状态与ID映射。准备阶段可读取，实际发送前先提交发送标记。恢复时已发送或发送事实不确定的操作只核查，不根据账单状态生成待发送队列。原生账单ID冲突的有限重分配由后续领域任务单独实现，通用队列不自动重试。
+
+所有在途任务共用`Jobs`与唯一alarm。新增任务先持久安排唤醒，再在同步事务中写入意图和job；初始化仅修复持久检查点与唤醒，不访问钱迹。中断的发送标记转为待核查，单次有限核查仍未知时移除job并保留操作，等待使用者主动核查。排队操作与连接变更共用进程内顺序器；SQLite中的操作状态负责跨重启的发送判断。本地读取和草稿不等待网络队列。
+
+核查上下文的协议客户端只允许注册表明确标记为只读的操作，禁止登录、退出、上传等请求；新增协议路径默认不可用于核查。批次中已确认项目不会被后续未知回执降级或重发。
+
+SQLite事务只含同步存储操作。[Cloudflare事务文档](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/)明确`transactionSync`不能跨Promise；[输出门机制](https://developers.cloudflare.com/durable-objects/best-practices/rules-of-durable-objects/)会在存储写入确认前阻挡传出的fetch，代码没有使用`allowUnconfirmed`。
 
 ## 执行记录
 

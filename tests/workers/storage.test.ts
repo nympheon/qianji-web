@@ -112,10 +112,10 @@ describe('SQLite mirrors', () => {
     const app = await createTestApp();
     await app.repository((_repo, storage) => {
       migrate(storage); migrate(storage);
-      expect(storage.sql.exec<{ version: number }>('SELECT MAX(version) AS version FROM schema_version').one().version).toBe(1);
-      expect(() => migrate(storage, [{ version: 2, name: 'broken', sql: 'CREATE TABLE test_broken (id TEXT); INVALID SQL;' }])).toThrow();
+      expect(storage.sql.exec<{ version: number }>('SELECT MAX(version) AS version FROM schema_version').one().version).toBe(2);
+      expect(() => migrate(storage, [{ version: 3, name: 'broken', sql: 'CREATE TABLE test_broken (id TEXT); INVALID SQL;' }])).toThrow();
       expect(storage.sql.exec('SELECT name FROM sqlite_master WHERE name = ?', 'test_broken').toArray()).toEqual([]);
-      expect(storage.sql.exec<{ version: number }>('SELECT MAX(version) AS version FROM schema_version').one().version).toBe(1);
+      expect(storage.sql.exec<{ version: number }>('SELECT MAX(version) AS version FROM schema_version').one().version).toBe(2);
     });
   });
 

@@ -1,8 +1,12 @@
 import baseSql from './sql/0001-base.sql?raw';
+import operationsSql from './sql/0002-operations.sql?raw';
 import { DomainError } from '../shared/errors';
 
 export interface Migration { version: number; name: string; sql: string }
-export const MIGRATIONS: readonly Migration[] = [{ version: 1, name: 'base', sql: baseSql }];
+export const MIGRATIONS: readonly Migration[] = [
+  { version: 1, name: 'base', sql: baseSql },
+  { version: 2, name: 'operations', sql: operationsSql },
+];
 
 /** Each schema step and its version marker commit together, including DDL. */
 export function migrate(storage: DurableObjectStorage, migrations: readonly Migration[] = MIGRATIONS): void {
