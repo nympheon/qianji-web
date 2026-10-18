@@ -18,7 +18,7 @@ export class SavingsService {
   async list(input: SavingsQuery = {}): Promise<SavingsListView> {
     const query = savingsQuerySchema.parse(input), scope = this.scope(), { cache, repository } = this.dependencies, key = savingsKey; let source = cache.read(scope, key), problem;
     const connected = repository.sql.exec<{ state: string }>('SELECT state FROM connection WHERE singleton=1').one().state === 'connected';
-    if (source.stale && connected) {
+    if (source.needsValidation && connected) {
       const id = JSON.stringify([scope, key.queryKey]); let pending = this.#pending.get(id);
       if (!pending) { pending = refreshSavings(this.dependencies, scope); this.#pending.set(id, pending); }
       try { await pending; } catch (error) { problem = safeProblem(error); } finally { if (this.#pending.get(id) === pending) this.#pending.delete(id); }

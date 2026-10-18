@@ -19,7 +19,7 @@ export class RepeatService {
   async list(input: RepeatQuery = {}): Promise<RepeatListView> {
     const query = repeatQuerySchema.parse(input), scope = this.scope(), { cache, repository } = this.dependencies, key = repeatKey(query); let source = cache.read(scope, key), problem;
     const connected = repository.sql.exec<{ state: string }>('SELECT state FROM connection WHERE singleton=1').one().state === 'connected';
-    if (source.stale && connected) { try { await this.coalesce(key.queryKey, () => refreshRepeats(this.dependencies, scope, query)); } catch (error) { problem = safeProblem(error); } source = cache.read(scope, key); }
+    if (source.needsValidation && connected) { try { await this.coalesce(key.queryKey, () => refreshRepeats(this.dependencies, scope, query)); } catch (error) { problem = safeProblem(error); } source = cache.read(scope, key); }
     return { items: source.items.map((row) => repeatView(asBillObject(row.raw))).filter((row) => (!query.statuses || query.statuses.includes(row.status)) && (!query.types || query.types.includes(row.type))), freshness: { revision: source.revision, complete: source.complete, stale: source.stale || !connected || !!problem, syncedAt: source.validatedAt === null ? null : new Date(source.validatedAt).toISOString() }, ...(problem ? { problem } : {}) };
   }
   async preview(input: RepeatPreviewInput) {
@@ -27,7 +27,7 @@ export class RepeatService {
     const scope = this.scope(), { cache } = this.dependencies, maps: HolidayYears = {}, attempted = new Set<number>(); let needed = Number(new Date(Date.parse(value.fields.startDate + 'T00:00:00Z') + 86400000).toISOString().slice(0, 4));
     for (let attempt = 0; attempt < 3; attempt++) {
       if (attempted.has(needed) || needed < 1 || needed > 9999) throw new DomainError('HOLIDAYS_MISSING', '所需年份没有可核对的官方节假日数据'); attempted.add(needed); const key = holidayKey([needed]); let source = cache.read(scope, key);
-      if (source.stale) { const year = needed; await this.coalesce(key.queryKey, async () => { const stamp = cache.captureRead(scope, key), reply = await this.dependencies.client.request('repeat.holidays', { uid: scope.uid, years: String(year) }, scope), all = holidayYears(reply.data), data = { years: { [String(year)]: all[String(year)] ?? {} } }; if (cache.applyRead(stamp, { items: [{ id: key.queryKey, kind: 'holiday', raw: data }], complete: true }) !== 'applied') throw new DomainError('SOURCE_SUPERSEDED', '节假日读取期间发生变化'); }); source = cache.read(scope, key); }
+      if (source.needsValidation) { const year = needed; await this.coalesce(key.queryKey, async () => { const stamp = cache.captureRead(scope, key), reply = await this.dependencies.client.request('repeat.holidays', { uid: scope.uid, years: String(year) }, scope), all = holidayYears(reply.data), data = { years: { [String(year)]: all[String(year)] ?? {} } }; if (cache.applyRead(stamp, { items: [{ id: key.queryKey, kind: 'holiday', raw: data }], complete: true }) !== 'applied') throw new DomainError('SOURCE_SUPERSEDED', '节假日读取期间发生变化'); }); source = cache.read(scope, key); }
       Object.assign(maps, source.items[0] ? holidayYears(source.items[0].raw) : {});
       try { return previewRepeat(value, maps); } catch (error) { const missing = error instanceof DomainError && error.code === 'HOLIDAYS_MISSING' ? /缺少(\d{4})年/.exec(error.detail) : null; if (!missing || attempted.has(Number(missing[1]))) throw error; needed = Number(missing[1]); }
     }

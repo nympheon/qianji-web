@@ -8,10 +8,16 @@ import { compareMoney } from '../../shared/numbers';
 export function prepareAssetSubmit(command: MutationCommand, ctx: OperationContext) {
   const input = assetSubmitSchema.parse(restoreBillInput(command.input)), create = input.mode === 'create';
   const fields = input.mode === 'create' ? input.fields : input.changes;
-  const raw: BillObject = create ? { id: -1, userid: command.scope.uid, status: 0, sort: 0, incount: 1, money: 0, lastPayTime: 0 } : { ...loadAsset(ctx, command.scope, input.id) };
+  const raw: BillObject = create ? { id: -1, userid: command.scope.uid, status: 0, sort: 0, incount: 1, money: 0, lastPayTime: 0, createtime:0, usecount:0 } : { ...loadAsset(ctx, command.scope, input.id) };
   if (input.mode === 'edit' && billVersion(raw) !== input.expectedVersion) return assetError('DRAFT_SOURCE_CHANGED', '资产资料已变化，请重新查看');
   if (numericText(raw.type, '-1') === '6') return assetError('ASSET_WRAPPER_UNSUPPORTED', '汇总包装项不能当成真实资产编辑');
-  if (input.mode === 'create') { raw.type = input.fields.type; raw.stype = input.fields.subtype; raw.money = new LosslessNumber(input.fields.money); raw.currency = input.fields.currency; }
+  if (input.mode === 'create') {
+    const choice=ctx.repository.readResources(command.scope,'assetType',{domain:'catalogs',ids:[`${input.fields.type}:${input.fields.subtype}`]}).items[0];
+    if(!choice)return assetError('ASSET_TYPE_NOT_LOADED','请先读取官方资产类型，选择已确认的类型');
+    const definition=asBillObject(asBillObject(choice.raw).type);
+    raw.type = input.fields.type; raw.stype = input.fields.subtype; raw.money = new LosslessNumber(input.fields.money); raw.currency = input.fields.currency;
+    if(fields.icon===undefined){if(typeof definition.icon!=='string'||!definition.icon)return assetError('ASSET_TYPE_ICON_MISSING','官方资产类型未提供图标，请重新载入类型');raw.icon=definition.icon;}
+  }
   if (fields.name !== undefined) raw.name = fields.name;
   if (fields.remark !== undefined) raw.remark = fields.remark;
   if (fields.inCount !== undefined) raw.incount = fields.inCount ? 1 : 0;

@@ -1,0 +1,7 @@
+{
+  "source":"2026-10-19 upstream observation using newly created future test tasks",
+  "request":"repeat_task/toggle",
+  "observedFor":["pause","resume"],
+  "response":{"ec":200,"data":{}},
+  "meaning":"Acknowledgment only. Does not prove task target or absence of generated bills."
+}

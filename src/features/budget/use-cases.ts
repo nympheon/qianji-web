@@ -10,15 +10,21 @@ import { assetError } from '../assets/model';
 export function createBudgetMutationHandler(): MutationHandler { return {
   prepare: async (command, ctx) => {
     if (command.action !== 'budget.submit') return assetError('BUDGET_ACTION_UNSUPPORTED', '预算动作尚未实现'); const input = budgetChangesSchema.parse(restoreBillInput(command.input)), scope = command.scope;
+    if(input.changes.some(change=>change.categoryId===null&&compareMoney(change.limit,'0')===0))return assetError('BUDGET_TOTAL_CANCEL_UNVERIFIED','总预算清空的上游语义尚未核验，请保留正数总预算；分类预算可设0取消');
     const query = budgetQuerySchema.parse({ bookId: input.bookId, date: input.date, range: input.range, zone: input.zone });
     if (!ctx.repository.readResources(scope, 'book', { domain: 'books', ids: [query.bookId] }).items.length) return assetError('BOOK_NOT_LOADED', '目标账本尚未载入'); const prior = await refreshBudget(ctx, scope, query);
     if (prior.editVersion !== input.expectedVersion) return assetError('DRAFT_SOURCE_CHANGED', '预算配置已变化，请重新查看');
-    const changes = input.changes.map((change) => {
+    const key=(row:BillObject)=>numericText(row.flag,'2')==='1'?'total':positiveBillId(row.cateid)!;
+    const collection=new Map(prior.list.map(row=>[key(row),{...row}]));
+    for(const change of input.changes) {
       if (change.categoryId) { const row = ctx.repository.readResources(scope, 'category', { domain: 'ledger', ids: [change.categoryId] }).items[0]; if (!row) return assetError('CATEGORY_NOT_LOADED', '预算分类尚未载入'); const category = asBillObject(row.raw); if (!['-1', query.bookId].includes(numericText(category.bookid, '-1')) || numericText(category.type, '0') !== '0') return assetError('CATEGORY_SCOPE_INVALID', '预算分类必须属于所选账本的支出类型'); }
-      const old = prior.list.find((row) => change.categoryId === null ? numericText(row.flag, '2') === '1' : numericText(row.flag, '2') === '2' && positiveBillId(row.cateid) === change.categoryId);
+      const id=change.categoryId??'total';
+      if(compareMoney(change.limit,'0')===0){collection.delete(id);continue;}
+      const old = collection.get(id);
       const raw: BillObject = old ? { ...old } : { bookid: new LosslessNumber(query.bookId), userid: scope.uid, type: query.date.kind === 'month' ? 1 : 2, typeinfo: budgetTypeInfo(query), flag: change.categoryId === null ? 1 : 2, cateid: new LosslessNumber(change.categoryId ?? '-1'), count: 0, used: 0, notbudget: 0, totalCateLimit: 0, totalCateUsed: 0 };
-      raw.money = new LosslessNumber(change.limit); delete raw.category; delete raw.createtime; return raw;
-    });
+      raw.money = new LosslessNumber(change.limit); collection.set(id,raw);
+    }
+    const changes=[...collection.values()].map(raw=>{delete raw.category;delete raw.createtime;return raw;});
     const logicalId = `budget:${command.requestId}`, affectedIds = [budgetKey(query).queryKey]; return { payload: { scope: { ...scope }, query, params: { ...budgetParams(scope, query), changelist: stringifyWire(changes) }, logicalId, changes: input.changes }, items: [{ id: logicalId, affectedIds }], affectedIds, affectedDomains: ['budget'] };
   },
   send: async (prepared, ctx) => { const p = asBillObject(prepared.payload), s = asBillObject(p.scope); return ctx.client.request('budget.submit', asBillObject(p.params), { uid: String(s.uid), connectionEpoch: String(s.connectionEpoch) }); },

@@ -7,12 +7,20 @@ export async function reconcileMutation(operation: StoredOperation, handler: Mut
   if (operation.state === 'queued') return operation;
   if (!operation.items.some((item) => item.state === 'uncertain' || item.state === 'sending')) { jobs.remove(operation.id); return operation; }
   context.repository.assertScope(operation.scope);
+  const received=operation.prepared?.received;
+  if(received&&!received.applied){
+    try{
+      const reply={...received.reply,httpStatus:Number(received.reply.httpStatus)};
+      operation=context.repository.transaction(()=>store.markReceiptApplied(store.apply(operation,handler.applyReceipt(operation.prepared!,reply,{...context,client:context.client.asReadOnly()})),true));
+    }catch(error){operation=store.markUnresolved(operation,'uncertain',safeProblem(error));}
+    if(!operation.items.some(item=>item.state==='uncertain'||item.state==='sending')){jobs.remove(operation.id);return operation;}
+  }
   try {
     const result = await handler.reconcile(operation, { ...context, client: context.client.asReadOnly() });
     context.repository.assertScope(operation.scope);
     operation = context.repository.transaction(() => {
       const update = result.receipt && operation.prepared
-        ? handler.applyReceipt(operation.prepared, result.receipt, context) : result;
+        ? handler.applyReceipt(operation.prepared, result.receipt, {...context,client:context.client.asReadOnly()}) : result;
       return store.apply(operation, update);
     });
   } catch (error) {

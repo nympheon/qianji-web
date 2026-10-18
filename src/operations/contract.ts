@@ -10,7 +10,9 @@ export type ItemState = 'queued' | 'sending' | 'succeeded' | 'failed' | 'uncerta
 export interface MutationCommand { action: string; input: WireJson; scope: ActorScope; requestId: string }
 export interface ExpectedAssetEffect { assetId: Id; currency: Id; delta: string; balanceBefore: string; expectedBalance: string; expectedLastPayTimeSec?: string; confirmation: 'expected' }
 export interface PreparedItem { id: Id; affectedIds: readonly Id[]; assetEffects?: ExpectedAssetEffect[] }
-export interface PreparedMutation { payload: WireJson; items: readonly PreparedItem[]; affectedIds: readonly Id[]; affectedDomains?: readonly SyncDomain[] }
+export interface PreparedMutation { payload: WireJson; items: readonly PreparedItem[]; affectedIds: readonly Id[]; affectedDomains?: readonly SyncDomain[];
+  received?:{applied:boolean;reply:{ec:string;data:WireJson;httpStatus:string;hasMore?:boolean}};
+}
 export interface OperationItem extends PreparedItem { state: ItemState; error: Problem | null }
 export interface OperationView {
   id: Id; action: string; state: OperationState; items: OperationItem[];
@@ -28,6 +30,9 @@ export interface OperationUpdate { items: readonly ItemUpdate[]; idMap?: Record<
 export interface ReconciliationResult extends OperationUpdate { receipt?: ProtocolReply }
 export interface OperationContext {
   repository: Repository; client: QianjiClient; clock: Clock;
+  /** A private runner may impose a narrower resource policy; never derived from public input. */
+  authorizeMutation?: (command:MutationCommand) => void;
+  authorizePrepared?: (command:MutationCommand, prepared:PreparedMutation) => void;
   /** Available only during the original send; never during read-only reconciliation. */
   currentOperation?: () => StoredOperation;
   checkpoint?: (prepared: PreparedMutation, update: OperationUpdate | (() => OperationUpdate)) => void;

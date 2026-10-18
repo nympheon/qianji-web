@@ -24,6 +24,11 @@ async function setup() {
   return { app, clock, upstream, data, source, service, run };
 }
 describe('native budget configuration and progress', () => {
+  it('submits the complete native budget collection and removes zero goals instead of posting zero money',async()=>{
+    const s=await setup();s.data.list.push({...config,budgetid:'9002',flag:2,cateid:10,money:'100'});let saved:ReturnType<typeof asBillObject>[]=[];
+    s.upstream.respond(async()=>{const call=s.upstream.calls.at(-1)!;if(call.url.endsWith('/submitv2')){saved=(parseWire(new URLSearchParams(call.body).get('changelist')!) as import('../../src/shared/wire-json').WireJson[]).map(asBillObject);return new Response(stringifyWire({ec:200,data:{list:saved}}));}return new Response(stringifyWire({ec:200,data:s.data}));});
+    const before=await s.service(v=>v.list(query));const op=await s.run(c=>c.submit({action:'budget.submit',scope:s.app.scope,requestId:'remove-one-preserve-other',input:{...query,expectedVersion:before.editVersion,changes:[{categoryId:'10',limit:'0'}]}}));expect(op.state).toBe('succeeded');expect(saved.map(row=>[numericText(row.budgetid,''),numericText(row.money,'')])).toEqual([['9001','1000']]);
+  });
   it('uses the shared ledger hydration to reflect a later-period refund in the historical source budget', async () => {
     const s = await setup(); await s.app.repository(async (r, storage) => {
       r.sql.exec("UPDATE connection SET state='disconnected' WHERE singleton=1").toArray(); const sourceBill = { id: '1001', bookid: '1', type: 0, money: '100', time: 1792272000, cateid: '11', extra: {} };
@@ -51,7 +56,7 @@ describe('native budget configuration and progress', () => {
     const bill = summarizeBill(projectBill({ id: '1001', bookid: 1, type: 0, money: '100', time: 1792272000, cateid: '11', extra: { flag: 1 } })); s.source.bills.push({ ...bill, missingRelatedIds: [], sources: [], incompleteReasons: [], refunds: [], reimbursements: [], freshness: s.source.freshness, editVersion: 'a'.repeat(64) });
     const value = await s.service((v) => v.list(query)); expect(value.progress.used).toBe('100'); expect(value.progress.rows.map((row) => row.used)).toEqual(['100', '100', '100']); s.source.bills[0]!.flags = 2; const excluded = await s.service((v) => v.list(query)); expect(excluded.progress.used).toBe('0'); expect(excluded.progress.totalNotBudget).toBe('100');
   });
-  it('sends zero to cancel an existing total budget and retains unknown fields in the native change object', async () => {
-    const s = await setup(); Object.assign(s.data.list[0]!, { futureSetting: 'keep', createtime: 1 }); const prior = await s.service((v) => v.list(query)); const op = await s.run((c) => c.submit({ action: 'budget.submit', requestId: 'budget-zero', scope: s.app.scope, input: { ...query, expectedVersion: prior.editVersion, changes: [{ categoryId: null, limit: '0' }] } })); expect(op.state).toBe('succeeded'); const form = new URLSearchParams(s.upstream.calls.find((call) => call.url.includes('/submitv2'))!.body); expect(JSON.parse(form.get('changelist')!)[0]).toMatchObject({ money: 0, flag: 1, cateid: -1, type: 1, typeinfo: '2026,10', futureSetting: 'keep' });
+  it('keeps unsupported total cancellation unsent after the actual upstream rejection', async () => {
+    const s = await setup(), prior = await s.service(v=>v.list(query));const op=await s.run(c=>c.submit({action:'budget.submit',scope:s.app.scope,requestId:'budget-zero',input:{...query,expectedVersion:prior.editVersion,changes:[{categoryId:null,limit:'0'}]}}));expect(op.error?.code).toBe('BUDGET_TOTAL_CANCEL_UNVERIFIED');expect(s.upstream.calls.some(call=>call.url.includes('/submitv2'))).toBe(false);
   });
 });

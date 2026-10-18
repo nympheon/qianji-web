@@ -41,6 +41,13 @@ async function scenario() {
 }
 
 describe('native bill writes', () => {
+  it('reconciles a lost no-asset write when native sync omits unbound asset ID sentinels and zero extras',async()=>{
+    const s=await scenario();s.upstream.respond(async()=>{throw new Error('accepted response lost');});
+    await s.app.repository(async repository=>{
+      const handler=createLedgerMutationHandler({reconcileSource:async()=>{const expected=s.sent()[0]!.changed[0]!,actual:typeof expected={...expected,status:1};delete actual.assetid;delete actual.fromid;delete actual.targetid;delete actual.extra;repository.applyPage(s.app.scope,'ledger',{upserts:[projectBill(actual)],deletes:[],resources:[],pageState:null,complete:true,validatedAt:s.clock.nowIso()});return true;}});
+      const c=new Coordinator({repository,clock:s.clock,client:s.upstream.client},new Map([['ledger.create',handler]])),op=await c.submit(s.command('ledger.create',{bills:[s.newInput({enteredMoney:'1',fee:'0',assetId:null})]},'native-omitted-sentinels'));expect(op.state).toBe('uncertain');expect((await c.reconcileOperation(s.app.scope,op.id)).state).toBe('succeeded');expect(s.upstream.calls).toHaveLength(1);
+    });
+  });
   it('rejects contradictory target and base values for the same currency before sending',async()=>{
     const s=await scenario();await s.app.repository(repository=>new ResourceCache(repository,s.clock).confirmResources(s.app.scope,'assets',[{id:'20',kind:'asset',raw:{id:'20',type:1,currency:'CNY',money:'1000'}}]));const result=await s.run(c=>c.submit(s.command('ledger.create',{bills:[s.newInput({assetId:'20',currency:{srcSymbol:'USD',srcValue:'100',targetSymbol:'CNY',targetValue:'630',baseSymbol:'CNY',baseValue:'631'}})]})));expect(result.error?.code).toBe('BILL_CURRENCY_INVALID');expect(s.upstream.calls).toHaveLength(0);
   });

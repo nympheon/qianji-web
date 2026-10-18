@@ -7,6 +7,13 @@ import type { JobView } from './contract';
 import { DomainError } from '../../shared/errors';
 
 export interface FreshnessDependencies { repository: Repository; clock: Clock; sync: SyncService }
+/** Reconciliation still checks its own post-send watermark and matching records. */
+export function sourceCheckCompleted(result:{job:Pick<JobView,'state'>|null},dataset:{complete:boolean;validatedAt:string|null}|null,nowMs:number):boolean{
+  if(result.job)return result.job.state==='succeeded';
+  if(!dataset?.complete||!dataset.validatedAt)return false;
+  const elapsed=nowMs-Date.parse(dataset.validatedAt);
+  return elapsed>=0&&elapsed<=5000;
+}
 export class FreshnessService {
   readonly #pending = new Map<string, Promise<JobView>>();
   constructor(private readonly dependencies: FreshnessDependencies) {}

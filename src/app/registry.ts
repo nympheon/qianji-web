@@ -3,6 +3,7 @@ import type { AppReply } from '../shared/reply';
 import { DomainError } from '../shared/errors';
 import { listCapabilities } from './capabilities';
 import { useCase, type UseCase, type UseCaseContext } from './use-case';
+import {writeReleaseProblem} from './write-release';
 
 function scope(context: UseCaseContext) { const scope = context.connection.scope(); if (!scope) throw new DomainError('CONNECTION_REQUIRED', '请先连接钱迹'); return scope; }
 const handlers: Record<ActionName, UseCase> = {
@@ -110,7 +111,7 @@ const handlers: Record<ActionName, UseCase> = {
   'capabilities.list': useCase('capabilities.list', (ctx) => listCapabilities(ctx)),
 };
 export class AppRegistry {
-  constructor(private readonly context: UseCaseContext) {}
+  constructor(private readonly context: UseCaseContext, private readonly authorizeWrite?: (action:ActionName,input:unknown)=>void) {}
   private currentJob() {
     const ctx = this.context, current = ctx.connection.scope(); if (!current) return null;
     const parent = ctx.repository.sql.exec<{ id: string }>("SELECT id FROM rebuild_jobs WHERE uid=? AND connection_epoch=? AND state='running' AND EXISTS(SELECT 1 FROM json_each(rebuild_jobs.domains) WHERE value='ledger') ORDER BY rowid DESC LIMIT 1", current.uid, current.connectionEpoch).toArray()[0];
@@ -123,7 +124,9 @@ export class AppRegistry {
       if (!Object.hasOwn(handlers, name)) throw new DomainError('ACTION_NOT_FOUND', '该操作不存在');
       const action = name as ActionName, definition = actionDefinitions[action];
       if (!actionSchemas[action].safeParse(input).success) throw new DomainError('INVALID_ACTION_INPUT', '操作参数无效，请检查筛选或输入');
-      if (definition.unavailable) return { status: 'unavailable', data: null, freshness: null, error: { code: definition.unavailable.code, message: definition.unavailable.reason } };
+      if (definition.kind === 'write') this.authorizeWrite?.(action,input);
+      if(definition.kind==='write'&&!this.authorizeWrite){const problem=writeReleaseProblem(action,input);if(problem)return {status:'unavailable',data:null,freshness:null,error:problem};}
+      if (definition.unavailable && !(definition.kind === 'write' && definition.unavailable.code === 'WRITE_LIVE_UNVERIFIED' && this.authorizeWrite)) return { status: 'unavailable', data: null, freshness: null, error: { code: definition.unavailable.code, message: definition.unavailable.reason } };
       if (definition.requiresAccount && !this.context.connection.scope()) return { status: 'unavailable', data: { connectionUrl: '/connection' }, freshness: null, error: { code: 'CONNECTION_REQUIRED', message: '请先打开连接页面登录钱迹' } };
       if (action === 'ledger.statistics') {
         const fresh = await this.context.freshness.ensureFresh(scope(this.context), ['ledger'], 'normal'), job = this.currentJob();

@@ -65,7 +65,7 @@ export class AssetService {
   private freshness(source: CacheView & { problem?: Problem }) { return { revision: source.revision, complete: source.complete, stale: source.stale || !this.connected() || !!source.problem, syncedAt: source.validatedAt === null ? null : new Date(source.validatedAt).toISOString() }; }
   private async resources(key: CacheKey, load: (scope: ActorScope) => Promise<ResourceRecord[]>): Promise<CacheView & { problem?: Problem }> {
     const scope = this.scope(), { cache } = this.dependencies;
-    let current = cache.read(scope, key); if (!current.stale || !this.connected()) return current;
+    let current = cache.read(scope, key); if (!current.needsValidation || !this.connected()) return current;
     const fingerprint = JSON.stringify([scope.uid, scope.connectionEpoch, key.queryKey]), pending = this.#pending.get(fingerprint);
     if (pending) { try { await pending; return cache.read(scope, key); } catch (error) { return { ...cache.read(scope, key), problem: safeProblem(error) }; } }
     const request = (async () => { const stamp = cache.captureRead(scope, key), items = await load(scope), deletes = key.queryKey === assetGroupKey.queryKey ? missingGroups(this.dependencies.repository, scope, items) : undefined; if (cache.applyRead(stamp, { items, complete: true, ...(deletes ? { deletes } : {}) }) !== 'applied') return assetError('SOURCE_SUPERSEDED', '资源读取期间发生变化，请重新查看'); })();
@@ -73,7 +73,7 @@ export class AssetService {
     current = cache.read(scope, key); return current;
   }
   async types(): Promise<AssetTypesView> {
-    const key: CacheKey = { domain: 'assets', queryKey: 'asset:types', resourceKind: 'assetType' };
+    const key: CacheKey = { domain: 'catalogs', queryKey: 'asset:types', resourceKind: 'assetType' };
     const source = await this.resources(key, async (scope) => {
       const reply = await this.dependencies.client.request('asset.types', { uid: scope.uid }, scope);
       if (!Array.isArray(reply.data) || reply.hasMore || reply.data.length > 500) return assetError('ASSET_TYPES_INVALID', '资产类型列表无法识别或尚未完整返回');
@@ -128,7 +128,7 @@ export class AssetService {
     if (force && !this.connected()) return assetError('CONNECTION_REQUIRED', '核对资产写入前需要有效连接');
     let source = cache.read(scope, key);
     let problem: Problem | undefined;
-    if ((source.stale || force) && this.connected()) { try { await this.refreshList(scope, options.status); } catch (error) { problem = safeProblem(error); } source = cache.read(scope, key); }
+    if ((source.needsValidation || force) && this.connected()) { try { await this.refreshList(scope, options.status); } catch (error) { problem = safeProblem(error); } source = cache.read(scope, key); }
     const fingerprint = JSON.stringify([scope.uid, scope.connectionEpoch, options.status, options.limit, options.includeInstallments, source.revision]);
     let offset = 0;
     if (options.cursor) {

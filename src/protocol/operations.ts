@@ -3,7 +3,7 @@ interface OperationDefinition {
   act: string;
   constructor: 'normal' | 'sync-string';
   requiresSession: boolean;
-  response: 'object' | 'array' | 'native-list' | 'native-object' | 'native-integer' | 'optional';
+  response: 'object' | 'array' | 'native-list' | 'native-list-or-ack' | 'native-object' | 'native-integer' | 'optional';
   timeoutMs: number;
   readOnly: boolean;
 }
@@ -68,7 +68,7 @@ export const OPERATIONS = {
   'tag.reorder': op('tag', 'reordertag', 'normal', true, 'optional'), 'tagGroup.reorder': op('tag', 'reordergroup', 'normal', true, 'optional'),
   'budget.list': op('budget', 'list', 'normal', true, 'object', true), 'budget.submit': op('budget', 'submitv2', 'normal'),
   'repeat.list': op('repeat_task', 'list', 'normal', true, 'native-list', true),
-  'repeat.submit': op('repeat_task', 'submit', 'normal'), 'repeat.toggle': op('repeat_task', 'toggle', 'normal', true, 'native-list'),
+  'repeat.submit': op('repeat_task', 'submit', 'normal'), 'repeat.toggle': op('repeat_task', 'toggle', 'normal', true, 'native-list-or-ack'),
   'repeat.delete': op('repeat_task', 'delete', 'normal', true, 'optional'), 'repeat.bindBill': op('repeat_task', 'bindbill', 'normal', true, 'optional'),
   'repeat.holidays': op('repeat_task', 'holidays', 'normal', true, 'object', true),
   'installment.list': op('installment', 'list', 'normal', true, 'native-list', true), 'installment.submit': op('installment', 'submit', 'normal'),

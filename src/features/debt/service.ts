@@ -31,7 +31,7 @@ export class DebtService {
     const options = debtListSchema.parse(input), scope = this.scope(), { repository, cache, client } = this.dependencies, type = options.direction === 'borrow' ? 51 : 52, status = options.finished ? 1 : 0;
     const key: CacheKey = { domain: 'assets', queryKey: `asset:loans:${type}:${status}`, resourceKind: 'asset' }, fingerprint = JSON.stringify([scope.uid, scope.connectionEpoch, key.queryKey]);
     const connected = repository.sql.exec<{ state: string }>('SELECT state FROM connection WHERE singleton=1').one().state === 'connected'; let source = cache.read(scope, key), problem: Problem | undefined;
-    if (source.stale && connected) {
+    if (source.needsValidation && connected) {
       let pending = this.#pending.get(fingerprint);
       if (!pending) {
         pending = (async () => {

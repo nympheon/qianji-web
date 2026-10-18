@@ -22,12 +22,13 @@ function decode(prepared: PreparedMutation) {
   const scope: ActorScope = { uid: rawScope.uid, connectionEpoch: rawScope.connectionEpoch };
   return { scope, id: p.id, logicalId: p.logicalId, kind: p.kind, params: asBillObject(p.params), raw: asBillObject(p.raw), noop: p.noop === true, recordDifference: p.recordDifference === true, create: p.create === true, desired: p.desired, delta: p.delta, difference: p.difference, impact: p.impact, order: p.order, preparedAt: numericText(p.preparedAt, '0') };
 }
-export function createAssetMutationHandler(dependencies: { reconcileLedger?: (ctx: OperationContext) => Promise<boolean> } = {}): MutationHandler {
+export function createAssetMutationHandler(dependencies: { reconcileLedger?: (ctx: OperationContext) => Promise<boolean>; ensureTypes?:()=>Promise<unknown> } = {}): MutationHandler {
   return {
     prepare: async (command, ctx) => {
       const scope = command.scope, logicalId = `asset:${command.requestId}`;
       if (command.action === 'assets.submit') {
-        const value = prepareAssetSubmit(command, ctx), id = numericText(value.raw.id, '-1'), affectedIds = [value.create ? 'asset-catalog' : `asset:${id}`];
+        if(asBillObject(command.input).mode==='create')await dependencies.ensureTypes?.();
+        const value = prepareAssetSubmit(command, ctx), id = numericText(value.raw.id, '-1'), affectedIds = [value.create ? `asset-new:${command.requestId}` : `asset:${id}`];
         return { payload: { scope: { ...scope }, id, logicalId, kind: 'submit', raw: value.raw, create: value.create, params: { uid: scope.uid, v: stringifyWire(value.raw) } }, items: [{ id: logicalId, affectedIds }], affectedIds, affectedDomains: ['assets'] };
       }
       if (command.action === 'assets.delete') {

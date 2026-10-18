@@ -14,6 +14,7 @@ export interface CacheReadStamp { scope: ActorScope; key: CacheKey; datasetId: I
 export interface ResourceRefresh { items: ResourceRecord[]; complete: boolean; deletes?: Id[] }
 export interface CacheView {
   items: ResourceRecord[]; complete: boolean; stale: boolean; validatedAt: number | null;
+  needsValidation:boolean;
   changedAt: number | null; revision: string;
 }
 export class ResourceCache {
@@ -93,10 +94,11 @@ export class ResourceCache {
   read(scope: ActorScope, key: CacheKey): CacheView {
     this.repository.assertScope(scope);
     const query = this.query(scope, key), dataset = this.repository.dataset(scope, key.domain);
-    if (!query || !dataset || query.dataset_id !== dataset.id) return { items: [], complete: false, stale: true, validatedAt: null, changedAt: null, revision: dataset ? `${dataset.id}:${dataset.revision}:0` : 'unloaded' };
+    if (!query || !dataset || query.dataset_id !== dataset.id) return { items: [], complete: false, stale: true, needsValidation:true, validatedAt: null, changedAt: null, revision: dataset ? `${dataset.id}:${dataset.revision}:0` : 'unloaded' };
     const items = this.repository.sql.exec<{ id: string; kind: string; raw: string }>('SELECT r.id,r.kind,r.raw FROM source_members m JOIN resources r ON r.uid=m.uid AND r.domain=m.domain AND r.kind=m.kind AND r.id=m.resource_id WHERE m.uid=? AND m.domain=? AND m.query_key=? AND r.dataset_id=? ORDER BY m.position', scope.uid, key.domain, key.queryKey, dataset.id).toArray().map((row): ResourceRecord => ({ id: row.id, kind: row.kind as ResourceKind, raw: parseWire(row.raw) }));
     const complete = query.complete === 1 && query.invalidated === 0 && !this.repository.hasUncertainty(scope, key.domain);
-    return { items, complete, stale: !complete || query.validated_ms === null || this.clock.nowMs() - query.validated_ms >= 60_000,
+    const needsValidation=query.complete!==1||query.invalidated!==0||query.validated_ms===null||this.clock.nowMs()-query.validated_ms>=60_000;
+    return { items, complete, needsValidation, stale: !complete || needsValidation,
       validatedAt: query.validated_ms, changedAt: query.changed_ms, revision: `${dataset.id}:${dataset.revision}:${query.membership_revision}` };
   }
 }

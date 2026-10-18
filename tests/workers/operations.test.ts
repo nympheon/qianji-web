@@ -6,21 +6,23 @@ import type { ActorScope } from '../../src/shared/model';
 import type { MutationCommand, MutationHandler, OperationContext } from '../../src/operations/contract';
 import { ProtocolError } from '../../src/protocol/errors';
 import { commandDigest } from '../../src/operations/store';
+import { ResourceCache } from '../../src/storage/cache';
 
 async function scenario() {
   const app = await createTestApp();
   await app.repository((repo) => repo.sql.exec("UPDATE connection SET state='connected' WHERE singleton=1").toArray());
   const clock = new TestClock(Date.now());
   const upstream = createUpstream(clock, app.scope);
-  const counts = { send: 0, reconcile: 0, accepted: 0, maxSending: 0, sending: 0 };
+  const counts = { send: 0, reconcile: 0, accepted: 0, maxSending: 0, sending: 0, applies:0 };
   let loseReceipt = false;
   let hold: Promise<void> | null = null;
   let reconciled = false;
   let partial = false;
   let failReceipt = false;
+  let affectAssets=false;
   let reconcileWrite = false;
   const handler: MutationHandler = {
-    prepare: async (command) => ({ payload: command.input, items: [{ id: 'item-1', affectedIds: ['bill-1'] }, ...(partial ? [{ id: 'item-2', affectedIds: ['bill-2'] }] : [])], affectedIds: partial ? ['bill-1', 'bill-2'] : ['bill-1'] }),
+    prepare: async (command) => ({ payload: command.input, items: [{ id: 'item-1', affectedIds: ['bill-1'] }, ...(partial ? [{ id: 'item-2', affectedIds: ['bill-2'] }] : [])], affectedIds: partial ? ['bill-1', 'bill-2'] : ['bill-1'],affectedDomains:affectAssets?['assets' as const]:[] }),
     send: async () => {
       counts.send++; counts.sending++; counts.maxSending = Math.max(counts.maxSending, counts.sending);
       try {
@@ -31,6 +33,7 @@ async function scenario() {
       } finally { counts.sending--; }
     },
     applyReceipt: (_prepared, _reply, ctx) => {
+      counts.applies++;
       if (failReceipt) {
         ctx.repository.saveDraft(app.scope, 'receipt-partial', { mustRollback: true });
         throw new Error('simulated interruption before committing the receipt');
@@ -51,10 +54,19 @@ async function scenario() {
     });
   }
   const command = (requestId = 'key-1', scope: ActorScope = app.scope): MutationCommand => ({ action: 'test.write', input: { amount: '0.1' }, scope, requestId });
-  return { app, clock, counts, upstream, withCoordinator, command, setLoss: () => { loseReceipt = true; }, setPartial: () => { partial = true; }, setReconciled: () => { reconciled = true; }, failReceipt: () => { failReceipt = true; }, reconcileWrite: () => { reconcileWrite = true; }, hold(promise: Promise<void> | null) { hold = promise; } };
+  return { app, clock, counts, upstream, withCoordinator, command, setLoss: () => { loseReceipt = true; }, setPartial: () => { partial = true; }, setReconciled: () => { reconciled = true; }, failReceipt: () => { failReceipt = true; }, allowReceipt:()=>{failReceipt=false;},assetDomain:()=>{affectAssets=true;}, reconcileWrite: () => { reconcileWrite = true; }, hold(promise: Promise<void> | null) { hold = promise; } };
 }
 
 describe('durable mutation coordinator', () => {
+  it('can reparse an unapplied received receipt after a parser fix and restart without another upstream send',async()=>{
+    const s=await scenario();s.failReceipt();const first=await s.withCoordinator(c=>c.submit(s.command('received-before-parser-error')));expect(first.state).toBe('uncertain');await s.app.restart();s.allowReceipt();const recovered=await s.withCoordinator(c=>c.reconcileOperation(s.app.scope,first.id));expect(recovered.state).toBe('succeeded');expect(recovered.idMap).toEqual({'local-1':'bill-1'});expect(s.counts.send).toBe(1);expect(s.counts.reconcile).toBe(0);expect(s.counts.applies).toBe(2);
+  });
+  it('never reapplies a receipt whose partial effects have already committed',async()=>{
+    const s=await scenario();s.setPartial();const first=await s.withCoordinator(c=>c.submit(s.command('received-partial')));expect(first.state).toBe('partial');await s.app.restart();await s.withCoordinator(c=>c.reconcileOperation(s.app.scope,first.id));expect(s.counts.applies).toBe(1);expect(s.counts.send).toBe(1);expect(s.counts.reconcile).toBe(1);
+  });
+  it('requires a new source check after reparsing an old receipt instead of labelling it as the latest data',async()=>{
+    const s=await scenario();s.failReceipt();s.assetDomain();await s.withCoordinator(async(c,ctx)=>{const cache=new ResourceCache(ctx.repository,s.clock),key={domain:'assets' as const,queryKey:'asset-list',resourceKind:'asset' as const};cache.applyRead(cache.captureRead(s.app.scope,key),{items:[],complete:true});const op=await c.submit(s.command('old-receipt'));cache.applyRead(cache.captureRead(s.app.scope,key),{items:[],complete:true});expect(cache.read(s.app.scope,key).needsValidation).toBe(false);s.allowReceipt();expect((await c.reconcileOperation(s.app.scope,op.id)).state).toBe('succeeded');expect(cache.read(s.app.scope,key).needsValidation).toBe(true);expect(s.counts.send).toBe(1);});
+  });
   it('durably checkpoints an earlier receipt before a later batch loses its response', async () => {
     const app = await createTestApp();
     const clock = new TestClock(Date.now()), upstream = createUpstream(clock, app.scope);

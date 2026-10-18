@@ -37,7 +37,7 @@ export class BookService {
   }
   private async resources(key: CacheKey, load: (scope: ActorScope) => Promise<ResourceRecord[]>): Promise<CacheView & { problem?: Problem }> {
     const scope = this.scope(), { cache, repository } = this.dependencies;
-    const current = cache.read(scope, key), connected = repository.sql.exec<{ state: string }>('SELECT state FROM connection WHERE singleton=1').one().state === 'connected'; if (!current.stale || !connected) return current;
+    const current = cache.read(scope, key), connected = repository.sql.exec<{ state: string }>('SELECT state FROM connection WHERE singleton=1').one().state === 'connected'; if (!current.needsValidation || !connected) return current;
     const id = JSON.stringify([scope.uid, scope.connectionEpoch, key.queryKey]); let pending = this.#pending.get(id);
     if (!pending) { pending = (async () => { const stamp = cache.captureRead(scope, key), items = await load(scope); if (cache.applyRead(stamp, { items, complete: true }) !== 'applied') return assetError('SOURCE_SUPERSEDED', '账本资料读取期间发生变化，请重新查看'); })(); this.#pending.set(id, pending); }
     try { await pending; return cache.read(scope, key); } catch (error) { return { ...cache.read(scope, key), problem: safeProblem(error) }; } finally { if (this.#pending.get(id) === pending) this.#pending.delete(id); }
@@ -73,7 +73,7 @@ export class BookService {
     const options = bookListSchema.parse(input), scope = this.dependencies.connection.scope() ?? assetError('CONNECTION_REQUIRED', '请先连接钱迹'), { cache, repository } = this.dependencies;
     let source = cache.read(scope, bookListKey), problem: Problem | undefined;
     const connected = repository.sql.exec<{ state: string }>('SELECT state FROM connection WHERE singleton=1').one().state === 'connected';
-    if (source.stale && connected) {
+    if (source.needsValidation && connected) {
       const key = JSON.stringify([scope.uid, scope.connectionEpoch]); let pending = this.#pending.get(key);
       if (!pending) { pending = refreshBooks(this.dependencies, scope); this.#pending.set(key, pending); }
       try { await pending; } catch (error) { problem = safeProblem(error); } finally { if (this.#pending.get(key) === pending) this.#pending.delete(key); }

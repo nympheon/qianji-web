@@ -243,5 +243,10 @@ function equivalentBusinessFields(actual: BillObject, expected: BillObject): boo
     return actual === expected;
   };
   const fields = ['id', 'bookid', 'type', 'time', 'money', 'cateid', 'assetid', 'fromid', 'targetid', 'remark', 'extra', 'images'];
-  return fields.every((key) => !Object.hasOwn(expected, key) || equivalent(key === 'extra' ? billExtra(actual) : actual[key], expected[key]));
+  const unbound=(value:WireJson|undefined)=>value==null||['-1','0'].includes(numericText(value,''));
+  return fields.every((key) => {
+    if(!Object.hasOwn(expected,key))return true;
+    if(['assetid','fromid','targetid'].includes(key)&&unbound(expected[key]))return unbound(actual[key]);
+    return equivalent(key === 'extra' ? billExtra(actual) : actual[key], expected[key]);
+  });
 }

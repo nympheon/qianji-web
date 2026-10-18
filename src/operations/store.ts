@@ -6,6 +6,7 @@ import { DomainError } from '../shared/errors';
 import { parseWire, stringifyWire, type WireJson } from '../shared/wire-json';
 import type { Repository } from '../storage/database';
 import type { ItemState, MutationCommand, OperationItem, OperationState, OperationUpdate, OperationView, PreparedMutation, StoredOperation } from './contract';
+import type { ProtocolReply } from '../protocol/client';
 
 type OperationRow = {
   id: string; uid: string; connection_epoch: string; request_id: string; action: string;
@@ -49,7 +50,7 @@ function aggregate(items: readonly OperationItem[]): OperationState {
   return 'uncertain';
 }
 function encodePrepared(prepared: PreparedMutation): string {
-  return stringifyWire({ payload: prepared.payload, affectedIds: [...prepared.affectedIds], affectedDomains: [...prepared.affectedDomains ?? []], items: prepared.items.map((item) => ({ id: item.id, affectedIds: [...item.affectedIds], ...(item.assetEffects ? { assetEffects: item.assetEffects.map((effect) => ({ ...effect })) } : {}) })) });
+  return stringifyWire({ payload: prepared.payload, affectedIds: [...prepared.affectedIds], affectedDomains: [...prepared.affectedDomains ?? []], items: prepared.items.map((item) => ({ id: item.id, affectedIds: [...item.affectedIds], ...(item.assetEffects ? { assetEffects: item.assetEffects.map((effect) => ({ ...effect })) } : {}) })),...(prepared.received?{received:{applied:prepared.received.applied,reply:{...prepared.received.reply}}}:{}) });
 }
 
 export class OperationStore {
@@ -99,6 +100,25 @@ export class OperationStore {
       this.repository.sql.exec('UPDATE source_queries SET invalidated=1 WHERE uid=? AND domain=?', operation.scope.uid, domain).toArray();
     }
     return this.get(operation.scope, operation.id)!;
+  }
+  saveReceived(operation:StoredOperation,reply:ProtocolReply):StoredOperation{
+    this.repository.assertScope(operation.scope);
+    if(!operation.prepared||operation.sendCount!==1)throw new DomainError('RECEIPT_WITHOUT_SEND','回执缺少已发送操作');
+    rejectCredentials(reply.data);
+    const prepared:PreparedMutation={...operation.prepared,received:{applied:false,reply:{ec:reply.ec,data:reply.data,httpStatus:String(reply.httpStatus),...(reply.hasMore===undefined?{}:{hasMore:reply.hasMore})}}};
+    this.repository.sql.exec('UPDATE operations SET prepared=?,updated_ms=? WHERE id=?',encodePrepared(prepared),this.clock.nowMs(),operation.id).toArray();
+    return this.get(operation.scope,operation.id)!;
+  }
+  markReceiptApplied(operation:StoredOperation,replayed=false):StoredOperation{
+    if(!operation.prepared?.received)return operation;
+    const prepared:PreparedMutation={...operation.prepared,received:{...operation.prepared.received,applied:true}};
+    this.repository.sql.exec('UPDATE operations SET prepared=?,updated_ms=? WHERE id=?',encodePrepared(prepared),this.clock.nowMs(),operation.id).toArray();
+    if(replayed)for(const domain of new Set(prepared.affectedDomains??[])){
+      this.repository.bumpSourceGeneration(operation.scope,domain);
+      this.repository.sql.exec('UPDATE source_queries SET invalidated=1 WHERE uid=? AND domain=?',operation.scope.uid,domain).toArray();
+      this.repository.sql.exec('UPDATE datasets SET validated_at=NULL WHERE uid=? AND domain=?',operation.scope.uid,domain).toArray();
+    }
+    return this.get(operation.scope,operation.id)!;
   }
   markUnresolved(operation: StoredOperation, state: 'failed' | 'uncertain', error: Problem | null): StoredOperation {
     const items = operation.items.map((item) => item.state === 'succeeded' || item.state === 'failed' ? item : { ...item, state, error });

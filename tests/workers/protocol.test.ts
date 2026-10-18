@@ -13,6 +13,11 @@ const context = { clock, deviceId: () => '0123456789abcdef0123456789abcdef', rou
 afterEach(() => vi.useRealTimers());
 
 describe('APK native signing contract', () => {
+  it('recognizes only the observed empty repeat-toggle acknowledgment, preserving real bill lists',async()=>{
+    const ack=new QianjiClient({...context,fetch:async()=>Response.json({ec:200,data:{}})});expect(await ack.request('repeat.toggle',{},scope)).toEqual({ec:'200',data:null,httpStatus:200});await expect(ack.request('asset.types',{},scope)).rejects.toMatchObject({code:'QIANJI_RESPONSE_INVALID'});
+    const list=new QianjiClient({...context,fetch:async()=>new Response('{"ec":200,"data":{"list":[{"id":1792000000123100001}]}}')});expect(stringifyWire((await list.request('repeat.toggle',{},scope)).data)).toBe('[{"id":1792000000123100001}]');
+    const unknown=new QianjiClient({...context,fetch:async()=>Response.json({ec:200,data:{unexpected:true}})});await expect(unknown.request('repeat.toggle',{},scope)).rejects.toMatchObject({code:'QIANJI_RESPONSE_INVALID'});
+  });
   it.each(vectors.vectors)('matches native $ctrl/$act at version $versionCode', vector => {
     const reqid = createReqidv2({ packageName: vector.package, versionCode: vector.versionCode, nowMs: vector.nowMs, ctrl: vector.ctrl, act: vector.act });
     expect(reqid).toBe(vector.reqidv2);

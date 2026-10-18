@@ -17,6 +17,7 @@ async function setup() {
   const app = await createTestApp(), clock = new TestClock(Date.now() + 3600_000), upstream = createUpstream(clock, app.scope), original = asset();
   await app.repository((repo) => {
     repo.sql.exec("UPDATE connection SET state='connected' WHERE singleton=1").toArray();
+    new ResourceCache(repo,clock).confirmResources(app.scope,'catalogs',[{id:'1:11',kind:'assetType',raw:{groupName:'资金',type:{type:1,stype:11,icon:'official-cash'}}}]);
     for (const domain of ['ledger', 'assets'] as const) { repo.createDataset(app.scope, domain, domain); repo.applyPage(app.scope, domain, { upserts: [], deletes: [], resources: domain === 'assets' ? [{ id: '10', kind: 'asset', raw: original }] : [], pageState: null, complete: true, validatedAt: clock.nowIso() }, domain); repo.switchDataset(app.scope, domain, domain, null); }
   });
   upstream.respond(async () => new Response(stringifyWire({ ec: 200, data: { asset: asset('10', '120') } })));
@@ -25,6 +26,24 @@ async function setup() {
   return { app, clock, upstream, original, command, run };
 }
 describe('native assets and balance changes', () => {
+  it('does not block a distinct new asset behind another unconfirmed creation or erase its uncertainty',async()=>{
+    const s=await setup();let sent=0;s.upstream.respond(async()=>{if(++sent===1)throw new Error('lost first creation');return new Response(stringifyWire({ec:200,data:{asset:{...asset('201','0'),name:'second-new',icon:'official-cash'}}}));});
+    const first={action:'assets.submit',scope:s.app.scope,requestId:'independent-first',input:{mode:'create',fields:{name:'first-new',type:1,subtype:11,currency:'CNY',money:'0',inCount:true}}};
+    await s.run(async c=>{expect((await c.submit(first)).state).toBe('uncertain');expect((await c.submit({...first,requestId:'independent-second',input:{mode:'create',fields:{...first.input.fields,name:'second-new'}}})).state).toBe('succeeded');expect((await c.submit(first)).state).toBe('uncertain');});expect(sent).toBe(2);await s.app.repository(repository=>expect(repository.hasUncertainty(s.app.scope,'assets')).toBe(true));
+  });
+  it('fills the official asset type icon and native primitive defaults before a new submit',async()=>{
+    const s=await setup();await s.app.repository(repository=>new ResourceCache(repository,s.clock).confirmResources(s.app.scope,'catalogs',[{id:'1:11',kind:'assetType',raw:{groupName:'资金',type:{type:1,stype:11,icon:'official-cash'}}}]));
+    const created={...asset('201','0'),name:'native-new',icon:'official-cash'};s.upstream.respond(async()=>new Response(stringifyWire({ec:200,data:{asset:created}})));
+    const result=await s.run(c=>c.submit({action:'assets.submit',scope:s.app.scope,requestId:'native-defaults',input:{mode:'create',fields:{name:'native-new',type:1,subtype:11,currency:'CNY',money:'0',inCount:true}}}));expect(result.state).toBe('succeeded');const sent=asBillObject(parseWire(new URLSearchParams(s.upstream.calls[0]!.body).get('v')!));expect(sent.icon).toBe('official-cash');expect(numericText(sent.createtime,'')).toBe('0');expect(numericText(sent.usecount,'')).toBe('0');
+  });
+  it('keeps official type choices fresh while a personal asset creation is uncertain',async()=>{
+    const s=await setup();s.upstream.respond(async()=>new Response(stringifyWire({ec:200,data:{list:[{type:{type:1,stype:11,name:'现金',icon:'cash'}}]}})));
+    await s.app.repository(async repository=>{const cache=new ResourceCache(repository,s.clock),service=new AssetService({repository,cache,clock:s.clock,client:s.upstream.client,connection:{scope:()=>s.app.scope}});await service.types();const coordinator=new Coordinator({repository,clock:s.clock,client:s.upstream.client},new Map([['test.create',{prepare:async()=>({payload:{},items:[{id:'unknown-new',affectedIds:['asset-catalog']}],affectedIds:['asset-catalog'],affectedDomains:['assets']}),send:async()=>{throw new Error('lost');},applyReceipt:()=>({items:[]}),reconcile:async()=>({items:[]})}]]));await coordinator.submit({action:'test.create',scope:s.app.scope,requestId:'unknown-create',input:{}});const choices=await service.types();expect(choices.freshness.complete).toBe(true);expect(s.upstream.calls).toHaveLength(1);expect(repository.hasUncertainty(s.app.scope,'assets')).toBe(true);});
+  });
+  it('reuses a freshly fetched asset source for sixty seconds without clearing an unknown operation',async()=>{
+    const s=await setup();s.upstream.respond(async()=>new Response(stringifyWire({ec:200,data:{list:[asset()],groups:[]}})));
+    await s.app.repository(async repository=>{const cache=new ResourceCache(repository,s.clock),service=new AssetService({repository,cache,clock:s.clock,client:s.upstream.client,connection:{scope:()=>s.app.scope}}),c=new Coordinator({repository,clock:s.clock,client:s.upstream.client},new Map([['test.create',{prepare:async()=>({payload:{},items:[{id:'unknown',affectedIds:['new']}],affectedIds:['new'],affectedDomains:['assets']}),send:async()=>{throw new Error('lost');},applyReceipt:()=>({items:[]}),reconcile:async()=>({items:[]})}]]));const original=await c.submit({action:'test.create',requestId:'unknown-fresh-source',scope:s.app.scope,input:{}});const first=await service.list();expect(first.freshness).toMatchObject({complete:false,stale:true});await service.list();expect(s.upstream.calls).toHaveLength(1);expect(c.getOperation(s.app.scope,original.id)?.state).toBe('uncertain');s.clock.advance(60000);await service.list();expect(s.upstream.calls).toHaveLength(2);});
+  });
   it('refreshes visible asset membership on use, coalesces concurrent reads and keeps official canonical replacements', async () => {
     const s = await setup(); let balance = '100';
     s.upstream.respond(async () => new Response(stringifyWire({ ec: 200, data: { list: [asset('10', balance)], groups: [{ groupid: 'official-group', name: '测试分组', sort: 0 }] } })));
@@ -109,7 +128,7 @@ describe('native assets and balance changes', () => {
     await s.run(async (coordinator) => { const result = await coordinator.submit(command); expect(result.state).toBe('uncertain'); expect((await coordinator.submit(command)).id).toBe(result.id); expect((await coordinator.reconcileOperation(s.app.scope, result.id)).state).toBe('succeeded'); }); expect(mutations).toBe(1); expect(s.upstream.calls.filter((call) => call.url.includes('/asset/info'))).toHaveLength(2);
   });
   it('creates a typed ordinary asset using the authoritative server ID and preserves extra on later metadata edits', async () => {
-    const s = await setup(), created = { ...asset('9007199254740999', '50'), name: '测试专用现金' };
+    const s = await setup(), created = { ...asset('9007199254740999', '50'), name: '测试专用现金',icon:'official-cash' };
     s.upstream.respond(async () => new Response(stringifyWire({ ec: 200, data: { asset: created } })));
     await s.run(async (coordinator) => {
       const command = { action: 'assets.submit', requestId: 'new-test-asset', scope: s.app.scope, input: { mode: 'create', fields: { type: 1, subtype: 11, name: '测试专用现金', money: '50', currency: 'CNY', inCount: true } } };

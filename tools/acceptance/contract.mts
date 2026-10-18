@@ -1,0 +1,2 @@
+export const caseNames=['ledger-extended','budget-native','cache-routes','cache-routes-budget','management','category-management','tag-management','receipt-loss-recover','conflicts','receipt-loss','savings-modes','savings-linked','media','installments','debt','status','bootstrap','assets','assets-native','assets-management','ledger-basic','catalogs','catalog-batch','budget','ledger-foreign','transfer-refund','reimbursement','repeat','repeat-wire','repeat-ack','savings','savings-native'] as const;
+export type CaseName=typeof caseNames[number];

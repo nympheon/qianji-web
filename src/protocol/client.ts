@@ -86,7 +86,8 @@ export class QianjiClient {
       }
       let data = envelope.data ?? null;
       let hasMore: boolean | undefined;
-      if (operation.response === 'native-list') {
+      if(operation.response==='native-list-or-ack'&&object(data)&&Object.keys(data).length===0)data=null;
+      else if (operation.response === 'native-list'||operation.response==='native-list-or-ack') {
         if (!object(data) || !Array.isArray(data.list)) throw new ProtocolError('QIANJI_RESPONSE_INVALID', '钱迹响应缺少原生列表包装', 'protocol', 'unknown', { upstreamCode: ec });
         const flag = data.hasmore;
         if (flag !== undefined) hasMore = flag === true || flag === 'true' || flag === '1' || isLosslessNumber(flag) && flag.value === '1';
