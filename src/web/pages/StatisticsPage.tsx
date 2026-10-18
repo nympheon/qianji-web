@@ -14,8 +14,9 @@ import { Alert, AlertDescription } from '../components/ui/alert';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 
 export function StatisticsPage() {
-  const [filter, setFilter] = useState<BillFilter>({ date: monthFilter(currentMonth()) }), [currency, setCurrency] = useState('CNY'), [trend, setTrend] = useState<'day' | 'month' | 'year'>('day'), [dimension, setDimension] = useState<'category' | 'tag' | 'member' | 'asset'>('category'), [comparison, setComparison] = useState('');
+  const [filter, setFilter] = useState<BillFilter>({ date: monthFilter(currentMonth()) }), [currencyOverride, setCurrency] = useState(''), [trend, setTrend] = useState<'day' | 'month' | 'year'>('day'), [dimension, setDimension] = useState<'category' | 'tag' | 'member' | 'asset'>('category'), [comparison, setComparison] = useState('');
   const options = useAction('ledger.options', {});
+  const currency = currencyOverride || options.data?.baseCurrency || 'CNY';
   const input: StatisticsInput = { filter, currency, trend, dimensions: [dimension], ...(comparison ? { comparison: { kind: 'month', year: Number(comparison.slice(0, 4)), month: Number(comparison.slice(5, 7)) } } : {}) };
   const query = useAction('ledger.statistics', input);
   let maximum = '0'; for (const point of query.data?.trend ?? []) for (const value of [point.totals.totalSpend, point.totals.totalIncome]) { const abs = compareMoney(value, '0') < 0 ? subtractMoney('0', value) : value; if (compareMoney(abs, maximum) > 0) maximum = abs; }

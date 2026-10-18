@@ -31,7 +31,8 @@ export function AssetsPage() {
       if (!type) { setError(reply.error?.message ?? '请先载入官方资产类型'); return; }
       if (![1, 2, 3, 4].includes(type.type)) return;
       const assetType = type.type === 2 ? 2 : type.type === 3 ? 3 : type.type === 4 ? 4 : 1;
-      setEditor({ title: '新增资产', key: 'new', types, draft: make({ action: 'assets.submit', input: { mode: 'create', fields: { type: assetType, subtype: type.subtype, name: '', money: '', currency: 'CNY', inCount: true, icon: type.icon, color: type.color, ...(assetType === 2 ? { credit: {} } : {}) } } }) });
+      const bookOptions = await api('ledger.options', {});
+      setEditor({ title: '新增资产', key: 'new', types, draft: make({ action: 'assets.submit', input: { mode: 'create', fields: { type: assetType, subtype: type.subtype, name: '', money: '', currency: bookOptions.data?.baseCurrency ?? 'CNY', inCount: true, icon: type.icon, color: type.color, ...(assetType === 2 ? { credit: {} } : {}) } } }) });
     } finally { setBusy(false); }
   }
   async function act(kind: 'edit' | 'balance' | 'visible' | 'finish' | 'delete' | 'group', asset: AssetView) {

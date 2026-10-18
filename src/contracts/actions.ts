@@ -12,8 +12,13 @@ import { cancelReimbursementInputSchema, reimburseInputSchema, reimbursableInput
 import { assetDraftSchema, assetDeleteSchema, assetGroupAddSchema, assetGroupDeleteSchema, assetGroupRemoveSchema, assetGroupReorderSchema, assetGroupSubmitSchema, assetIdSchema, assetListSchema, assetReorderSchema, assetSubmitSchema, assetTrendSchema, assetVisibleSchema, balanceAdjustmentSchema, debtFinishSchema, type AssetDetailView, type AssetDeleteCheckView, type AssetGroupsView, type AssetListView, type AssetTrendView, type AssetTypesView, type AssetDraftView, type AssetSummaryView } from '../features/assets/contract';
 const empty = z.strictObject({}), id = z.string().min(1).max(200);
 import { createDebtSchema, appendPrincipalSchema, editPrincipalSchema, debtPaymentSchema, debtListSchema, debtPreviewSchema, debtDraftSchema, type DebtListView, type DebtPreview, type DebtDraftView } from '../features/debt/contract';
+import { bookListSchema, bookIdSchema, bookSubmitSchema, bookConfigureSchema, bookVisibleSchema, bookDeleteSchema, bookQuitSchema, bookReorderSchema, baseCurrencyInputSchema, bookDraftSchema, type BookListView, type BookTypesView, type BookMembersView, type BookDeleteCheckView, type BookDraftView, type AccountingConfigView } from '../features/books/contract';
 const route = z.strictObject({ route: z.enum(['main', 'backup', 'overseas']) });
 export const actionSchemas = {
+  'books.list': bookListSchema, 'books.types': empty, 'books.members': z.strictObject({ id: bookIdSchema }), 'books.deleteCheck': z.strictObject({ id: bookIdSchema }), 'books.accounting': empty,
+  'books.submit': z.discriminatedUnion('mode', [bookSubmitSchema.options[0].extend({ requestId: id }), bookSubmitSchema.options[1].safeExtend({ requestId: id })]),
+  'books.configure': bookConfigureSchema.extend({ requestId: id }), 'books.setVisible': bookVisibleSchema.extend({ requestId: id }), 'books.delete': bookDeleteSchema.extend({ requestId: id }), 'books.quit': bookQuitSchema.extend({ requestId: id }), 'books.reorder': bookReorderSchema.extend({ requestId: id }), 'books.setBaseCurrency': baseCurrencyInputSchema.extend({ requestId: id }),
+  'books.draft.get': z.strictObject({ key: z.string().min(1).max(300) }), 'books.draft.save': z.strictObject({ key: z.string().min(1).max(300), draft: bookDraftSchema }),
   'connection.status': empty, 'connection.check': empty, 'connection.refresh': empty, 'connection.logout': empty,
   'connection.selectRoute': route, 'connection.testRoute': route,
   'sync.start': syncInputSchema, 'sync.status': z.strictObject({ jobId: id }),
@@ -43,6 +48,8 @@ export const actionSchemas = {
 export type ActionName = keyof typeof actionSchemas;
 export type ActionInput<A extends ActionName> = z.infer<typeof actionSchemas[A]>;
 export interface ActionOutputs {
+  'books.list': BookListView; 'books.types': BookTypesView; 'books.members': BookMembersView; 'books.deleteCheck': BookDeleteCheckView; 'books.accounting': AccountingConfigView;
+  'books.submit': OperationView; 'books.configure': OperationView; 'books.setVisible': OperationView; 'books.delete': OperationView; 'books.quit': OperationView; 'books.reorder': OperationView; 'books.setBaseCurrency': OperationView; 'books.draft.get': BookDraftView | null; 'books.draft.save': BookDraftView;
   'connection.status': ConnectionView; 'connection.check': ConnectionView; 'connection.refresh': ConnectionView; 'connection.logout': ConnectionView;
   'connection.selectRoute': ConnectionView; 'connection.testRoute': RouteCheckView; 'sync.start': JobView | null; 'sync.status': JobView;
   'ledger.options': LedgerOptions; 'ledger.list': BillPage; 'ledger.detail': BillDetail; 'ledger.calendar': CalendarView; 'ledger.statistics': StatisticsView;
@@ -65,6 +72,20 @@ const connection = { ...read, kind: 'connection', requiresAccount: false } as co
 const write = { ...read, kind: 'write', readOnly: false, unavailable: { code: 'WRITE_LIVE_UNVERIFIED', reason: '账单写入已完成契约与模拟测试，待专用测试账本真实验收后启用' } } as const;
 const assetWrite = { ...write, unavailable: { code: 'WRITE_LIVE_UNVERIFIED', reason: '资产写入待命名测试资产真实验收后启用' } } as const;
 export const actionDefinitions: Record<ActionName, ActionDefinition> = {
+  'books.list': { ...read, title: '查询账本', description: '按原生t=-1读取当前账号全部类型账本，可显式包含隐藏项；保留所有者/成员身份、默认账本及各自过期状态。来源按需60秒缓存，闲置不请求。' },
+  'books.types': { ...read, title: '查询账本模板类型', description: '读取官方账本类型、名称、默认封面与账期，不自造模板编码。' },
+  'books.members': { ...read, title: '查询账本成员', description: '按真实账本ID读取已有云端成员、姓名及所有者身份，不建设本服务多用户或角色系统。' },
+  'books.deleteCheck': { ...read, title: '检查账本删除条件', description: '读取最新账本与官方未结事项检查；新owner/member字段优先，仅两者均缺失时兼容旧has_unresolved。默认账本不能删除；删除时再次检查。' },
+  'books.accounting': { ...read, title: '读取本位币业务配置', description: '读取client/init的userconfigs.basecur及来源时间；本位币属于账号业务配置，与账本周期range分开。默认CNY明确标记未验证来源，不按当前汇率改写历史账单。' },
+  'books.submit': { ...write, title: '新建或编辑账本', description: '通过官方book/submit保存名称、封面及账期，新建使用官方类型和返回ID，编辑按版本及当前所有者身份核对。未知创建不按同名认定成功，必须复用requestId。' },
+  'books.configure': { ...write, title: '设置账本业务周期', description: '通过原生book/config保存range，支持自然月、起始日1–28、全年、季度或全部。应用官方账本回执，失效统计与预算依赖；range不是另建预算或后台任务。复用requestId。' },
+  'books.setVisible': { ...write, title: '设置账本显隐', description: '明确visible目标，先读最新账本，已达到时不调用原生切换。成功或未知后只读核对，禁止重复切换追逐目标。' },
+  'books.reorder': { ...write, title: '排序账本', description: '按真实账本ID数组调用官方排序，通过完整列表只读核对相对顺序，未知时不重发。' },
+  'books.delete': { ...write, destructive: true, title: '删除云端账本', description: '仅所有者、非默认账本，按最新版本及deletecheck未结事项结果提交官方delete。将删除该账本账单；与退出共享账本分开，无跨资源通用级联开关。复用requestId。' },
+  'books.quit': { ...write, destructive: true, title: '退出账本或移除已有成员', description: '使用官方quit及明确memberId；参与者只能退出自己，所有者可移除当前名单中的其他成员。本人退出才清理本地该账本副本，移除他人保留账本。涉及其他成员的实际动作需用户具体命令，不自动邀请或批量清理。' },
+  'books.setBaseCurrency': { ...write, title: '设置账号本位币', description: '仅通过原生user/updateconfig更新basecur，按配置版本核对。成功后共享给统计、资产、转账、退款与借贷，失效依赖计算；未知时保留原值并只读核对，绝不重写历史金额或自动重发。' },
+  'books.draft.get': { ...read, evidence: 'local', title: '读取账本草稿', description: '读取本地结构化账本草稿及原请求键对应操作，不请求钱迹。' },
+  'books.draft.save': { ...read, readOnly: false, evidence: 'local', title: '保存账本草稿', description: '只保存输入草稿，未核清原操作时不能覆盖请求键重新创建。' },
   'debt.list': { ...read, title: '查询借贷', description: '按借入或借出、结清状态调用原生listloan，与资产列表共用真实资产ID和官方余额。按需60秒刷新，缺少LoanInfo时展示缺失状态，不能按零推算本金。' },
   'debt.options': { ...read, title: '借贷账本与关联资产选项', description: '按需载入当前资产与账本；借贷只允许选择本位币普通资产或信用卡，不使用当前汇率自动换算。' },
   'debt.preview': { ...read, evidence: 'local', title: '预览借贷本金及利息', description: '仅根据本地已载入资料计算原生本金、利息拆分及预期LoanInfo和资金变化，不写入钱迹。超出余额的本金输入会归入利息；预期值不是已确认资产余额。' },

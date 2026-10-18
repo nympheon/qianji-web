@@ -2,10 +2,11 @@ import { z } from 'zod';
 import { transferDraftSchema } from './transfer-contract';
 import { refundDraftSchema } from './refund-contract';
 import { reimbursementDraftSchema } from './reimbursement-contract';
+import { bookIdSchema } from '../books/contract';
 
 const id = z.string().regex(/^[1-9]\d{0,24}$/), money = z.string().max(80).regex(/^-?(0|[1-9]\d*)(\.\d{1,10})?$/);
 export const billChangesSchema = z.strictObject({
-  bookId: id.optional(), type: z.union([z.literal(0), z.literal(1), z.literal(5)]).optional(), enteredMoney: money.optional(),
+  bookId: bookIdSchema.optional(), type: z.union([z.literal(0), z.literal(1), z.literal(5)]).optional(), enteredMoney: money.optional(),
   fee: money.optional(), timeSec: z.int().min(0).max(253402300799).optional(), categoryId: id.optional(),
   assetId: id.nullable().optional(), remark: z.string().max(500).optional(), tagIds: z.array(z.string().min(1).max(200)).max(100).optional(),
   countInStatistics: z.boolean().optional(), countInBudget: z.boolean().optional(),

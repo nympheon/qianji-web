@@ -64,6 +64,9 @@ describe('native assets and balance changes', () => {
   it('also blocks balance changes for account-wide queued ledger intents that have not reached the mirror', async () => {
     const s = await setup(); await s.run(async (coordinator) => { const command = { action: 'ledger.create', requestId: 'other-book-intent', scope: s.app.scope, input: { bills: [{ bookId: '999', assetId: '20', enteredMoney: '1' }] } }; coordinator.store.create(command, 'fixture-pending-ledger-digest'); expect((await coordinator.submit(s.command())).error?.code).toBe('UNSYNCED_BILLS'); }); expect(s.upstream.calls).toHaveLength(0);
   });
+  it('includes newly introduced debt bill intents in the account-wide unsynced balance guard', async () => {
+    const s = await setup(); await s.run(async (coordinator) => { coordinator.store.create({ action: 'debt.pay', requestId: 'debt-queued', scope: s.app.scope, input: { id: '100', principal: '1' } }, 'pending-debt-digest'); expect((await coordinator.submit(s.command())).error?.code).toBe('UNSYNCED_BILLS'); }); expect(s.upstream.calls).toHaveLength(0);
+  });
   it('converts the entered credit balance back to stored money with counted outstanding installments once', async () => {
     const s = await setup(), original = { ...asset('10', '100', 2, 21), installs: [{ money: 40, fee: 2, incount: 1, status: 1, data: { feeincount: 1 } }] };
     await s.app.repository((repo) => repo.applyPage(s.app.scope, 'assets', { upserts: [], deletes: [], resources: [{ id: '10', kind: 'asset', raw: original }], pageState: null }, 'assets'));

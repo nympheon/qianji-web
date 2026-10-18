@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { Freshness, Id, Money } from '../../shared/model';
 import type { HistoricalCurrency } from './contract';
 import type { ExpectedAssetEffect } from '../../operations/contract';
+import { bookIdSchema } from '../books/contract';
 export type { ExpectedAssetEffect } from '../../operations/contract';
 const id = z.string().regex(/^[1-9]\d{0,24}$/), money = z.string().max(80).regex(/^-?(0|[1-9]\d*)(\.\d{1,10})?$/);
 export const historicalCurrencySchema = z.strictObject({
@@ -9,7 +10,7 @@ export const historicalCurrencySchema = z.strictObject({
   baseSymbol: z.string().min(1).max(20), baseValue: money,
 });
 export const transferFieldsSchema = z.strictObject({
-  bookId: id, fromAssetId: id, targetAssetId: id, enteredMoney: money, fee: money, timeSec: z.int().min(0).max(253402300799),
+  bookId: bookIdSchema, fromAssetId: id, targetAssetId: id, enteredMoney: money, fee: money, timeSec: z.int().min(0).max(253402300799),
   remark: z.string().max(500).optional(), currency: historicalCurrencySchema.nullable().optional(), tagIds: z.array(z.string().min(1).max(200)).max(100).optional(),
   countInStatistics: z.boolean().optional(), countInBudget: z.boolean().optional(),
 });

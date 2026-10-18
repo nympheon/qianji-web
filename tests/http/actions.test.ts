@@ -20,6 +20,12 @@ export async function seedActions() {
 }
 export const action = (name: string, input: unknown = {}) => exports.default.fetch('https://test/api/actions', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: name, input }) });
 describe('shared HTTP actions', () => {
+  it('registers native book actions, retains write gates and saves typed book drafts', async () => {
+    await seedActions(); expect(await (await action('books.submit', { mode: 'create', type: 1, name: '专用测试账本', requestId: 'new-book' })).json()).toMatchObject({ status: 'unavailable', error: { code: 'WRITE_LIVE_UNVERIFIED' } });
+    const draft = { kind: 'book', action: 'books.submit', requestId: 'book-draft', input: { mode: 'create', type: 1, name: '', cover: null, range: '' } };
+    expect(await (await action('books.draft.save', { key: 'new', draft })).json()).toMatchObject({ status: 'ready', data: { draft, operationId: null } }); expect(await (await action('books.draft.get', { key: 'new' })).json()).toMatchObject({ status: 'ready', data: { draft } });
+    expect(await (await action('books.accounting', {})).json()).toMatchObject({ status: 'partial', data: { baseCurrency: 'CNY', source: 'default' } });
+  });
   it('keeps unverified debt writes gated and persists an empty typed creation draft', async () => {
     await seedActions(); const input = { direction: 'borrow', name: '专用测试借入', principal: '100', bookId: '10', aboutAssetId: null, startDate: '2026-01-01', inCount: true, requestId: 'debt-create' };
     expect(await (await action('debt.create', input)).json()).toMatchObject({ status: 'unavailable', error: { code: 'WRITE_LIVE_UNVERIFIED' } });

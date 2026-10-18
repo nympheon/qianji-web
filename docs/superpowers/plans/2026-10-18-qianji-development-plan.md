@@ -328,11 +328,12 @@ cache.ts导出`CacheKey { domain:SyncDomain; queryKey:string }`、`CacheReadStam
 **Files:** Create `src/features/books/{contract,service,use-cases}.ts`、`src/web/pages/BooksPage.tsx`、`tests/workers/books.test.ts`；Modify registry及共享筛选。
 **Interfaces:** Consumes资源镜像/Coordinator；Produces `BookService.list/submit/configure/reorder/setVisible/members/checkDelete/delete/quit`；各方法有对应本域Input/View，保留上游owner/member身份，不建设本服务RBAC。
 
-- [ ] 写失败断言：退出与删除使用不同动作；owner/member过期、默认账本和未结事项影响正确；旧has_unresolved与新owner/member字段兼容；隐藏账本仍可明确查询。
-- [ ] Run `pnpm test -- tests/workers/books.test.ts`；预期FAIL于账本管理缺失。
-- [ ] 实现官方账本动作及影响统计的本位币/range等配置；成员已有操作逐项核对真实表单/权限后注册，不因为单人服务忽略云端角色，不自造邀请流程。写后更新回执/失效依赖缓存，Web/MCP共享业务配置。
-- [ ] 重跑创建/编辑/排序/显隐、删除检查与退出、配置变化使统计/预算正确失效，PASS；对涉及其他成员的实际动作仅在具体用户命令和测试范围内验收。
-- [ ] 提交：`feat: manage books and accounting configuration`。
+- [x] 写失败断言：退出与删除使用不同动作；owner/member过期、默认账本和未结事项影响正确；旧has_unresolved与新owner/member字段兼容；隐藏账本仍可明确查询。
+- [x] Run `pnpm test -- tests/workers/books.test.ts`；预期FAIL于账本管理缺失。
+- [x] 实现官方账本动作及影响统计的本位币/range等配置；成员已有操作逐项核对真实表单/权限后注册，不因为单人服务忽略云端角色，不自造邀请流程。写后更新回执/失效依赖缓存，Web/MCP共享业务配置。
+- [x] 重跑创建/编辑/排序/显隐、删除检查与退出、配置变化使统计/预算依赖正确失效，PASS；17个本域用例、跨服务接入、共享筛选及桌面/手机交互通过。
+- [ ] 真实写入核查延至任务27，仅使用新建专用测试账本；涉及其他成员或全局业务配置实际变更仍须符合用户具体命令和测试范围。
+- [x] 提交：`feat: manage books and accounting configuration`。
 
 ### Task 19：分类层级、移动、排序与删除迁移
 

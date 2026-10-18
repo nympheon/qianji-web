@@ -18,6 +18,8 @@ import type { CreateBillsInput, DeleteBillsInput, EditBillsInput } from './write
 import type { TransferInput } from './transfer-contract';
 import type { RefundInput } from './refund-contract';
 import type { CancelReimbursementInput, ReimburseInput, ReimbursableInput, ReimbursementMembers } from './reimbursement-contract';
+import { ResourceCache } from '../../storage/cache';
+import { bookListKey } from '../books/source';
 
 export interface LedgerDependencies { repository: Repository; connection: ConnectionService; freshness: FreshnessService; clock: Clock; baseCurrency?: () => Id; writes?: LedgerWriteService }
 function hydrateBill(bill: BillSummary, read: (id: Id) => BillSummary | null, freshness: Freshness): BillDetail {
@@ -111,11 +113,13 @@ export class LedgerService {
     const books = repository.readResources(scope, 'book', { domain: 'books', limit: 200 });
     const categories = repository.readResources(scope, 'category', { domain: 'ledger', limit: 200 });
     const tags = repository.readResources(scope, 'tag', { domain: 'tags', limit: 200 });
+    const hasBookSource = repository.sql.exec("SELECT 1 FROM source_queries WHERE uid=? AND domain='books' AND query_key=?", scope.uid, bookListKey.queryKey).toArray().length > 0;
+    const booksComplete = hasBookSource ? new ResourceCache(repository, this.dependencies.clock).read(scope, bookListKey).complete : !!repository.dataset(scope, 'books')?.complete;
     const name = (raw: ReturnType<typeof asBillObject>, id: Id) => typeof raw.name === 'string' ? raw.name : id;
-    return { books: books.items.map((item) => { const raw = asBillObject(item.raw); return { id: item.id, name: name(raw, item.id), visible: numericText(raw.visible, '1') === '1' }; }),
+    return { baseCurrency: this.dependencies.baseCurrency?.() ?? 'CNY', books: books.items.map((item) => { const raw = asBillObject(item.raw); return { id: item.id, name: name(raw, item.id), visible: numericText(raw.visible, '1') === '1' }; }),
       categories: categories.items.map((item) => { const raw = asBillObject(item.raw); return { id: item.id, name: name(raw, item.id), parentId: optionalWireId(raw.parentid) }; }),
       tags: tags.items.map((item) => ({ id: item.id, name: name(asBillObject(item.raw), item.id) })),
-      complete: !books.nextCursor && !categories.nextCursor && !tags.nextCursor && !!repository.dataset(scope, 'books')?.complete && !!repository.dataset(scope, 'ledger')?.complete && !!repository.dataset(scope, 'tags')?.complete };
+      complete: !books.nextCursor && !categories.nextCursor && !tags.nextCursor && booksComplete && !!repository.dataset(scope, 'ledger')?.complete && !!repository.dataset(scope, 'tags')?.complete };
   }
   async list(input: BillFilter): Promise<BillPage> {
     const parsed = billFilterSchema.safeParse(input);

@@ -6,6 +6,10 @@ import { useCase, type UseCase, type UseCaseContext } from './use-case';
 
 function scope(context: UseCaseContext) { const scope = context.connection.scope(); if (!scope) throw new DomainError('CONNECTION_REQUIRED', '请先连接钱迹'); return scope; }
 const handlers: Record<ActionName, UseCase> = {
+  'books.list': useCase('books.list', (ctx, input) => ctx.books.list(input)), 'books.types': useCase('books.types', (ctx) => ctx.books.types()), 'books.members': useCase('books.members', (ctx, input) => ctx.books.members(input.id)), 'books.deleteCheck': useCase('books.deleteCheck', (ctx, input) => ctx.books.checkDelete(input.id)), 'books.accounting': useCase('books.accounting', (ctx) => ctx.books.accounting()),
+  'books.submit': useCase('books.submit', (ctx, { requestId, ...input }) => ctx.books.submit(input, { requestId })), 'books.configure': useCase('books.configure', (ctx, { requestId, ...input }) => ctx.books.configure(input, { requestId })),
+  'books.setVisible': useCase('books.setVisible', (ctx, { requestId, ...input }) => ctx.books.setVisible(input, { requestId })), 'books.delete': useCase('books.delete', (ctx, { requestId, ...input }) => ctx.books.remove(input, { requestId })), 'books.quit': useCase('books.quit', (ctx, { requestId, ...input }) => ctx.books.quit(input, { requestId })), 'books.reorder': useCase('books.reorder', (ctx, { requestId, ...input }) => ctx.books.reorder(input, { requestId })), 'books.setBaseCurrency': useCase('books.setBaseCurrency', (ctx, { requestId, ...input }) => ctx.books.setBaseCurrency(input, { requestId })),
+  'books.draft.get': useCase('books.draft.get', (ctx, input) => ctx.books.getDraft(input.key)), 'books.draft.save': useCase('books.draft.save', (ctx, input) => ctx.books.saveDraft(input.key, input.draft)),
   'debt.list': useCase('debt.list', (ctx, input) => ctx.debt.list(input)), 'debt.options': useCase('debt.options', (ctx) => ctx.debt.options()),
   'debt.preview': useCase('debt.preview', (ctx, input) => ctx.debt.preview(input.action, input.input)),
   'debt.create': useCase('debt.create', (ctx, { requestId, ...input }) => ctx.debt.create(input, { requestId })),
@@ -92,7 +96,7 @@ export class AppRegistry {
         return { status: ['queued', 'sending', 'verifying'].includes(operation.state) ? 'running' : operation.state === 'uncertain' ? 'uncertain' : operation.state === 'partial' ? 'partial' : operation.state === 'failed' ? 'error' : 'ready', data, freshness: null, operationId: operation.id, ...(operation.error ? { error: operation.error } : {}) };
       }
       const freshness = data && typeof data === 'object' && 'freshness' in data ? (data as { freshness: AppReply<unknown>['freshness'] }).freshness : null;
-      if ((action.startsWith('assets.') || action.startsWith('debt.')) && data && typeof data === 'object' && 'problem' in data && data.problem && typeof data.problem === 'object' && 'code' in data.problem && 'message' in data.problem && typeof data.problem.code === 'string' && typeof data.problem.message === 'string') return { status: 'partial', data, freshness, error: { code: data.problem.code, message: data.problem.message } };
+      if ((action.startsWith('assets.') || action.startsWith('debt.') || action.startsWith('books.')) && data && typeof data === 'object' && 'problem' in data && data.problem && typeof data.problem === 'object' && 'code' in data.problem && 'message' in data.problem && typeof data.problem.code === 'string' && typeof data.problem.message === 'string') return { status: 'partial', data, freshness, error: { code: data.problem.code, message: data.problem.message } };
       const job = action.startsWith('ledger.') ? this.currentJob() : null;
       return { status: job ? 'running' : freshness && !freshness.complete ? 'partial' : 'ready', data, freshness, ...(job ? { jobId: job.id } : {}) };
     } catch (error) {
