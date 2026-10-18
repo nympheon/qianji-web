@@ -16,6 +16,7 @@ import { safeProblem } from '../../operations/runner';
 export interface SyncDependencies {
   repository: Repository; client: QianjiClient; coordinator: Coordinator;
   connection: ConnectionService; clock: Clock; delay?: (milliseconds: number) => Promise<void>;
+  rebuild?: (scope: ActorScope, domains: SyncInput['domain'][]) => Promise<JobView>;
 }
 type SyncRow = { id: string; uid: string; connection_epoch: string; domain: string; mode: string;
   state: string; pages: number; changed_records: number; checkpoint: string; error: string | null };
@@ -31,9 +32,12 @@ export class SyncService {
     dependencies.coordinator.registerJobHandler('sync', (job) => this.resume(job.id));
     const scope = dependencies.connection.scope();
     if (scope && dependencies.connection.view().state === 'connected') {
-      const rows = dependencies.repository.sql.exec<{ id: string }>("SELECT id FROM sync_jobs WHERE uid=? AND connection_epoch=? AND state='running'", scope.uid, scope.connectionEpoch).toArray();
+      const rows = dependencies.repository.sql.exec<{ id: string; checkpoint: string }>("SELECT id,checkpoint FROM sync_jobs WHERE uid=? AND connection_epoch=? AND state='running'", scope.uid, scope.connectionEpoch).toArray();
       for (const row of rows) {
-        if (dependencies.repository.sql.exec('SELECT id FROM jobs WHERE id=?', row.id).toArray().length === 0) dependencies.coordinator.jobs.put(row.id, scope, 'sync', { jobId: row.id });
+        let owner: Id | undefined;
+        try { owner = parseCheckpoint(row.checkpoint).ownerJobId; } catch { /* The resumed job records a stable checkpoint error. */ }
+        const id = owner ?? row.id;
+        if (dependencies.repository.sql.exec('SELECT id FROM jobs WHERE id=?', id).toArray().length === 0) dependencies.coordinator.jobs.put(id, scope, owner ? 'rebuild' : 'sync', { jobId: id });
       }
     }
   }
@@ -44,10 +48,17 @@ export class SyncService {
   async start(input: SyncInput): Promise<JobView> {
     const parsed = syncInputSchema.safeParse(input);
     if (!parsed.success) throw new DomainError('INVALID_SYNC_INPUT', '同步参数无效');
-    if (input.mode === 'rebuild') throw new DomainError('REBUILD_UNAVAILABLE', '全量重建尚未接入');
     const { repository, connection, coordinator, clock } = this.dependencies;
     const scope = connection.scope();
     if (!scope || connection.view().state !== 'connected') throw new DomainError('CONNECTION_REQUIRED', '请先连接钱迹');
+    if (input.mode === 'incremental' && this.dependencies.rebuild) {
+      const running = repository.sql.exec<{ domains: string }>('SELECT r.domains FROM sync_barrier b JOIN rebuild_jobs r ON r.id=b.job_id WHERE b.uid=? AND b.connection_epoch=? AND r.state=\'running\'', scope.uid, scope.connectionEpoch).toArray()[0];
+      if (running && (JSON.parse(running.domains) as string[]).includes(input.domain)) return this.dependencies.rebuild(scope, [input.domain]);
+    }
+    if (input.mode === 'rebuild') {
+      if (!this.dependencies.rebuild) throw new DomainError('REBUILD_UNAVAILABLE', '全量重建尚未接入');
+      return this.dependencies.rebuild(scope, [input.domain]);
+    }
     const id = await coordinator.jobs.persistWithWakeup(() => {
       repository.assertScope(scope);
       const running = repository.sql.exec<{ id: string }>("SELECT id FROM sync_jobs WHERE uid=? AND connection_epoch=? AND domain=? AND state='running'", scope.uid, scope.connectionEpoch, input.domain).toArray()[0];
@@ -73,6 +84,23 @@ export class SyncService {
     return this.getJob(scope, id)!;
   }
   getJob(scope: ActorScope, id: Id): JobView | null { const row = this.row(scope, id); return row ? view(row) : null; }
+  checkpoint(scope: ActorScope, id: Id): SyncCheckpoint | null {
+    const row = this.row(scope, id); return row ? parseCheckpoint(row.checkpoint) : null;
+  }
+  /** Called only while the owning durable rebuild barrier is held. No network I/O. */
+  createRebuildChild(scope: ActorScope, domain: SyncInput['domain'], ownerJobId: Id): Id {
+    const { repository, clock, coordinator } = this.dependencies;
+    repository.assertScope(scope);
+    if (!repository.sql.exec('SELECT job_id FROM sync_barrier WHERE uid=? AND connection_epoch=? AND job_id=?', scope.uid, scope.connectionEpoch, ownerJobId).toArray().length) throw new DomainError('REBUILD_BARRIER_REQUIRED', '重建需要持久写入边界');
+    const old = repository.sql.exec<{ id: string }>("SELECT id FROM sync_jobs WHERE uid=? AND domain=? AND state='running'", scope.uid, domain).toArray();
+    for (const row of old) coordinator.jobs.remove(row.id);
+    repository.sql.exec("UPDATE sync_jobs SET state='failed',error=?,finished_ms=? WHERE uid=? AND domain=? AND state='running'", JSON.stringify({ code: 'SYNC_SUPERSEDED', message: '本轮同步已由全量重建接管' }), clock.nowMs(), scope.uid, domain).toArray();
+    const id = crypto.randomUUID(), datasetId = crypto.randomUUID();
+    repository.createDataset(scope, domain, datasetId);
+    const checkpoint: SyncCheckpoint = { scope, datasetId, startCursor: null, collectedTimes: {}, bookId: '-1', pageOffset: '0', pageSign: '', tagPage: 0, full: true, ownerJobId };
+    repository.sql.exec("INSERT INTO sync_jobs(id,uid,connection_epoch,domain,mode,state,checkpoint,started_ms) VALUES (?,?,?,?,'rebuild','running',?,?)", id, scope.uid, scope.connectionEpoch, domain, stringifyWire({ ...checkpoint, scope: { ...scope } }), clock.nowMs()).toArray();
+    return id;
+  }
   async resume(id: Id): Promise<void> {
     const existing = this.#inflight.get(id);
     if (existing) return existing;
@@ -85,7 +113,7 @@ export class SyncService {
     const scope = connection.scope();
     if (!scope) return;
     let row = this.row(scope, id);
-    if (!row || row.state !== 'running') return;
+    if (!row || row.state !== 'running') { coordinator.jobs.remove(id); await coordinator.jobs.refreshAlarm(); return; }
     try {
       const checkpoint = parseCheckpoint(row.checkpoint);
       repository.assertScope(checkpoint.scope);
@@ -103,8 +131,14 @@ export class SyncService {
           uid: scope.uid, bookid: checkpoint.bookId, pageoffset: checkpoint.pageOffset, pagesign: checkpoint.pageSign,
           ...(checkpoint.startCursor === null ? {} : { lasttimes: stringifyWire(checkpoint.startCursor) }),
         } : { uid: scope.uid, lasttime: checkpoint.startCursor === null ? '0' : integerText(checkpoint.startCursor), page: String(checkpoint.tagPage) };
+        const sourceGeneration = repository.sourceGeneration(scope, row.domain as SyncInput['domain']);
+        const sourceDatasetId = repository.dataset(scope, row.domain as SyncInput['domain'])?.id ?? null;
         const reply = await client.request(row.domain === 'ledger' ? 'syncv2.pull' : 'tag.pull', params, checkpoint.scope);
         repository.assertScope(checkpoint.scope);
+        if (this.row(scope, id)?.state !== 'running') return;
+        if (!checkpoint.ownerJobId && (sourceGeneration !== repository.sourceGeneration(scope, row.domain as SyncInput['domain']) || sourceDatasetId !== (repository.dataset(scope, row.domain as SyncInput['domain'])?.id ?? null))) {
+          throw new DomainError('SYNC_SUPERSEDED', '源数据已更新，本页旧响应未应用，请按需重新校验');
+        }
         let hasMore: boolean, received: number;
         let page: MirrorPage;
         let cursor: WireJson;
@@ -139,19 +173,23 @@ export class SyncService {
         repository.transaction(() => {
           repository.assertScope(checkpoint.scope);
           repository.applyPage(scope, checkpoint.datasetId, { ...page, complete, ...(complete ? { cursor, validatedAt: clock.nowIso() } : {}) }, row!.domain as SyncInput['domain']);
-          if (complete) repository.switchDataset(scope, row!.domain as SyncInput['domain'], checkpoint.datasetId, cursor);
+          if (complete && !checkpoint.ownerJobId) repository.switchDataset(scope, row!.domain as SyncInput['domain'], checkpoint.datasetId, cursor);
           repository.sql.exec('UPDATE sync_jobs SET state=?,pages=pages+1,changed_records=changed_records+?,checkpoint=?,finished_ms=? WHERE id=?', complete ? 'succeeded' : 'running', received,
             stringifyWire({ ...checkpoint, scope: { ...checkpoint.scope } }), complete ? clock.nowMs() : null, id).toArray();
           if (complete) coordinator.jobs.remove(id);
-          else coordinator.jobs.put(id, scope, 'sync', { jobId: id });
+          else coordinator.jobs.put(checkpoint.ownerJobId ?? id, scope, checkpoint.ownerJobId ? 'rebuild' : 'sync', { jobId: checkpoint.ownerJobId ?? id });
         });
         row = this.row(scope, id)!;
         if (complete) break;
       }
     } catch (error) {
       const detail = safeProblem(error);
-      repository.sql.exec("UPDATE sync_jobs SET state='failed',error=?,finished_ms=? WHERE id=?", JSON.stringify(detail), clock.nowMs(), id).toArray();
+      repository.sql.exec("UPDATE sync_jobs SET state='failed',error=?,finished_ms=? WHERE id=? AND state='running'", JSON.stringify(detail), clock.nowMs(), id).toArray();
       coordinator.jobs.remove(id);
-    } finally { await coordinator.jobs.refreshAlarm(); }
+    } finally {
+      const current = connection.scope();
+      if (current?.uid === scope.uid && current.connectionEpoch === scope.connectionEpoch) repository.pruneInactiveDatasets(scope, [row.domain as SyncInput['domain']]);
+      await coordinator.jobs.refreshAlarm();
+    }
   }
 }

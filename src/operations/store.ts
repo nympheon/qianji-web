@@ -77,16 +77,21 @@ export class OperationStore {
     this.repository.assertScope(operation.scope); rejectCredentials(prepared.payload);
     if (prepared.items.length === 0 || new Set(prepared.items.map((item) => item.id)).size !== prepared.items.length) throw new DomainError('INVALID_PREPARED_ITEMS', '操作必须包含明确且唯一的项目');
     const items: OperationItem[] = prepared.items.map((item) => ({ id: item.id, affectedIds: [...item.affectedIds], state: 'queued', error: null }));
-    this.repository.sql.exec('UPDATE operations SET prepared=?,items=?,affected_ids=?,updated_ms=? WHERE id=?',
-      stringifyWire({ payload: prepared.payload, affectedIds: [...prepared.affectedIds], items: prepared.items.map((item) => ({ id: item.id, affectedIds: [...item.affectedIds] })) }),
-      JSON.stringify(items), JSON.stringify([...new Set(prepared.affectedIds)]), this.clock.nowMs(), operation.id).toArray();
-    return this.get(operation.scope, operation.id)!;
+    return this.repository.transaction(() => {
+      this.repository.sql.exec('UPDATE operations SET prepared=?,items=?,affected_ids=?,updated_ms=? WHERE id=?',
+        stringifyWire({ payload: prepared.payload, affectedIds: [...prepared.affectedIds], affectedDomains: [...prepared.affectedDomains ?? []], items: prepared.items.map((item) => ({ id: item.id, affectedIds: [...item.affectedIds] })) }),
+        JSON.stringify(items), JSON.stringify([...new Set(prepared.affectedIds)]), this.clock.nowMs(), operation.id).toArray();
+      this.repository.sql.exec('DELETE FROM operation_domains WHERE operation_id=?', operation.id).toArray();
+      for (const domain of new Set(prepared.affectedDomains ?? [])) this.repository.sql.exec('INSERT INTO operation_domains(operation_id,uid,domain) VALUES (?,?,?)', operation.id, operation.scope.uid, domain).toArray();
+      return this.get(operation.scope, operation.id)!;
+    });
   }
   markSending(operation: StoredOperation): StoredOperation {
     this.repository.assertScope(operation.scope);
     if (operation.sendCount !== 0 || operation.state !== 'queued') throw new DomainError('OPERATION_ALREADY_SENT', '操作已发送，需核查现有结果');
     const items = operation.items.map((item) => ({ ...item, state: 'sending' as const }));
     this.repository.sql.exec("UPDATE operations SET state='sending',items=?,send_count=send_count+1,error=NULL,updated_ms=? WHERE id=? AND send_count=0 AND state='queued'", JSON.stringify(items), this.clock.nowMs(), operation.id).toArray();
+    for (const domain of new Set(operation.prepared?.affectedDomains ?? [])) this.repository.bumpSourceGeneration(operation.scope, domain);
     return this.get(operation.scope, operation.id)!;
   }
   markUnresolved(operation: StoredOperation, state: 'failed' | 'uncertain', error: Problem | null): StoredOperation {
@@ -114,7 +119,7 @@ export class OperationStore {
     return this.repository.sql.exec<OperationRow>("SELECT * FROM operations WHERE uid=? AND connection_epoch=? AND state IN ('sending','verifying')", scope.uid, scope.connectionEpoch).toArray().map(decode);
   }
   queued(scope: ActorScope): StoredOperation[] {
-    return this.repository.sql.exec<OperationRow>("SELECT * FROM operations WHERE uid=? AND connection_epoch=? AND state='queued' ORDER BY created_ms,id", scope.uid, scope.connectionEpoch).toArray().map(decode);
+    return this.repository.sql.exec<OperationRow>("SELECT * FROM operations WHERE uid=? AND connection_epoch=? AND state='queued' ORDER BY rowid", scope.uid, scope.connectionEpoch).toArray().map(decode);
   }
   conflict(operation: StoredOperation): boolean {
     const others = this.repository.sql.exec<{ items: string }>("SELECT items FROM operations WHERE uid=? AND id<>? AND state IN ('sending','verifying','uncertain','partial')", operation.scope.uid, operation.id).toArray();

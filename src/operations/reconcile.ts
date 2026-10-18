@@ -4,6 +4,7 @@ import type { OperationStore } from './store';
 import { safeProblem } from './runner';
 
 export async function reconcileMutation(operation: StoredOperation, handler: MutationHandler, context: OperationContext, store: OperationStore, jobs: Jobs): Promise<StoredOperation> {
+  if (operation.state === 'queued') return operation;
   if (!operation.items.some((item) => item.state === 'uncertain' || item.state === 'sending')) { jobs.remove(operation.id); return operation; }
   context.repository.assertScope(operation.scope);
   try {

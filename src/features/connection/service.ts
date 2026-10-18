@@ -37,6 +37,19 @@ function checkRoute(route: RouteId): void { if (!Object.hasOwn(ROUTES, route)) t
 export class ConnectionService {
   constructor(private readonly dependencies: ConnectionDependencies) {}
   private row(): ConnectionRow { return this.dependencies.repository.sql.exec<ConnectionRow>('SELECT uid,connection_epoch,token_cipher,credential_generation,route,state,profile_raw FROM connection WHERE singleton=1').one(); }
+  private cancelSources(where: string, bindings: string[], reason: Problem): void {
+    const { repository, clock } = this.dependencies;
+    repository.sql.exec(`UPDATE sync_jobs SET state='failed',error=?,finished_ms=? WHERE state='running' AND (${where})`, JSON.stringify(reason), clock.nowMs(), ...bindings).toArray();
+    repository.sql.exec(`UPDATE rebuild_jobs SET state='failed',error=? WHERE state='running' AND (${where})`, JSON.stringify(reason), ...bindings).toArray();
+    repository.sql.exec(`DELETE FROM sync_barrier WHERE ${where}`, ...bindings).toArray();
+    repository.sql.exec(`DELETE FROM jobs WHERE ${where}`, ...bindings).toArray();
+  }
+  private invalidateReads(uid: string): void {
+    const { repository } = this.dependencies;
+    repository.sql.exec('UPDATE source_domains SET generation=generation+1 WHERE uid=?', uid).toArray();
+    repository.sql.exec('INSERT OR IGNORE INTO source_domains(uid,domain,generation) SELECT uid,domain,1 FROM datasets WHERE uid=? GROUP BY uid,domain', uid).toArray();
+    repository.sql.exec('UPDATE source_queries SET invalidated=1 WHERE uid=?', uid).toArray();
+  }
   view(): ConnectionView {
     const row = this.row(), saved = profile(row);
     return { state: row.state as ConnectionView['state'], uid: row.uid, connectionEpoch: row.connection_epoch, route: row.route as RouteId,
@@ -70,7 +83,7 @@ export class ConnectionService {
         repository.sql.exec("UPDATE connection SET uid=?,connection_epoch=?,token_cipher=?,credential_generation=credential_generation+1,state='connected',profile_raw=? WHERE singleton=1", scope.uid, scope.connectionEpoch, cipher, JSON.stringify({ ...saved, bootstrap: null })).toArray();
         // Store only the business bootstrap, never the complete login envelope/token.
         repository.sql.exec('INSERT INTO instance_meta(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value', `bootstrap:${scope.uid}`, stringifyWire(saved.bootstrap)).toArray();
-        repository.sql.exec('DELETE FROM jobs WHERE uid<>? OR connection_epoch<>?', scope.uid, scope.connectionEpoch).toArray();
+        this.cancelSources('uid<>? OR connection_epoch<>?', [scope.uid, scope.connectionEpoch], { code: 'CONNECTION_CHANGED', message: '账号连接已变更，原同步任务已停止' });
       });
       await coordinator.recover();
       return this.view();
@@ -121,7 +134,8 @@ export class ConnectionService {
       const saved = profile(this.row()); saved.problem = warning;
       this.dependencies.repository.transaction(() => {
         this.dependencies.repository.sql.exec("UPDATE connection SET token_cipher=NULL,credential_generation=credential_generation+1,state='disconnected',profile_raw=? WHERE singleton=1", JSON.stringify(saved)).toArray();
-        this.dependencies.repository.sql.exec('DELETE FROM jobs').toArray();
+        this.cancelSources('1=1', [], { code: 'CONNECTION_CLOSED', message: '已退出钱迹，原同步任务已停止' });
+        if (scope) this.invalidateReads(scope.uid);
       });
       await this.dependencies.coordinator.jobs.refreshAlarm();
       return this.view();
@@ -149,6 +163,10 @@ export class ConnectionService {
     const row = this.row();
     if (row.uid !== scope.uid || row.connection_epoch !== scope.connectionEpoch || row.credential_generation !== generation) return;
     const saved = profile(row); saved.problem = { code: 'QIANJI_SESSION_EXPIRED', message: '钱迹连接需要重新登录' };
-    this.dependencies.repository.sql.exec("UPDATE connection SET token_cipher=NULL,state='needs_login',credential_generation=credential_generation+1,profile_raw=? WHERE singleton=1 AND uid=? AND connection_epoch=? AND credential_generation=?", JSON.stringify(saved), scope.uid, scope.connectionEpoch, generation).toArray();
+    this.dependencies.repository.transaction(() => {
+      this.dependencies.repository.sql.exec("UPDATE connection SET token_cipher=NULL,state='needs_login',credential_generation=credential_generation+1,profile_raw=? WHERE singleton=1 AND uid=? AND connection_epoch=? AND credential_generation=?", JSON.stringify(saved), scope.uid, scope.connectionEpoch, generation).toArray();
+      this.cancelSources('uid=? AND connection_epoch=?', [scope.uid, scope.connectionEpoch], saved.problem!);
+      this.invalidateReads(scope.uid);
+    });
   }
 }

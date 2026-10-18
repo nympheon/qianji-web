@@ -27,7 +27,7 @@ export class Jobs {
   }
   remove(id: Id): void { this.repository.sql.exec('DELETE FROM jobs WHERE id=?', id).toArray(); }
   listDue(): DurableJob[] {
-    return this.repository.sql.exec<JobRow>('SELECT * FROM jobs WHERE due_ms<=? ORDER BY due_ms,id LIMIT 50', this.clock.nowMs()).toArray().map((row) => ({ id: row.id, scope: { uid: row.uid, connectionEpoch: row.connection_epoch }, kind: row.kind, payload: parseWire(row.payload), dueMs: row.due_ms }));
+    return this.repository.sql.exec<JobRow>('SELECT * FROM jobs WHERE due_ms<=? ORDER BY due_ms,rowid LIMIT 50', this.clock.nowMs()).toArray().map((row) => ({ id: row.id, scope: { uid: row.uid, connectionEpoch: row.connection_epoch }, kind: row.kind, payload: parseWire(row.payload), dueMs: row.due_ms }));
   }
   refreshAlarm(): Promise<void> {
     return this.locked(async () => {

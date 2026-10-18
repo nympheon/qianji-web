@@ -201,13 +201,13 @@ contract导出MutationCommand/StoredOperation/PreparedMutation/OperationUpdate/R
 
 cache.ts导出`CacheKey { domain:SyncDomain; queryKey:string }`、`CacheReadStamp {scope:ActorScope;key:CacheKey;datasetId:Id|null;generation:number}`、`ResourceRefresh {items:ResourceRecord[];complete:boolean;deletes?:Id[]}`及`ResourceCache.captureRead(scope:ActorScope,key:CacheKey):CacheReadStamp`、`applyRead(stamp:CacheReadStamp,result:ResourceRefresh):'applied'|'superseded'`、`invalidateSource(scope:ActorScope,key:CacheKey):void`。ResourceRefresh只表达本查询范围；记录validatedAt/changedAt/complete与源代次。列表、详情、选择器共享相应源域的写入代次和资源行，查询缓存只记录成员关系/顺序，不各存一份对象。业务写开始/回执和同步变更推进相关代次，失效派生结果；只有缺失或不可靠源数据才调用invalidateSource，完整回执不一概失效为需重新拉取。
 
-- [ ] 写失败断言：60秒内同域查询无新请求、并发冷查询只启动一任务；普通冷却5秒；重建首/中/末页排队写均在切换后执行且结果不丢；重建失败保留原集合与游标。
-- [ ] 写缓存失败断言：t=0校验、t=40读取、t=80仍需检查；t=50单条写不推迟t=65整域检查；完整空列表60秒内不再请求；重复/无变化页不推进数据revision；旧读A迟于写B确认到达不能覆盖B，UID/数据集切换同样拒绝旧响应。
-- [ ] Run `pnpm test -- tests/workers/cache-policy.test.ts tests/workers/sync-lifecycle.test.ts`；预期FAIL于缓存/生命周期缺失。
-- [ ] 实现ResourceCache与元数据迁移；源校验、业务变化和派生失效分开。资源过期只在使用时获取，保留SQLite副本；按需检查无变化时只更新validatedAt。对完整回执局部落库并更新依赖，不固定增加全域pull；不完整查询不标为已完整空集合。筛选列表为空只更新其查询成员，不能删除别的筛选或其他域资源；实体删除仅采已核对的明确删除或完整覆盖契约。旧响应应用前复核轻量代次，过时则保留新数据及必要失效状态，不重发写入。
-- [ ] 实现临时集合/同库切换、任务级远端写串行边界与短页事务；草稿/日志不随集合替换。允许未知写的只读核查使用重建，不互相等待；仅未发送或明确ID拒绝可继续的项进入push。
-- [ ] 重跑并测过期失败保留副本/陈旧状态、不自动持续重试；空的过滤查询不清其他资源、不伪装全域已校验；只重建tags不切ledger、断开页面后有限alarm续跑、恢复不重发未知写、冷却不使已发生写入变失败、任务终止后虚拟时钟推进10分钟上游计数不变，PASS。
-- [ ] 提交：`feat: merge on-demand refresh and rebuild mirrors safely`。
+- [x] 写失败断言：60秒内同域查询无新请求、并发冷查询只启动一任务；普通冷却5秒；重建首/中/末页排队写均在切换后执行且结果不丢；重建失败保留原集合与游标。
+- [x] 写缓存失败断言：t=0校验、t=40读取、t=80仍需检查；t=50单条写不推迟t=65整域检查；完整空列表60秒内不再请求；重复/无变化页不推进数据revision；旧读A迟于写B确认到达不能覆盖B，UID/数据集切换同样拒绝旧响应。
+- [x] Run `pnpm test -- tests/workers/cache-policy.test.ts tests/workers/sync-lifecycle.test.ts`；预期FAIL于缓存/生命周期缺失。
+- [x] 实现ResourceCache与元数据迁移；源校验、业务变化和派生失效分开。资源过期只在使用时获取，保留SQLite副本；按需检查无变化时只更新validatedAt。对完整回执局部落库并更新依赖，不固定增加全域pull；不完整查询不标为已完整空集合。筛选列表为空只更新其查询成员，不能删除别的筛选或其他域资源；实体删除仅采已核对的明确删除或完整覆盖契约。旧响应应用前复核轻量代次，过时则保留新数据及必要失效状态，不重发写入。
+- [x] 实现临时集合/同库切换、任务级远端写串行边界与短页事务；草稿/日志不随集合替换。允许未知写的只读核查使用重建，不互相等待；仅未发送或明确ID拒绝可继续的项进入push。
+- [x] 重跑并测过期失败保留副本/陈旧状态、不自动持续重试；空的过滤查询不清其他资源、不伪装全域已校验；只重建tags不切ledger、断开页面后有限alarm续跑、恢复不重发未知写、冷却不使已发生写入变失败、任务终止后虚拟时钟推进10分钟上游计数不变，PASS。
+- [x] 提交：`feat: merge on-demand refresh and rebuild mirrors safely`。
 
 ### Task 09：账单筛选、关系详情、日历与稳定分页边界
 

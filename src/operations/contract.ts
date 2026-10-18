@@ -3,12 +3,13 @@ import type { Problem } from '../shared/reply';
 import type { WireJson } from '../shared/wire-json';
 import type { QianjiClient, ProtocolReply } from '../protocol/client';
 import type { Repository } from '../storage/database';
+import type { SyncDomain } from '../storage/mirror';
 
 export type OperationState = 'queued' | 'sending' | 'verifying' | 'succeeded' | 'failed' | 'uncertain' | 'partial';
 export type ItemState = 'queued' | 'sending' | 'succeeded' | 'failed' | 'uncertain';
 export interface MutationCommand { action: string; input: WireJson; scope: ActorScope; requestId: string }
 export interface PreparedItem { id: Id; affectedIds: readonly Id[] }
-export interface PreparedMutation { payload: WireJson; items: readonly PreparedItem[]; affectedIds: readonly Id[] }
+export interface PreparedMutation { payload: WireJson; items: readonly PreparedItem[]; affectedIds: readonly Id[]; affectedDomains?: readonly SyncDomain[] }
 export interface OperationItem extends PreparedItem { state: ItemState; error: Problem | null }
 export interface OperationView {
   id: Id; action: string; state: OperationState; items: OperationItem[];

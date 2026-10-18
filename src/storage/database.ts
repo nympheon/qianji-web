@@ -63,6 +63,7 @@ export class Repository {
       for (const resource of page.resourceDeletes ?? []) {
         const deleted = this.sql.exec('DELETE FROM resources WHERE uid=? AND domain=? AND dataset_id=? AND kind=? AND id=?', scope.uid, domain, datasetId, resource.kind, resource.id);
         deleted.toArray(); changed = deleted.rowsWritten > 0 || changed;
+        this.sql.exec('DELETE FROM source_members WHERE uid=? AND domain=? AND kind=? AND resource_id=?', scope.uid, domain, resource.kind, resource.id).toArray();
       }
       for (const id of page.deletes) {
         this.sql.exec("DELETE FROM bill_relations WHERE uid=? AND domain='ledger' AND dataset_id=? AND bill_id=?", scope.uid, datasetId, id).toArray();
@@ -93,6 +94,7 @@ export class Repository {
       this.sql.exec('UPDATE datasets SET revision=revision+?,complete=?,validated_at=? WHERE uid=? AND domain=? AND id=?',
         changed ? 1 : 0, page.complete === undefined ? dataset.complete : Number(page.complete),
         page.validatedAt === undefined ? dataset.validated_at : page.validatedAt, scope.uid, domain, datasetId).toArray();
+      if (changed) this.bumpSourceGeneration(scope, domain);
       const cursor = this.syncState(scope, domain, datasetId)?.cursor ?? null;
       this.sql.exec('UPDATE sync_state SET page_state=?,cursor=? WHERE uid=? AND domain=? AND dataset_id=?',
         stringifyWire(page.pageState), stringifyWire(page.cursor === undefined ? cursor : page.cursor), scope.uid, domain, datasetId).toArray();
@@ -156,6 +158,39 @@ export class Repository {
     this.assertScope(scope);
     const row = this.sql.exec<{ raw: string }>('SELECT raw FROM drafts WHERE uid=? AND id=?', scope.uid, id).toArray()[0];
     return row ? parseWire(row.raw) : null;
+  }
+  sourceGeneration(scope: ActorScope, domain: SyncDomain): number {
+    this.assertScope(scope);
+    return this.sql.exec<{ generation: number }>('SELECT generation FROM source_domains WHERE uid=? AND domain=?', scope.uid, domain).toArray()[0]?.generation ?? 0;
+  }
+  bumpSourceGeneration(scope: ActorScope, domain: SyncDomain): void {
+    this.assertScope(scope);
+    this.sql.exec('INSERT INTO source_domains(uid,domain,generation) VALUES (?,?,1) ON CONFLICT(uid,domain) DO UPDATE SET generation=generation+1', scope.uid, domain).toArray();
+  }
+  hasUncertainty(scope: ActorScope, domain: SyncDomain): boolean {
+    this.assertScope(scope);
+    return this.sql.exec(`SELECT 1 FROM operation_domains d JOIN operations o ON o.id=d.operation_id WHERE d.uid=? AND d.domain=? AND o.state IN ('sending','verifying','uncertain','partial') AND EXISTS(SELECT 1 FROM json_each(o.items) WHERE json_extract(value,'$.state') IN ('sending','uncertain')) LIMIT 1`, scope.uid, domain).toArray().length > 0;
+  }
+  pruneInactiveDatasets(scope: ActorScope, domains: readonly SyncDomain[]): void {
+    this.assertScope(scope);
+    this.transaction(() => {
+      for (const domain of new Set(domains)) {
+        const unused = this.sql.exec<{ id: string }>(`SELECT d.id FROM datasets d WHERE d.uid=? AND d.domain=?
+          AND NOT EXISTS(SELECT 1 FROM active_datasets a WHERE a.uid=d.uid AND a.domain=d.domain AND a.dataset_id=d.id)
+          AND NOT EXISTS(SELECT 1 FROM sync_jobs s WHERE s.uid=d.uid AND s.domain=d.domain
+            AND json_extract(CASE WHEN json_valid(s.checkpoint) THEN s.checkpoint ELSE '{}' END,'$.datasetId')=d.id
+            AND (s.state='running' OR EXISTS(SELECT 1 FROM rebuild_jobs r WHERE r.id=json_extract(CASE WHEN json_valid(s.checkpoint) THEN s.checkpoint ELSE '{}' END,'$.ownerJobId') AND r.state='running')))`, scope.uid, domain).toArray();
+        for (const { id } of unused) {
+          this.sql.exec('DELETE FROM source_members WHERE uid=? AND domain=? AND query_key IN (SELECT query_key FROM source_queries WHERE uid=? AND domain=? AND dataset_id=?)', scope.uid, domain, scope.uid, domain, id).toArray();
+          this.sql.exec('DELETE FROM source_queries WHERE uid=? AND domain=? AND dataset_id=?', scope.uid, domain, id).toArray();
+          this.sql.exec('DELETE FROM bill_relations WHERE uid=? AND domain=? AND dataset_id=?', scope.uid, domain, id).toArray();
+          this.sql.exec('DELETE FROM bills WHERE uid=? AND domain=? AND dataset_id=?', scope.uid, domain, id).toArray();
+          this.sql.exec('DELETE FROM resources WHERE uid=? AND domain=? AND dataset_id=?', scope.uid, domain, id).toArray();
+          this.sql.exec('DELETE FROM sync_state WHERE uid=? AND domain=? AND dataset_id=?', scope.uid, domain, id).toArray();
+          this.sql.exec('DELETE FROM datasets WHERE uid=? AND domain=? AND id=?', scope.uid, domain, id).toArray();
+        }
+      }
+    });
   }
 }
 

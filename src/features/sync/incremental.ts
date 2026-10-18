@@ -87,9 +87,11 @@ export function parseCheckpoint(text: string): SyncCheckpoint {
     if (typeof scope.uid !== 'string' || !scope.uid || typeof scope.connectionEpoch !== 'string' || !scope.connectionEpoch
       || typeof raw.datasetId !== 'string' || !raw.datasetId || typeof raw.pageSign !== 'string'
       || typeof raw.full !== 'boolean' || tagPage < 0 || tagPage > 40
+      || (raw.ownerJobId !== undefined && (typeof raw.ownerJobId !== 'string' || raw.ownerJobId.length === 0))
       || raw.startCursor === undefined || raw.collectedTimes === undefined) return invalidSync();
     return { scope: { uid: scope.uid, connectionEpoch: scope.connectionEpoch }, datasetId: raw.datasetId,
       startCursor: raw.startCursor, collectedTimes: wireObject(raw.collectedTimes),
-      bookId: integerText(raw.bookId), pageOffset: integerText(raw.pageOffset), pageSign: raw.pageSign, tagPage, full: raw.full };
+      bookId: integerText(raw.bookId), pageOffset: integerText(raw.pageOffset), pageSign: raw.pageSign, tagPage, full: raw.full,
+      ...(typeof raw.ownerJobId === 'string' ? { ownerJobId: raw.ownerJobId } : {}) };
   } catch { return invalidSync(); }
 }

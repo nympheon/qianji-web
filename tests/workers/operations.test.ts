@@ -9,6 +9,7 @@ import { commandDigest } from '../../src/operations/store';
 
 async function scenario() {
   const app = await createTestApp();
+  await app.repository((repo) => repo.sql.exec("UPDATE connection SET state='connected' WHERE singleton=1").toArray());
   const clock = new TestClock(Date.now());
   const upstream = createUpstream(clock, app.scope);
   const counts = { send: 0, reconcile: 0, accepted: 0, maxSending: 0, sending: 0 };
@@ -239,6 +240,37 @@ describe('durable mutation coordinator', () => {
       expect(checked.error?.code).toBe('READ_ONLY_PROTOCOL');
       expect(s.upstream.calls).toHaveLength(0);
       expect(s.counts.send).toBe(1);
+    });
+  });
+  it('does not cancel a queued intent when its result is queried for reconciliation before sending', async () => {
+    const s = await scenario();
+    await s.withCoordinator(async (coordinator, ctx) => {
+      const queued = await coordinator.jobs.persistWithWakeup(() => {
+        const operation = coordinator.store.create(s.command(), commandDigest(s.command()));
+        coordinator.jobs.put(operation.id, s.app.scope, 'mutation', { operationId: operation.id });
+        return operation;
+      });
+      expect((await coordinator.reconcileOperation(s.app.scope, queued.id)).state).toBe('queued');
+      expect(ctx.repository.sql.exec('SELECT id FROM jobs WHERE id=?', queued.id).toArray()).toHaveLength(1);
+      expect(s.counts.send).toBe(0);
+    });
+  });
+  it('allows an unrelated write past more than five held uncertain-target intents', async () => {
+    const s = await scenario();
+    await s.withCoordinator(async (coordinator, ctx) => {
+      for (let index = 0; index < 6; index++) {
+        const command = s.command(`held-${index}`);
+        const operation = coordinator.store.create(command, commandDigest(command));
+        coordinator.store.setError(operation, { code: 'TARGET_UNCERTAIN', message: 'held' });
+      }
+      let sent = 0;
+      const other = new Coordinator(ctx, new Map([['test.other', {
+        prepare: async () => ({ payload: {}, affectedIds: ['other'], items: [{ id: 'other', affectedIds: ['other'] }] }),
+        send: async () => { sent++; return { ec: '200', data: {}, httpStatus: 200 }; },
+        applyReceipt: () => ({ items: [{ id: 'other', state: 'succeeded' }] }), reconcile: async () => ({ items: [] }),
+      }]]));
+      const result = await other.submit({ ...s.command('unrelated'), action: 'test.other' });
+      expect(result.state).toBe('succeeded'); expect(sent).toBe(1);
     });
   });
 });
