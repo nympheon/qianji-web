@@ -16,9 +16,15 @@ import { bookListSchema, bookIdSchema, bookSubmitSchema, bookConfigureSchema, bo
 import { categoryListSchema, categoryCheckSchema, categorySubmitSchema, categoryLevelSchema, categoryMoveSchema, categoryReorderSchema, categoryDeleteSchema, categoryDraftSchema, type CategoryDraftView, type CategoryListView, type CategoryDeleteCheckView } from '../features/categories/contract';
 import { tagListSchema, tagWriteSchemas, tagDraftSchema, type TagDraftView, type TagListView } from '../features/tags/contract';
 import { budgetQuerySchema, budgetChangesSchema, budgetDraftSchema, type BudgetDraftView, type BudgetView } from '../features/budget/contract';
+import { repeatQuerySchema, repeatPreviewSchema, repeatSubmitSchema, repeatPauseSchema, repeatDeleteSchema, repeatDraftSchema, type RepeatListView, type RepeatDraftView, type PreviewBill } from '../features/repeat/contract';
+import { planBindingSchema } from '../features/plans/contract';
 import { uploadImageSchema, imageReferenceSchema, uploadDraftSchema, type UploadDraftView, type AttachmentOptions, type UploadedImage, type ImageView } from '../features/attachments/contract';
 const route = z.strictObject({ route: z.enum(['main', 'backup', 'overseas']) });
 export const actionSchemas = {
+  'repeat.list': repeatQuerySchema, 'repeat.preview': repeatPreviewSchema,
+  'repeat.submit': z.discriminatedUnion('mode', [repeatSubmitSchema.options[0].extend({ requestId: id }), repeatSubmitSchema.options[1].extend({ requestId: id })]),
+  'repeat.setPaused': repeatPauseSchema.extend({ requestId: id }), 'repeat.setBillBinding': planBindingSchema.extend({ requestId: id }), 'repeat.delete': repeatDeleteSchema.extend({ requestId: id }),
+  'repeat.draft.get': z.strictObject({ key: z.string().min(1).max(300) }), 'repeat.draft.save': z.strictObject({ key: z.string().min(1).max(300), draft: repeatDraftSchema }),
   'attachments.draft.applied': z.strictObject({ key: z.string().min(1).max(300), operationId: id }),
   'attachments.draft.get': z.strictObject({ key: z.string().min(1).max(300) }), 'attachments.draft.save': z.strictObject({ key: z.string().min(1).max(300), draft: uploadDraftSchema }),
   'attachments.options': empty, 'attachments.resolve': imageReferenceSchema, 'attachments.result': z.strictObject({ operationId: id }), 'attachments.upload': uploadImageSchema.extend({ requestId: id }),
@@ -67,6 +73,7 @@ export const actionSchemas = {
 export type ActionName = keyof typeof actionSchemas;
 export type ActionInput<A extends ActionName> = z.infer<typeof actionSchemas[A]>;
 export interface ActionOutputs {
+  'repeat.list': RepeatListView; 'repeat.preview': PreviewBill[]; 'repeat.submit': OperationView; 'repeat.setPaused': OperationView; 'repeat.setBillBinding': OperationView; 'repeat.delete': OperationView; 'repeat.draft.get': RepeatDraftView | null; 'repeat.draft.save': RepeatDraftView;
   'attachments.draft.applied': UploadDraftView; 'attachments.draft.get': UploadDraftView | null; 'attachments.draft.save': UploadDraftView; 'attachments.options': AttachmentOptions; 'attachments.resolve': ImageView; 'attachments.result': UploadedImage | null; 'attachments.upload': OperationView;
   'budget.list': BudgetView; 'budget.submit': OperationView; 'budget.draft.get': BudgetDraftView | null; 'budget.draft.save': BudgetDraftView;
   'tags.list': TagListView; 'tags.submitTag': OperationView; 'tags.submitGroup': OperationView; 'tags.reorderTags': OperationView; 'tags.reorderGroups': OperationView; 'tags.setArchived': OperationView; 'tags.deleteTag': OperationView; 'tags.deleteGroup': OperationView; 'tags.draft.get': TagDraftView | null; 'tags.draft.save': TagDraftView;
@@ -108,6 +115,13 @@ export const actionDefinitions: Record<ActionName, ActionDefinition> = {
   'attachments.options': { ...read, title: '图片上传选项', description: '读取官方max_bill_image及当前来源，原生fallback明确标记；不返回七牛token。闲置不刷新，过期配置按需检查。图片字节缺失时使用uploadPage网页入口。' },
   'attachments.resolve': { ...read, title: '解析图片显示地址', description: '按账单、封面或分类用途及尺寸构造原生样式URL，支持_hg长图。普通URL仅作为显示引用，uploaded=false，不能证明上传成功或直接关联新账单。' },
   'attachments.result': { ...read, evidence: 'local', title: '读取原图片上传结果', description: '按原operationId读取已确认对象key和purpose-specific associationValue；未知上传在只读证明前返回null，不换键重传。' },
+  'repeat.list': { ...read, title: '查询周期任务', description: '原生page从0开始，sort为创建时间0/状态1/次数2/账单类型3及ascending方向，按官方分页完整集合进行状态与类型筛选。来源缓存60秒，空集合也缓存，闲置不请求。' },
+  'repeat.preview': { ...read, title: '预览周期规则日期', description: '从开始日期预览规则，不生成持久Bill；支持月末32、29+的291、30+的301、间隔日和排除结束日期当天。法定工作日必须有官方年映射，夏令时歧义明确报错。预览不代表官方已出账。' },
+  'repeat.submit': { ...write, title: '新增或编辑周期任务', description: 'Gson整体提交任务并保留未知字段，部分编辑只改显式字段；金额费用按账单类型处理，接收官方task及bills，不再上传预览或本地补账。编辑影响以后的生成，历史记录保留；新建结果不明不按相同金额认领。复用requestId。' },
+  'repeat.setPaused': { ...write, title: '暂停或恢复周期任务', description: 'paused为明确目标，发送前强制读取最新状态，仅0/1支持启停，目标已达到时不调用toggle。官方返回的账单列表独立接收，未知结果只读核查，禁止重复切换。复用requestId。' },
+  'repeat.setBillBinding': { ...write, title: '关联或移出周期任务已有账单', description: 'planId为管理ID，packId为实际账单分组；只操作已有billId。先同步最新账单并核对当前关系，解绑T时已属于U则不触发T的翻转接口，不生成账单。未知结果只核查原关系；跨设备没有条件写入保证。复用requestId。' },
+  'repeat.delete': { ...write, destructive: true, title: '删除周期任务', description: '按最新配置版本删除任务，保留已有账单；不伪造手动finished状态或重置次数，不增加Worker定时出账。未知结果只读核查。复用requestId。' },
+  'repeat.draft.get': { ...read, evidence: 'local', title: '读取周期任务草稿', description: '读取本地结构化输入和原操作，不请求钱迹。' }, 'repeat.draft.save': { ...read, evidence: 'local', readOnly: false, title: '保存周期任务草稿', description: '保留原请求键，未知操作未核清前不能覆盖新建。' },
   'attachments.upload': { ...write, title: '上传官方钱迹图片', description: '提供已按APK处理的JPEG账单/封面或PNG图标base64，单张8MiB以内；无字节时前往网页上传入口。先确认官方区域和临近过期凭证，仅发送一次对象上传。日志只保存元数据，未知结果只读核查原对象；成功后用attachments.result取得已确认引用。必须复用requestId。' },
   'budget.list': { ...read, title: '查询预算与执行进度', description: '按账本、月/年日期、原生range及其时区分别缓存官方配置和daystats；执行计算复用APK预算口径，父子分类可重叠，总额独立，不叠加父子进度。标明副本完整性及历史退款依赖。闲置不请求。' },
   'budget.submit': { ...write, title: '设置总预算或分类预算', description: '按配置版本提交原生submitv2/changelist，金额0沿用原生取消预算语义；保留未知字段，应用官方返回预算集合而非复制输入。只支持已核对月度/年度及自定义月界，不推断独立季度预算或结转任务。复用requestId，未知结果只读核查。' },

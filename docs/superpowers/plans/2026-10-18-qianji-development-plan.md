@@ -392,11 +392,13 @@ cache.ts导出`CacheKey { domain:SyncDomain; queryKey:string }`、`CacheReadStam
 **Files:** Create `src/features/repeat/{contract,service,use-cases,preview}.ts`、`src/web/pages/RepeatPage.tsx`、`tests/unit/repeat-preview.test.ts`、`tests/workers/repeat.test.ts`；Modify registry。
 **Interfaces:** Consumes资料/资产/附件；Produces `RepeatService.list/submit/preview/setPaused/setBillBinding/delete`；分别使用RepeatQuery/RepeatInput/RepeatPreviewInput/PauseTargetInput/PlanBindingInput/DeleteRepeatInput，写返回OperationView、预览返回不持久化的PreviewBill[]。
 
-- [ ] 写失败断言：月末32、291/301、间隔日、结束次数/日期按APK；缺官方节假日年映射不退化为工作周；手机先暂停后服务再要求暂停不反向toggle；当前绑定U而请求解绑T不发T.bindbill。
-- [ ] Run `pnpm test -- tests/unit/repeat-preview.test.ts tests/workers/repeat.test.ts`；预期FAIL于周期域缺失。
-- [ ] 实现任务查询/创建/修改/排序筛选、暂停恢复、结束条件和删除；预览只展示，不上送生成的Bill。提交应用官方task+bills，绑定用已有billId及具体packId；不凭状态常量开放手动finished/resetCount，不建Worker定时出账。
-- [ ] 重跑规则修改保留旧账单、状态0/1启停前提、最新状态核查、submit与binding结果不明只读恢复，PASS；将所有手机离线/服务闲置时执行条件交任务27实测。
-- [ ] 提交：`feat: manage recurring tasks with native date previews`。
+- [x] 写失败断言：月末32、291/301、间隔日、结束次数/日期按APK；缺官方节假日年映射不退化为工作周；手机先暂停后服务再要求暂停不反向toggle；当前绑定U而请求解绑T不发T.bindbill。
+- [x] Run `pnpm test -- tests/unit/repeat-preview.test.ts tests/workers/repeat.test.ts`；预期FAIL于周期域缺失。
+- [x] 实现任务查询/创建/修改/排序筛选、暂停恢复、结束条件和删除；预览只展示，不上送生成的Bill。提交应用官方task+bills，绑定用已有billId及具体packId；不凭状态常量开放手动finished/resetCount，不建Worker定时出账。
+- [x] 重跑规则修改保留旧账单、状态0/1启停前提、最新状态核查、submit与binding结果不明只读恢复，PASS；将所有手机离线/服务闲置时执行条件交任务27实测。
+- [x] 提交：`feat: manage recurring tasks with native date previews`。
+
+实现阶段已验证；真实出账、手机离线条件及官方执行对照仍由 Task27 完成。
 
 ### Task 24：分期新增、统计配置与提前还款
 

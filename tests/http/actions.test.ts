@@ -20,6 +20,13 @@ export async function seedActions() {
 }
 export const action = (name: string, input: unknown = {}) => exports.default.fetch('https://test/api/actions', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: name, input }) });
 describe('shared HTTP actions', () => {
+  it('exposes recurring previews and typed drafts while protecting unverified native writes', async () => {
+    await seedActions(); expect(await (await action('repeat.list')).json()).toMatchObject({ status: 'partial', data: { items: [] } });
+    expect(await (await action('repeat.setPaused', { id: '100', paused: true, requestId: 'pause-target' })).json()).toMatchObject({ status: 'unavailable', error: { code: 'WRITE_LIVE_UNVERIFIED' } });
+    const fields = { type: 0, bookId: '10', categoryId: '2', enteredMoney: '10', startDate: '2026-01-31', repeat: { type: 'month', values: ['32'] } };
+    expect(await (await action('repeat.preview', { fields, limit: 2 })).json()).toMatchObject({ status: 'ready', data: [{ date: '2026-01-31' }, { date: '2026-02-28' }] });
+    const draft = { action: 'repeat.submit', requestId: 'repeat-draft', input: { mode: 'create', fields: { ...fields, enteredMoney: '' } } }; expect(await (await action('repeat.draft.save', { key: 'new', draft })).json()).toMatchObject({ status: 'ready', data: { draft, operationId: null } });
+  });
   it('exposes media options and source URLs without treating URL text as uploaded proof', async () => {
     await seedActions(); expect(await (await action('attachments.options')).json()).toMatchObject({ status: 'partial', data: { maxBillImages: 6, countSource: 'apk-default', uploadPage: '/attachments' } }); expect(await (await action('attachments.resolve', { reference: 'https://example.test/picture.jpg' })).json()).toMatchObject({ data: { url: 'https://example.test/picture.jpg', uploaded: false, source: 'external-url' } }); expect(await (await action('attachments.upload', { purpose: 'bill', mime: 'image/jpeg', requestId: 'image-upload' })).json()).toMatchObject({ status: 'unavailable', error: { code: 'WRITE_LIVE_UNVERIFIED' } });
   });

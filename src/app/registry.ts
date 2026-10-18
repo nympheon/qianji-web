@@ -6,6 +6,13 @@ import { useCase, type UseCase, type UseCaseContext } from './use-case';
 
 function scope(context: UseCaseContext) { const scope = context.connection.scope(); if (!scope) throw new DomainError('CONNECTION_REQUIRED', '请先连接钱迹'); return scope; }
 const handlers: Record<ActionName, UseCase> = {
+  'repeat.list': useCase('repeat.list', (ctx, input) => ctx.repeat.list(input)), 'repeat.preview': useCase('repeat.preview', (ctx, input) => ctx.repeat.preview(input)),
+  'repeat.submit': useCase('repeat.submit', (ctx, { requestId, ...input }) => ctx.repeat.mutate('repeat.submit', input, { requestId })),
+  'repeat.setPaused': useCase('repeat.setPaused', (ctx, { requestId, ...input }) => ctx.repeat.mutate('repeat.setPaused', input, { requestId })),
+  'repeat.setBillBinding': useCase('repeat.setBillBinding', (ctx, { requestId, ...input }) => ctx.repeat.mutate('repeat.setBillBinding', input, { requestId })),
+  'repeat.delete': useCase('repeat.delete', (ctx, { requestId, ...input }) => ctx.repeat.mutate('repeat.delete', input, { requestId })),
+  'repeat.draft.get': useCase('repeat.draft.get', (ctx, input) => ctx.repeat.getDraft(input.key)), 'repeat.draft.save': useCase('repeat.draft.save', (ctx, input) => ctx.repeat.saveDraft(input.key, input.draft)),
+
   'categories.submit': useCase('categories.submit', (ctx, { requestId, ...input }) => ctx.categories.submit(input, { requestId })),
   'categories.changeLevel': useCase('categories.changeLevel', (ctx, { requestId, ...input }) => ctx.categories.changeLevel(input, { requestId })),
   'categories.move': useCase('categories.move', (ctx, { requestId, ...input }) => ctx.categories.move(input, { requestId })),
