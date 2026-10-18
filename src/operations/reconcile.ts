@@ -1,5 +1,5 @@
 import type { Jobs } from '../actor/jobs';
-import type { MutationHandler, OperationContext, StoredOperation } from './contract';
+import type { MutationHandler, OperationContext, StoredOperation, OperationUpdate } from './contract';
 import type { OperationStore } from './store';
 import { safeProblem } from './runner';
 
@@ -11,7 +11,11 @@ export async function reconcileMutation(operation: StoredOperation, handler: Mut
   if(received&&!received.applied){
     try{
       const reply={...received.reply,httpStatus:Number(received.reply.httpStatus)};
-      operation=context.repository.transaction(()=>store.markReceiptApplied(store.apply(operation,handler.applyReceipt(operation.prepared!,reply,{...context,client:context.client.asReadOnly()})),true));
+      // Validate a historical receipt without publishing its old records over a newer source.
+      const rollback={};let update:OperationUpdate|undefined;
+      try{context.repository.transaction(()=>{update=handler.applyReceipt(operation.prepared!,reply,{...context,client:context.client.asReadOnly()});throw rollback;});}
+      catch(error){if(error!==rollback)throw error;}
+      operation=context.repository.transaction(()=>store.markReceiptApplied(store.apply(operation,update!),true));
     }catch(error){operation=store.markUnresolved(operation,'uncertain',safeProblem(error));}
     if(!operation.items.some(item=>item.state==='uncertain'||item.state==='sending')){jobs.remove(operation.id);return operation;}
   }

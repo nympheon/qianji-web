@@ -33,6 +33,7 @@ export interface OperationContext {
   /** A private runner may impose a narrower resource policy; never derived from public input. */
   authorizeMutation?: (command:MutationCommand) => void;
   authorizePrepared?: (command:MutationCommand, prepared:PreparedMutation) => void;
+  writesPaused?: () => boolean;
   /** Available only during the original send; never during read-only reconciliation. */
   currentOperation?: () => StoredOperation;
   checkpoint?: (prepared: PreparedMutation, update: OperationUpdate | (() => OperationUpdate)) => void;

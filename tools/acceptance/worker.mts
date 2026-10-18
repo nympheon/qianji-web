@@ -37,6 +37,7 @@ export class QianjiState extends DurableObject<Env>{
  #billPosts=0;
  #networkRequests=0;
  #lastNetworkAt:string|null=null;
+ readonly #monitorId=crypto.randomUUID();
  constructor(state:DurableObjectState,env:Env){
   super(state,env);
   this.context=createActorContext(state.storage,env,undefined,{authorizeMutation:command=>{
@@ -120,7 +121,7 @@ export class QianjiState extends DurableObject<Env>{
    };
    const checkpoint=<T,>(key:string,value:T):T=>{const observations=current.observations??={};if(Object.hasOwn(observations,key))return observations[key] as T;observations[key]=value;this.save(current);return value;};
    const result=await runCase(name,{prefix:current.prefix,read,write,remember,known,synchronize,checkpoint,invalidateSource:key=>this.context.cache.invalidateSource(account,key),optional:alias=>current.aliases[alias],billPostCount:()=>this.#billPosts,armReceiptLoss:()=>{if(name!=='receipt-loss')throw new DomainError('ACCEPTANCE_SCOPE_DENIED','故障仅限专用响应丢失场景');this.#dropBillReceipt=true;}});
-   return {...result,case:name,resources:Object.fromEntries(Object.entries(current.resources).map(([kind,ids])=>[kind,ids?.length??0])),operations,partialReads,trace:this.#trace,networkRequests:this.#networkRequests,lastNetworkAt:this.#lastNetworkAt,observedAt:new Date().toISOString()};
+   return {...result,case:name,resources:Object.fromEntries(Object.entries(current.resources).map(([kind,ids])=>[kind,ids?.length??0])),operations,partialReads,trace:this.#trace,networkRequests:this.#networkRequests,lastNetworkAt:this.#lastNetworkAt,monitorId:this.#monitorId,observedAt:new Date().toISOString()};
   }catch(error){return {case:name,state:'error',error:error instanceof DomainError?{code:error.code,message:error.detail}:{code:'ACCEPTANCE_FAILED',message:'本地验收未完成'},operations,trace:this.#trace};}
  }
 }

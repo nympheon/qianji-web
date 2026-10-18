@@ -22,6 +22,7 @@ export class Coordinator {
     const next = this.#tail.then(fn); this.#tail = next.catch(() => undefined); return next;
   }
   async submit(command: MutationCommand): Promise<OperationView> {
+    if(this.context.writesPaused?.())throw new DomainError('MAINTENANCE_PAUSED','维护核查期间暂停接受写入');
     this.context.repository.assertScope(command.scope);
     if (!command.requestId || command.requestId.length > 200) throw new DomainError('REQUEST_KEY_REQUIRED', '写操作需要稳定的请求键');
     const handler = this.handlers.get(command.action);
@@ -47,6 +48,7 @@ export class Coordinator {
         const target = this.store.get(scope, id);
         if (!target) throw new DomainError('OPERATION_MISSING', '操作不存在');
         if (target.state !== 'queued') return operationView(target);
+        if(this.context.writesPaused?.()){this.jobs.remove(id);return operationView(this.store.setError(target,{code:'MAINTENANCE_PAUSED',message:'维护期间已保留原排队操作'}));}
         const connected = this.context.repository.sql.exec<{ state: string }>('SELECT state FROM connection WHERE singleton=1').one().state === 'connected';
         if (!connected) {
           this.jobs.remove(id);
@@ -97,6 +99,7 @@ export class Coordinator {
     return pending;
   }
   async resumeJobs(): Promise<void> {
+    if(this.context.writesPaused?.()){await this.context.repository.storage.deleteAlarm();return;}
     if (this.#resuming) return this.#resuming;
     this.#resuming = (async () => {
       for (const job of this.jobs.listDue().slice(0, 5)) {
@@ -120,6 +123,7 @@ export class Coordinator {
   }
   changeConnection<T>(fn: () => Promise<T>): Promise<T> { return this.exclusive(fn); }
   private async wakeReleased(scope: ActorScope): Promise<void> {
+    if(this.context.writesPaused?.())return;
     const repository = this.context.repository;
     if (repository.sql.exec<{ state: string }>('SELECT state FROM connection WHERE singleton=1').one().state !== 'connected') return;
     const held = this.store.queued(scope).filter((operation) => operation.error?.code === 'TARGET_UNCERTAIN' && !this.store.conflict(operation));
@@ -159,6 +163,7 @@ export class Coordinator {
     }));
   }
   async recover(): Promise<void> {
+    if(this.context.writesPaused?.()){await this.context.repository.storage.deleteAlarm();return;}
     const row = this.context.repository.sql.exec<{ uid: string | null; connection_epoch: string | null; state: string }>('SELECT uid,connection_epoch,state FROM connection WHERE singleton=1').one();
     if (row.uid !== null && row.connection_epoch !== null) {
       const scope = { uid: row.uid, connectionEpoch: row.connection_epoch };

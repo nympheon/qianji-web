@@ -16,6 +16,8 @@
     "test:e2e": "playwright test",
     "acceptance": "node tools/acceptance/run.mts",
     "acceptance:dev": "vite --config tools/acceptance/vite.config.mts",
+    "acceptance:idle": "node tools/acceptance/idle.mts",
+    "ops": "node tools/ops/maintenance.mts",
     "check:deploy": "wrangler deploy --dry-run --config dist/worker/wrangler.json",
     "verify": "pnpm typecheck && pnpm test && pnpm build && pnpm check:deploy"
   },

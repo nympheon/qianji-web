@@ -38,6 +38,7 @@ async function scenario() {
         ctx.repository.saveDraft(app.scope, 'receipt-partial', { mustRollback: true });
         throw new Error('simulated interruption before committing the receipt');
       }
+      if(affectAssets)new ResourceCache(ctx.repository,clock).confirmResources(app.scope,'assets',[{id:'receipt-asset',kind:'asset',raw:{id:'receipt-asset',name:'old-receipt',money:'1'}}]);
       return { items: [{ id: 'item-1', state: 'succeeded' }, ...(partial ? [{ id: 'item-2', state: 'uncertain' } as const] : [])], idMap: { 'local-1': 'bill-1' } };
     },
     reconcile: async (_operation, ctx) => {
@@ -58,6 +59,9 @@ async function scenario() {
 }
 
 describe('durable mutation coordinator', () => {
+  it('does not overwrite newer canonical data while validating an old received receipt',async()=>{
+    const s=await scenario();s.assetDomain();s.failReceipt();const original=await s.withCoordinator(c=>c.submit(s.command('old-receipt-vs-new-source')));await s.app.repository(repository=>new ResourceCache(repository,s.clock).confirmResources(s.app.scope,'assets',[{id:'receipt-asset',kind:'asset',raw:{id:'receipt-asset',name:'newer-source',money:'2'}}]));s.allowReceipt();expect((await s.withCoordinator(c=>c.reconcileOperation(s.app.scope,original.id))).state).toBe('succeeded');await s.app.repository(repository=>expect(repository.readResources(s.app.scope,'asset',{domain:'assets',ids:['receipt-asset']}).items[0]?.raw).toMatchObject({name:'newer-source',money:'2'}));expect(s.counts.send).toBe(1);
+  });
   it('can reparse an unapplied received receipt after a parser fix and restart without another upstream send',async()=>{
     const s=await scenario();s.failReceipt();const first=await s.withCoordinator(c=>c.submit(s.command('received-before-parser-error')));expect(first.state).toBe('uncertain');await s.app.restart();s.allowReceipt();const recovered=await s.withCoordinator(c=>c.reconcileOperation(s.app.scope,first.id));expect(recovered.state).toBe('succeeded');expect(recovered.idMap).toEqual({'local-1':'bill-1'});expect(s.counts.send).toBe(1);expect(s.counts.reconcile).toBe(0);expect(s.counts.applies).toBe(2);
   });
