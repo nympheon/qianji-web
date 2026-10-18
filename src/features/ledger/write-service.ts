@@ -10,6 +10,7 @@ import { restoreBillInput } from './write';
 import type { Clock, Freshness } from '../../shared/model';
 import type { TransferInput, TransferOptions, TransferPreview } from './transfer-contract';
 import { loadTransferAsset, previewTransfer } from './transfer';
+import type { RefundInput } from './refund-contract';
 
 export class LedgerWriteService {
   constructor(private readonly dependencies: { repository: Repository; coordinator: Coordinator; connection: Pick<ConnectionService, 'scope'>; clock?: Clock; baseCurrency?: () => string }) {}
@@ -22,6 +23,7 @@ export class LedgerWriteService {
   remove(input: DeleteBillsInput, meta: { requestId: string }) { return this.submit('ledger.delete', input, meta); }
   transfer(input: TransferInput, meta: { requestId: string }) { return this.submit('ledger.transfer', input, meta); }
   repayCard(input: TransferInput, meta: { requestId: string }) { return this.submit('ledger.repayCard', input, meta); }
+  refund(input: RefundInput, meta: { requestId: string }) { return this.submit('ledger.refund', input, meta); }
   private transferFreshness(): Freshness {
     const scope = this.scope(), repository = this.dependencies.repository;
     const datasets = ['ledger', 'assets'].map((domain) => repository.dataset(scope, domain as 'ledger' | 'assets'));

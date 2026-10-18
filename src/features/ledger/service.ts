@@ -16,6 +16,7 @@ import { billVersion } from './write';
 import type { LedgerWriteService } from './write-service';
 import type { CreateBillsInput, DeleteBillsInput, EditBillsInput } from './write-contract';
 import type { TransferInput } from './transfer-contract';
+import type { RefundInput } from './refund-contract';
 
 export interface LedgerDependencies { repository: Repository; connection: ConnectionService; freshness: FreshnessService; clock: Clock; baseCurrency?: () => Id; writes?: LedgerWriteService }
 function hydrateBill(bill: BillSummary, read: (id: Id) => BillSummary | null, freshness: Freshness): BillDetail {
@@ -36,6 +37,7 @@ export class LedgerService {
   remove(input: DeleteBillsInput, meta: { requestId: string }) { return this.writes().remove(input, meta); }
   transfer(input: TransferInput, meta: { requestId: string }) { return this.writes().transfer(input, meta); }
   repayCard(input: TransferInput, meta: { requestId: string }) { return this.writes().repayCard(input, meta); }
+  refund(input: RefundInput, meta: { requestId: string }) { return this.writes().refund(input, meta); }
   async statistics(input: StatisticsInput): Promise<StatisticsView> {
     const parsed = statisticsInputSchema.safeParse(input);
     if (!parsed.success) throw new DomainError('INVALID_STATISTICS_INPUT', '统计筛选参数无效');

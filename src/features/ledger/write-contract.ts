@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { transferDraftSchema } from './transfer-contract';
+import { refundDraftSchema } from './refund-contract';
 
 const id = z.string().regex(/^[1-9]\d{0,24}$/), money = z.string().max(80).regex(/^-?(0|[1-9]\d*)(\.\d{1,10})?$/);
 export const billChangesSchema = z.strictObject({
@@ -22,6 +23,6 @@ export const billDraftSchema = z.strictObject({
   billId: id.optional(), expectedVersion: z.string().length(64).optional(),
 });
 export type BillDraft = z.infer<typeof billDraftSchema>;
-export const ledgerDraftSchema = z.union([billDraftSchema, transferDraftSchema]);
+export const ledgerDraftSchema = z.union([billDraftSchema, transferDraftSchema, refundDraftSchema]);
 export type LedgerDraft = z.infer<typeof ledgerDraftSchema>;
 export interface BillDraftView { draft: LedgerDraft; operationId: string | null }

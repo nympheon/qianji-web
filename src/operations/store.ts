@@ -121,11 +121,12 @@ export class OperationStore {
       if (item.state === 'succeeded' || item.state === 'failed') return item;
       const next = updates.get(item.id);
       if (!next && checkpoint) return item;
-      return { ...item, state: next?.state ?? 'uncertain' as ItemState, error: next?.error ?? null };
+      return { ...item, state: next?.state ?? 'uncertain' as ItemState, error: next?.error ?? null,
+        affectedIds: [...new Set([...item.affectedIds, ...next?.affectedIds ?? []])], ...(next?.assetEffects ? { assetEffects: next.assetEffects } : {}) };
     });
     const state = checkpoint && items.some((item) => item.state === 'sending') ? 'sending' : aggregate(items);
-    this.repository.sql.exec('UPDATE operations SET state=?,items=?,id_map=?,error=?,updated_ms=? WHERE id=?', state, JSON.stringify(items),
-      JSON.stringify({ ...operation.idMap, ...update.idMap }), update.error ? JSON.stringify(update.error) : null, this.clock.nowMs(), operation.id).toArray();
+    this.repository.sql.exec('UPDATE operations SET state=?,items=?,id_map=?,affected_ids=?,error=?,updated_ms=? WHERE id=?', state, JSON.stringify(items),
+      JSON.stringify({ ...operation.idMap, ...update.idMap }), JSON.stringify([...new Set([...operation.affectedIds, ...update.affectedIds ?? [], ...items.flatMap((item) => item.affectedIds)])]), update.error ? JSON.stringify(update.error) : null, this.clock.nowMs(), operation.id).toArray();
     return this.get(operation.scope, operation.id)!;
   }
   setError(operation: StoredOperation, error: Problem | null): StoredOperation {

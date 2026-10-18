@@ -38,6 +38,7 @@ describe('shared HTTP actions', () => {
     expect(await (await action('ledger.transfer.options')).json()).toMatchObject({ data: { assets: [{ id: '1', money: '1000' }, { id: '2', money: '0' }] } });
     expect(await (await action('ledger.transfer.preview', { kind: 'transfer', input })).json()).toMatchObject({ data: { principal: '100', fromAmount: '103', targetAmount: '100', effects: [{ delta: '-103', confirmation: 'expected' }, { delta: '100', confirmation: 'expected' }], stale: true } });
     for (const name of ['ledger.transfer', 'ledger.repayCard']) expect(await (await action(name, { ...input, requestId: 'stable-key' })).json()).toMatchObject({ status: 'unavailable', error: { code: 'WRITE_LIVE_UNVERIFIED' } });
+    expect(await (await action('ledger.refund', { billId: '1792000000123100001', expectedVersion: 'a'.repeat(64), money: '1', timeSec: 200, assetId: null, requestId: 'refund-key' })).json()).toMatchObject({ status: 'unavailable', error: { code: 'WRITE_LIVE_UNVERIFIED' } });
   });
   it('returns exact canonical query values with no-store freshness', async () => {
     await seedActions(); const response = await action('ledger.list');

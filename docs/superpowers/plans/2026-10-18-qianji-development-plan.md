@@ -271,17 +271,18 @@ cache.ts导出`CacheKey { domain:SyncDomain; queryKey:string }`、`CacheReadStam
 - [x] 实现type2/3载荷，编辑按资产ID合并旧回滚/新增变动；新信用卡还款仅向前更新lastPayTime，删除不自行恢复上一日期；Web/MCP显示本金、费用、两侧币种的实际含义。资产变动与日期保留为明确的预期值，不覆盖钱迹回读确认值。
 - [x] 重跑并测A→B改B→A各资产只更新一次、本金不入普通收支/预算、旧记录未知扩展保留，PASS；已补备注编辑不清费用、未知操作核清后恢复队列及新旧资产保护回归。
 - [ ] 第16/18步准备专用测试资产与账本后，真实核对两侧余额和账单，第27步统一回归；公开写动作保持未启用。
-- [ ] 提交：`feat: reproduce transfer and card repayment rules`。
+- [x] 提交：`feat: reproduce transfer and card repayment rules`（sanitized-history）。
 
 ### Task 14：退款创建、编辑与关联删除
 
 **Files:** Create `src/features/ledger/refund.ts`、`src/web/components/RefundEditor.tsx`、`tests/workers/refund.test.ts`；Modify ledger域和统计缓存失效范围。
 **Interfaces:** Consumes任务09–12；Produces `LedgerService.refund(input:RefundInput,meta)`；RefundInput区分源billId与可选refundBillId。删除用同一ledger.delete入口展开已核对的父子影响。
 
-- [ ] 写失败断言：refund2回执整组源/子一起应用；跨期退款使源历史月/分类/预算失效；已有25次拒绝继续新增；有退款的源记录不能切类型；失败不自行造收入或只改rfds。
-- [ ] Run `pnpm test -- tests/workers/refund.test.ts`；预期FAIL于专用退款缺失。
-- [ ] 实现refund2的did/v、嵌套currency编码及编辑旧退款ID；使用回执和资产差额算法。源删除/子删除按APK清关系、回滚预期和逐项删除状态，日志记录全部关联ID，不创造未知补偿写入。
-- [ ] 重跑24/25次、旧/新退款字段优先级、跨币种/换资产、备注图片清空真实语义、超额输入与未知回执向量，PASS；未证实的限制或异常分支明确列入真实核验，不能自定全部refund≤remaining。
+- [x] 写失败断言：refund2回执整组源/子一起应用；跨期退款使源历史月/分类/预算失效；已有25次拒绝继续新增；有退款的源记录不能切类型；失败不自行造收入或只改rfds。
+- [x] Run `pnpm test -- tests/workers/refund.test.ts`；预期FAIL于专用退款缺失。
+- [x] 实现refund2的did/v、嵌套currency编码及编辑旧退款ID；使用回执和资产差额算法。源删除/子删除按APK关联处理、回滚预期和逐项删除状态，日志记录全部关联ID。APK未上传源关系修改，故单独删退款后另保留源关系只读核查项，不臆造源changelist。
+- [x] 重跑24/25次、旧/新退款字段优先级、跨币种/换资产、超额输入与未知回执向量，PASS；备注/图片/标签清空尚未证实，明确拒绝并列入真实核验，不能自定全部refund≤remaining。
+- [ ] 第16/18步准备新测试资产与账本后，真实验证回执、空值清理和关联删除；第27步统一回归。公开写入继续门控。
 - [ ] 提交：`feat: manage refunds and source bill relationships`。
 
 ### Task 15：报销分配、取消与组合显示

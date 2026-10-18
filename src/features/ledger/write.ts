@@ -33,9 +33,11 @@ function encode(payload: Payload, original?: PreparedMutation): PreparedMutation
   const items = payload.entries.map((entry) => ({ id: entry.logicalId,
     affectedIds: [...new Set([entry.logicalId, numericText(entry.wire.id, ''), ...assetIds(entry.wire).map((id) => `asset:${id}`), ...entry.assetEffects?.map((effect) => `asset:${effect.assetId}`) ?? [], ...entry.affectedAssetIds?.map((id) => `asset:${id}`) ?? []])],
     ...(entry.assetEffects ? { assetEffects: entry.assetEffects } : {}) }));
-  const affectedIds = [...new Set([...original?.affectedIds ?? [], ...items.flatMap((item) => item.affectedIds)])];
-  return { payload: { scope: { ...payload.scope }, preparedAt: payload.preparedAt, entries: payload.entries.map(({ logicalId, mode, wire, done }) => ({ logicalId, mode, wire, done })) },
-    items, affectedIds, affectedDomains: affectedIds.some((id) => id.startsWith('asset:')) ? ['ledger', 'assets'] : ['ledger'] };
+  const entryIds = new Set(items.map((item) => item.id));
+  const allItems = [...items, ...original?.items.filter((item) => !entryIds.has(item.id)) ?? []];
+  const affectedIds = [...new Set([...original?.affectedIds ?? [], ...allItems.flatMap((item) => item.affectedIds)])];
+  return { payload: { ...(original ? asBillObject(original.payload) : {}), scope: { ...payload.scope }, preparedAt: payload.preparedAt, entries: payload.entries.map(({ logicalId, mode, wire, done }) => ({ logicalId, mode, wire, done })) },
+    items: allItems, affectedIds, affectedDomains: affectedIds.some((id) => id.startsWith('asset:')) ? ['ledger', 'assets'] : ['ledger'] };
 }
 function assetIds(raw: BillObject): string[] { return [raw.assetid, raw.fromid, raw.targetid].map((value) => numericText(value, '-1')).filter((value) => /^[1-9]\d*$/.test(value)); }
 export function prepareBillEntries(scope: ActorScope, entries: BillMutationEntry[], preparedAtMs: number): PreparedMutation { return encode({ scope, entries, preparedAt: String(preparedAtMs) }); }
@@ -154,9 +156,14 @@ export function createLedgerMutationHandler(dependencies: { reconcileSource?: (c
           const record = ctx.repository.readBill(scope, bill.id);
           if (!record) return fail('BILL_NOT_LOADED', '账单尚未载入');
           if (billVersion(record.raw) !== bill.expectedVersion) return fail('DRAFT_SOURCE_CHANGED', '云端副本已变化，请保留草稿并重新查看账单');
-          const raw = { ...asBillObject(record.raw) }; ensureBillUnrelated(raw);
+          const raw = { ...asBillObject(record.raw) };
           if (![0, 1, 5].includes(record.type)) return fail('BILL_TYPE_UNSUPPORTED', '请使用对应账单类型的专用操作');
           const changes = 'changes' in bill ? billChangesSchema.parse(bill.changes) : null;
+          if (changes) {
+            const links = billLinks(raw);
+            if (links.some((link) => link.kind.startsWith('reimbursement')) || numericText(billExtra(raw).baoxiaoed, '0') === '1') return fail('RELATED_BILL_WRITE_UNAVAILABLE', '有关联报销的账单请使用对应操作');
+            if (links.some((link) => link.kind === 'refund') && changes.type !== undefined && changes.type !== record.type) return fail('REFUND_SOURCE_TYPE_LOCKED', '已有退款的源账单不能切换类型');
+          } else ensureBillUnrelated(raw);
           const affectedAssetIds = assetIds(raw);
           entries.push({ logicalId: bill.id, mode: changes ? 'edit' : 'delete', wire: changes ? buildBill(changes, raw, ctx, scope) : raw, done: false, affectedAssetIds });
         }

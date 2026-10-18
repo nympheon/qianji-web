@@ -7,6 +7,7 @@ import type { OperationView } from '../operations/contract';
 import type { CapabilityView } from './capabilities';
 import { ledgerDraftSchema, createBillsSchema, deleteBillsSchema, editBillsSchema, type BillDraftView } from '../features/ledger/write-contract';
 import { transferActionSchema, transferInputSchema, type TransferOptions, type TransferPreview } from '../features/ledger/transfer-contract';
+import { refundInputSchema } from '../features/ledger/refund-contract';
 const empty = z.strictObject({}), id = z.string().min(1).max(200);
 const route = z.strictObject({ route: z.enum(['main', 'backup', 'overseas']) });
 export const actionSchemas = {
@@ -19,6 +20,7 @@ export const actionSchemas = {
   'ledger.create': createBillsSchema.extend({ requestId: id }), 'ledger.edit': editBillsSchema.extend({ requestId: id }), 'ledger.delete': deleteBillsSchema.extend({ requestId: id }),
   'ledger.draft.get': z.strictObject({ key: z.string().min(1).max(100) }), 'ledger.draft.save': z.strictObject({ key: z.string().min(1).max(100), draft: ledgerDraftSchema }),
   'ledger.transfer': transferActionSchema, 'ledger.repayCard': transferActionSchema,
+  'ledger.refund': refundInputSchema.safeExtend({ requestId: id }),
   'ledger.transfer.options': empty, 'ledger.transfer.preview': z.strictObject({ kind: z.enum(['transfer', 'repay-card']), input: transferInputSchema }),
 } as const;
 export type ActionName = keyof typeof actionSchemas;
@@ -30,6 +32,7 @@ export interface ActionOutputs {
   'operations.get': OperationView; 'operations.reconcile': OperationView; 'capabilities.list': CapabilityView[];
   'ledger.create': OperationView; 'ledger.edit': OperationView; 'ledger.delete': OperationView; 'ledger.draft.get': BillDraftView | null; 'ledger.draft.save': BillDraftView;
   'ledger.transfer': OperationView; 'ledger.repayCard': OperationView; 'ledger.transfer.preview': TransferPreview; 'ledger.transfer.options': TransferOptions;
+  'ledger.refund': OperationView;
 }
 export interface ActionDefinition { title: string; description: string; kind: CapabilityView['kind']; evidence: CapabilityView['evidence']; requiresAccount: boolean; readOnly: boolean; destructive: boolean; unavailable?: { code: string; reason: string } }
 const read = { kind: 'read', evidence: 'apk-static', requiresAccount: true, readOnly: true, destructive: false } as const;
@@ -56,6 +59,7 @@ export const actionDefinitions: Record<ActionName, ActionDefinition> = {
   'ledger.repayCard': { ...write, destructive: true, title: '管理信用卡还款', description: '新增/编辑/删除一笔type3还款，复用转账费用和历史币种规则。只有新增且日期更晚才推进本地最新还款日期预期；删除不自动回退日期。复用requestId，不重发未知结果。' },
   'ledger.transfer.preview': { ...read, evidence: 'native-vector', title: '预览转账或还款', description: '使用已载入资料计算本金、转出/转入金额、合并资产预期变动。预览不上传账单，预期余额不代表上游确认；无币种资料时不擅自按当前汇率换算。' },
   'ledger.transfer.options': { ...read, title: '转账资产与账本选项', description: '读取已载入的资产名称、类型、币种、确认余额和账本选项，不额外请求钱迹。' },
+  'ledger.refund': { ...write, title: '新增或编辑退款', description: '调用官方refund2并同时应用源与子账单。billId为源ID，编辑另带refundBillId和对应版本；有退款源不能换类型，新增保留原生25次限制。money省略时新退款采用原生剩余金额；显式正数不自行加上剩余额度上限。清空字段尚未验证时明确不可用。复用requestId，未知结果只核查原operationId。' },
   'ledger.draft.get': { ...read, evidence: 'local', title: '读取账单草稿', description: '读取本账号的本地账单草稿和同一请求键已产生的operationId，不请求钱迹。' },
   'ledger.draft.save': { ...read, readOnly: false, evidence: 'local', title: '保存账单草稿', description: '只保存结构化本地草稿，不上传账单。已有未核清操作时不能替换草稿或请求键。' },
   'operations.get': { ...read, kind: 'reconciliation', title: '查看写操作结果', description: '读取操作日志、逐项结果及确定性，不发送写入。' },

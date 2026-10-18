@@ -20,6 +20,7 @@ export const OPERATIONS = {
   'client.init': op('client', 'init', 'normal', true, 'object', true),
   'syncv2.pull': op('syncv2', 'pull', 'sync-string', true, 'object', true),
   'bill.syncall': op('bill', 'syncall', 'sync-string'),
+  'bill.refund': op('bill', 'refund2', 'normal', true, 'array'),
   'tag.syncall': op('tag', 'syncall', 'sync-string'),
   'tag.pull': op('tag', 'syncall', 'sync-string', true, 'object', true),
   'tag.list': op('tag', 'list', 'sync-string', true, 'array', true),

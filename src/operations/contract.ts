@@ -23,8 +23,8 @@ export interface StoredOperation extends OperationView {
   scope: ActorScope; requestId: string; input: WireJson; digest: string;
   prepared: PreparedMutation | null; sendCount: number;
 }
-export interface ItemUpdate { id: Id; state: 'succeeded' | 'failed' | 'uncertain'; error?: Problem | null }
-export interface OperationUpdate { items: readonly ItemUpdate[]; idMap?: Record<Id, Id>; error?: Problem | null }
+export interface ItemUpdate { id: Id; state: 'succeeded' | 'failed' | 'uncertain'; error?: Problem | null; affectedIds?: readonly Id[]; assetEffects?: ExpectedAssetEffect[] }
+export interface OperationUpdate { items: readonly ItemUpdate[]; idMap?: Record<Id, Id>; error?: Problem | null; affectedIds?: readonly Id[] }
 export interface ReconciliationResult extends OperationUpdate { receipt?: ProtocolReply }
 export interface OperationContext {
   repository: Repository; client: QianjiClient; clock: Clock;
