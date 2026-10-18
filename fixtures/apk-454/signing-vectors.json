@@ -1,0 +1,60 @@
+{
+  "source": {
+    "apk": "4.5.4/1234",
+    "abi": "arm64-v8a",
+    "librarySha256": "441122805c78ab4b1a0435d42495c2beecfbde626baf9880e08187c40cf2f7e3",
+    "oracle": "Unicorn 2.1.4 executes the APK native ARM64 instructions; only JNI context, libc and clock are controlled. Java outer MD5 uses hashlib."
+  },
+  "vectors": [
+    {
+      "nowMs": 1792000000123,
+      "package": "com.mutangtech.qianji",
+      "versionCode": 1234,
+      "ctrl": "account",
+      "act": "login",
+      "reqidv2": "94eae16c85034d9d04a07506511d7efc",
+      "encodedReqid": "f0c34bfc50f6fcbfa478d56d49f824f5",
+      "tok": "162b6ad8362fa55fefda690bcd293eee"
+    },
+    {
+      "nowMs": 1792000000123,
+      "package": "com.mutangtech.qianji",
+      "versionCode": 1234,
+      "ctrl": "syncv2",
+      "act": "pull",
+      "reqidv2": "f41383d12f890379ac866f0e85554430",
+      "encodedReqid": "10de651306a2c8e6db57a902742162ac",
+      "tok": "0c51a34b6d6587f53d7bd305e5e38e74"
+    },
+    {
+      "nowMs": 1792000000999,
+      "package": "com.mutangtech.qianji",
+      "versionCode": 1234,
+      "ctrl": "tag",
+      "act": "syncall",
+      "reqidv2": "77be85a62e2fd7e15c814b2fa7900ddf",
+      "encodedReqid": "72670a16b3ecf9a54b47f6ff8b52aa14",
+      "tok": "c1996c84d3fb06d55fd75396615cdc20"
+    },
+    {
+      "nowMs": 1700000000000,
+      "package": "com.mutangtech.qianji",
+      "versionCode": 1234,
+      "ctrl": "asset",
+      "act": "submit",
+      "reqidv2": "738bc8a4fd32deb8286a843d5580acd7",
+      "encodedReqid": "4463453792318d8ca0934d3b7eedeb08",
+      "tok": "2358948b9b87cdefbf2fe0f1ae6aa648"
+    },
+    {
+      "nowMs": 1792000000123,
+      "package": "com.mutangtech.qianji",
+      "versionCode": 1207,
+      "ctrl": "account",
+      "act": "login",
+      "reqidv2": "6b949a8bc393d45b2da4b676e3eabcde",
+      "encodedReqid": "472ecc4b04288194ed1a2e23271421bd",
+      "tok": "843f983b79ff597f8a5754b79c16529e"
+    }
+  ]
+}

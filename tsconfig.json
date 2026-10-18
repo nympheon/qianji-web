@@ -16,5 +16,5 @@
     "noEmit": true,
     "types": ["vite/client", "@cloudflare/vitest-plugin/types"]
   },
-  "include": ["src", "tests", "*.config.ts", "worker-configuration.d.ts"]
+  "include": ["src", "tests", "tools/**/*.mts", "*.config.ts", "worker-configuration.d.ts"]
 }

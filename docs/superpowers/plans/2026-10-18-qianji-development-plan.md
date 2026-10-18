@@ -139,12 +139,12 @@ Tailwind CSS 4.3通过`@tailwindcss/vite`编译；唯一全局入口`src/web/sty
 **Files:** Create `src/protocol/{profile,signer,client,operations,errors}.ts`、`tools/protocol/mt-read.mts`、`docs/protocol/454/{signing,requests}.md`、`fixtures/apk-454/signing-vectors.json`、`tests/workers/protocol.test.ts`。
 **Interfaces:** Consumes WireJson/ActorScope；Produces `signRequest(input:SigningInput):Promise<SignedRequest>`、`QianjiClient.request(op:ProtocolOperation,params:WireJson,scope:ActorScope|null):Promise<ProtocolReply>`；SigningInput含op/params/profile/nowMs/deviceId及可选会话信息，SignedRequest含url/method/headers/body。profile固定APK4.5.4/1234，操作注册表定义构造器/编码/解析/超时/requiresSession；仅核对过的登录/公共操作允许null scope，不接受任意URL。
 
-- [ ] 通过只读MT工作区`rxvx4qt6`追JNIHelper及实际native实现，核对密码处理、设备/版本、reqidv2/tok、fr与身份头；将算法和确定性输入输出证据写入signing.md。工具只允许读取/搜索/xref，不修改、构建或安装APK；复用参考代码先核对许可证。向量来自独立APK/native逻辑或受控真实观察，不调用待测signRequest自产。
-- [ ] 写失败断言：所有独立向量完全匹配；普通构造不擅加htoken、同步字符串构造带htoken；20秒超时触发后`fetch`调用数为1；原始业务码和网络错误区分。
-- [ ] Run `pnpm test -- tests/workers/protocol.test.ts`；预期FAIL于缺少签名实现/确定性字段，而非跳过向量。
-- [ ] 实现Worker可执行的TS/WebCrypto算法；必要时仅封装已验证的WASM。三线路只允许已核对主机；不尝试在Worker运行Android JNI，也不以改旧项目版本号冒充适配。
-- [ ] 重跑测试及`pnpm check:deploy`；预期全部向量PASS且无Node/Android原生运行依赖。若签名仍无法确定，交付具体证据与阻塞点，暂停真实连接相关任务，不用模拟登录掩盖；可继续纯本地数字/存储任务。
-- [ ] 提交：`feat: implement verified Qianji 454 request protocol`。这是M0退出门槛，不给空向量文件或硬编码成功结果放行。
+- [x] 通过只读MT工作区`rxvx4qt6`追JNIHelper及实际native实现，核对密码处理、设备/版本、reqidv2/tok、fr与身份头；将算法和确定性输入输出证据写入signing.md。工具只允许读取/搜索/xref，不修改、构建或安装APK；复用参考代码先核对许可证。向量来自独立APK/native逻辑或受控真实观察，不调用待测signRequest自产。
+- [x] 写失败断言：所有独立向量完全匹配；普通构造不擅加htoken、同步字符串构造带htoken；20秒超时触发后`fetch`调用数为1；原始业务码和网络错误区分。
+- [x] Run `pnpm test -- tests/workers/protocol.test.ts`；预期FAIL于缺少签名实现/确定性字段，而非跳过向量。
+- [x] 实现Worker可执行的TS/WebCrypto算法；必要时仅封装已验证的WASM。三线路只允许已核对主机；不尝试在Worker运行Android JNI，也不以改旧项目版本号冒充适配。
+- [x] 重跑测试及`pnpm check:deploy`；预期全部向量PASS且无Node/Android原生运行依赖。若签名仍无法确定，交付具体证据与阻塞点，暂停真实连接相关任务，不用模拟登录掩盖；可继续纯本地数字/存储任务。
+- [x] 提交：`feat: implement verified Qianji 454 request protocol`。这是M0退出门槛，不给空向量文件或硬编码成功结果放行。
 
 ## M1：可用的只读应用
 
