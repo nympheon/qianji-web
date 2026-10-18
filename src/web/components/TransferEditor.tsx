@@ -16,6 +16,7 @@ import { formatMoney } from './Totals';
 
 export function TransferEditor({ kind, mode = 'create', options, bill, onComplete }: { kind: 'transfer' | 'repay-card'; mode?: 'create' | 'edit' | 'delete'; options: TransferOptions | null; bill?: BillDetail; onComplete(): void }) {
   const key = `${kind}:${mode}:${bill?.id ?? 'new'}`, base = options?.baseCurrency ?? 'CNY', eligible = options?.assets.filter((asset) => asset.type !== 5 && asset.type !== 6) ?? [];
+  const targets=kind==='repay-card'?eligible.filter(asset=>asset.type===2):eligible;
   function currencyFields(fields: TransferDraft['fields']): TransferDraft['fields'] {
     const from = eligible.find((asset) => asset.id === fields.fromAssetId), target = eligible.find((asset) => asset.id === fields.targetAssetId);
     if (!from || !target) return fields;
@@ -26,7 +27,7 @@ export function TransferEditor({ kind, mode = 'create', options, bill, onComplet
       baseSymbol: base, baseValue: from.currency === base ? entered : previous?.baseValue ?? '' } };
   }
   const initial = (): TransferDraft => {
-    const from = eligible[0], target = (kind === 'repay-card' ? eligible.find((asset) => asset.type === 2 && asset.id !== from?.id) : null) ?? eligible.find((asset) => asset.id !== from?.id);
+    const from = eligible[0], target = targets.find((asset)=>asset.id!==from?.id);
     const fields: TransferDraft['fields'] = bill ? { bookId: bill.bookId, fromAssetId: bill.fromId ?? undefined, targetAssetId: bill.targetId ?? undefined,
       enteredMoney: bill.currency?.srcValue ?? addMoney(bill.money, bill.transferFee.startsWith('-') ? bill.transferFee.slice(1) : bill.transferFee), fee: bill.transferFee,
       timeSec: bill.timeSec, remark: bill.remark, tagIds: bill.tagIds, images: bill.images, countInStatistics: !(bill.flags & 1), countInBudget: !(bill.flags & 2),
@@ -81,7 +82,7 @@ export function TransferEditor({ kind, mode = 'create', options, bill, onComplet
   const date = draft.fields.timeSec === undefined ? '' : new Date(draft.fields.timeSec * 1000 - new Date(draft.fields.timeSec * 1000).getTimezoneOffset() * 60000).toISOString().slice(0, 16);
   return <form className="bill-editor" onSubmit={(event) => { void submit(event); }}><FieldGroup>
     <div className="editor-grid"><Field><FieldLabel>转出资产</FieldLabel><Select value={draft.fields.fromAssetId ?? ''} disabled={disabled || deleting} onValueChange={(fromAssetId) => change({ fromAssetId })}><SelectTrigger aria-label="转出资产"><SelectValue placeholder="选择资产" /></SelectTrigger><SelectContent>{eligible.map((asset) => <SelectItem key={asset.id} value={asset.id}>{asset.name} · {asset.currency}</SelectItem>)}</SelectContent></Select></Field>
-    <Field><FieldLabel>转入资产</FieldLabel><Select value={draft.fields.targetAssetId ?? ''} disabled={disabled || deleting} onValueChange={(targetAssetId) => change({ targetAssetId })}><SelectTrigger aria-label="转入资产"><SelectValue placeholder="选择资产" /></SelectTrigger><SelectContent>{eligible.map((asset) => <SelectItem key={asset.id} value={asset.id}>{asset.name} · {asset.currency}</SelectItem>)}</SelectContent></Select></Field>
+    <Field><FieldLabel>转入资产</FieldLabel><Select value={draft.fields.targetAssetId ?? ''} disabled={disabled || deleting} onValueChange={(targetAssetId) => change({ targetAssetId })}><SelectTrigger aria-label="转入资产"><SelectValue placeholder="选择资产" /></SelectTrigger><SelectContent>{targets.map((asset) => <SelectItem key={asset.id} value={asset.id}>{asset.name} · {asset.currency}</SelectItem>)}</SelectContent></Select></Field>
     <Field><FieldLabel htmlFor="transfer-entered">录入金额</FieldLabel><Input id="transfer-entered" inputMode="decimal" value={draft.fields.enteredMoney ?? ''} disabled={disabled || deleting} onChange={(event) => change({ enteredMoney: event.target.value })} required /></Field>
     <Field><FieldLabel htmlFor="transfer-fee">手续费 / 优惠</FieldLabel><Input id="transfer-fee" inputMode="decimal" value={draft.fields.fee ?? '0'} disabled={disabled || deleting} onChange={(event) => change({ fee: event.target.value })} /></Field>
     <Field><FieldLabel>账本</FieldLabel><Select value={draft.fields.bookId ?? ''} disabled={disabled || deleting} onValueChange={(bookId) => change({ bookId })}><SelectTrigger aria-label="转账账本"><SelectValue placeholder="选择账本" /></SelectTrigger><SelectContent>{options?.books.map((book) => <SelectItem key={book.id} value={book.id}>{book.name}</SelectItem>)}</SelectContent></Select></Field>

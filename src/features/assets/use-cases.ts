@@ -1,3 +1,4 @@
+import {resourceExisted} from '../../operations/identity';
 import type { MutationHandler, OperationContext, PreparedMutation } from '../../operations/contract';
 import { asBillObject, billExtra, moneyText, numericText, positiveBillId } from '../../shared/bill-wire';
 import { stringifyWire } from '../../shared/wire-json';
@@ -84,7 +85,7 @@ export function createAssetMutationHandler(dependencies: { reconcileLedger?: (ct
       if (p.kind === 'submit') {
         if (!assetMatchesIntent(raw, p.raw) || data.bill != null) return assetError('ASSET_RECEIPT_INVALID', '资产资料回执与本次修改不一致');
         const id = positiveBillId(raw.id)!;
-        if (p.create && ctx.repository.readResources(p.scope, 'asset', { domain: 'assets', ids: [id] }).items.length) return assetError('ASSET_NEW_ID_CONFLICT', '新增回执复用了已有资产ID，请核查原操作');
+        if (p.create && resourceExisted(prepared,ctx.repository,p.scope,'assets','asset',id,ctx.validatingHistoricalReceipt)) return assetError('ASSET_NEW_ID_CONFLICT', '新增回执复用了已有资产ID，请核查原操作');
         cache.confirmResources(p.scope, 'assets', [{ id, kind: 'asset', raw }]);
         const affectedIds = [`asset:${id}`]; return { items: [{ id: p.logicalId, state: 'succeeded', affectedIds }], affectedIds, ...(p.create ? { idMap: { [p.logicalId]: id } } : {}) };
       }

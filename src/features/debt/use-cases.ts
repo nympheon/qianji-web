@@ -1,3 +1,4 @@
+import {resourceExisted,billExisted} from '../../operations/identity';
 import type { MutationHandler } from '../../operations/contract';
 import { asBillObject, moneyText, numericText, positiveBillId } from '../../shared/bill-wire';
 import { createDebtSchema } from './contract';
@@ -36,9 +37,9 @@ export function createDebtMutationHandler(dependencies: { baseCurrency?: () => s
       if (state.direction !== p.direction || compareMoney(state.balance, moneyText(expected.money)) !== 0 || compareMoney(state.totalPrincipal, moneyText(expected.money)) !== 0 || compareMoney(state.totalPaid, '0') !== 0 || raw.name !== expected.name || numericText(raw.incount, '') !== numericText(expected.incount, '') || numericText(raw.status, '') !== '0') return assetError('DEBT_RECEIPT_INVALID', '新增借贷回执与本金、方向或资料不一致');
       const loan = asBillObject(raw.loan), intended = asBillObject(expected.loan);
       if (loan.startdate !== intended.startdate || numericText(loan.enddate, '') !== numericText(intended.enddate, '') || loan.accountId !== undefined && positiveBillId(loan.accountId) !== (p.cashId ?? null)) return assetError('DEBT_RECEIPT_INVALID', '新增借贷的日期或关联资产不一致');
-      if (ctx.repository.readResources(scope, 'asset', { domain: 'assets', ids: [id] }).items.length) return assetError('ASSET_NEW_ID_CONFLICT', '新增借贷回执复用了已有资产ID');
+      if (resourceExisted(prepared,ctx.repository,scope,'assets','asset',id,ctx.validatingHistoricalReceipt)) return assetError('ASSET_NEW_ID_CONFLICT', '新增借贷回执复用了已有资产ID');
       const bill = projectBill(data.bill!), wire = asBillObject(bill.raw), cashField = p.direction === 'borrow' ? 'targetid' : 'fromid';
-      if (bill.type !== (p.direction === 'borrow' ? 6 : 7) || positiveBillId(wire.assetid) !== id || positiveBillId(wire[cashField]) !== (p.cashId ?? null) || numericText(wire.bookid, '') !== p.bookId || numericText(wire.userid, '') !== scope.uid || compareMoney(bill.money, String(p.principal)) !== 0 || ctx.repository.readBill(scope, bill.id) || p.remark && wire.remark !== p.remark) return assetError('DEBT_INITIAL_BILL_INVALID', '官方初始本金账单缺失或与本次借贷不一致');
+      if (bill.type !== (p.direction === 'borrow' ? 6 : 7) || positiveBillId(wire.assetid) !== id || positiveBillId(wire[cashField]) !== (p.cashId ?? null) || numericText(wire.bookid, '') !== p.bookId || numericText(wire.userid, '') !== scope.uid || compareMoney(bill.money, String(p.principal)) !== 0 || billExisted(prepared,ctx.repository,scope,bill.id,ctx.validatingHistoricalReceipt) || p.remark && wire.remark !== p.remark) return assetError('DEBT_INITIAL_BILL_INVALID', '官方初始本金账单缺失或与本次借贷不一致');
       const ledger = ctx.repository.dataset(scope, 'ledger'); if (!ledger) return assetError('DATASET_MISSING', '账单数据集不存在');
       new ResourceCache(ctx.repository, ctx.clock).confirmResources(scope, 'assets', [{ id, kind: 'asset', raw }]);
       ctx.repository.applyPage(scope, ledger.id, { upserts: [bill], deletes: [], resources: [], pageState: ctx.repository.syncState(scope, 'ledger', ledger.id)?.pageState ?? null });

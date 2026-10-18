@@ -11,6 +11,27 @@ import { projectBill } from '../../src/features/sync/incremental';
 import { AssetService } from '../../src/features/assets/service';
 import { ResourceCache } from '../../src/storage/cache';
 import { createAssetGroupMutationHandler } from '../../src/features/assets/groups';
+import {commandDigest} from '../../src/operations/store';
+
+it('never lets a saved create receipt claim an ID that existed before sending even after that ID disappears',async()=>{
+ const s=await setup();s.upstream.respond(async()=>new Response(stringifyWire({ec:200,data:{asset:{...asset('10'),icon:'official-cash'}}})));
+ const result=await s.run(c=>c.submit({scope:s.app.scope,action:'assets.submit',requestId:'old-id-conflict',input:{mode:'create',fields:{name:'test-asset',type:1,subtype:11,currency:'CNY',money:'100',inCount:true}}}));
+ expect(result.state).toBe('uncertain');expect(result.error?.code).toBe('ASSET_NEW_ID_CONFLICT');
+ await s.app.repository(repository=>repository.applyPage(s.app.scope,'assets',{upserts:[],deletes:[],resources:[],resourceDeletes:[{id:'10',kind:'asset'}],pageState:null},'assets'));
+ const checked=await s.run(c=>c.reconcileOperation(s.app.scope,result.id));expect(checked.state).toBe('uncertain');expect(checked.idMap).toEqual({});expect(s.upstream.calls).toHaveLength(1);
+});
+
+it('settles the original saved create receipt after a newer official read without resending or overwriting it',async()=>{
+ const s=await setup();await s.app.repository(async repository=>{
+  const ctx={repository,clock:s.clock,client:s.upstream.client},handler=createAssetMutationHandler(),c=new Coordinator(ctx,new Map([['assets.submit',handler]]));
+  const command={scope:s.app.scope,action:'assets.submit',requestId:'saved-create',input:{mode:'create',fields:{name:'new-after-receipt',type:1,subtype:11,currency:'CNY',money:'0',inCount:false}}};
+  let op=c.store.create(command,commandDigest(command));op=c.store.prepare(op,await handler.prepare(command,ctx));op=c.store.markSending(op);
+  const created={...asset('202','0'),name:'new-after-receipt',icon:'official-cash',incount:0};op=c.store.saveReceived(op,{ec:'200',httpStatus:200,data:{asset:created}});
+  new ResourceCache(repository,s.clock).confirmResources(s.app.scope,'assets',[{id:'202',kind:'asset',raw:{...created,money:50,remark:'later official edit'}}]);
+  const checked=await c.reconcileOperation(s.app.scope,op.id);expect(checked.state).toBe('succeeded');expect(checked.idMap[`asset:${command.requestId}`]).toBe('202');expect(s.upstream.calls).toHaveLength(0);
+  expect(asBillObject(repository.readResources(s.app.scope,'asset',{domain:'assets',ids:['202']}).items[0]!.raw).remark).toBe('later official edit');
+ });
+});
 
 const asset = (id = '10', money = '100', type = 1, stype = 11) => asBillObject(parseWire(`{"id":${id},"userid":"user-A","name":"test-asset","money":${money},"type":${type},"stype":${stype},"currency":"CNY","status":0,"incount":1,"extra":{"preserve":true}}`));
 async function setup() {

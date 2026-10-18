@@ -13,7 +13,7 @@ export async function reconcileMutation(operation: StoredOperation, handler: Mut
       const reply={...received.reply,httpStatus:Number(received.reply.httpStatus)};
       // Validate a historical receipt without publishing its old records over a newer source.
       const rollback={};let update:OperationUpdate|undefined;
-      try{context.repository.transaction(()=>{update=handler.applyReceipt(operation.prepared!,reply,{...context,client:context.client.asReadOnly()});throw rollback;});}
+      try{context.repository.transaction(()=>{update=handler.applyReceipt(operation.prepared!,reply,{...context,client:context.client.asReadOnly(),validatingHistoricalReceipt:true});throw rollback;});}
       catch(error){if(error!==rollback)throw error;}
       operation=context.repository.transaction(()=>store.markReceiptApplied(store.apply(operation,update!),true));
     }catch(error){operation=store.markUnresolved(operation,'uncertain',safeProblem(error));}

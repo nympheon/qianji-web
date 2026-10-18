@@ -3,6 +3,11 @@ import { detail, freshness, mockReadApp, ready } from './read-fixtures';
 import { join } from 'node:path';
 const assets = [{ id: '1', name: '现金', type: 0, currency: 'CNY', money: '1000', lastPayTimeSec: '0' }, { id: '2', name: '信用卡', type: 2, currency: 'CNY', money: '-200', lastPayTimeSec: '0' }, { id: '3', name: '美元账户', type: 0, currency: 'USD', money: '500', lastPayTimeSec: '0' }];
 
+test('offers only credit cards as repayment targets',async({page})=>{
+ await mockReadApp(page);await page.route('**/api/actions',async route=>{const {action}=route.request().postDataJSON();if(action==='capabilities.list')return route.fulfill({json:ready([{action:'ledger.repayCard',enabled:true}])});if(action==='ledger.transfer.options')return route.fulfill({json:ready({assets,books:[{id:'10',name:'日常账本'}],baseCurrency:'CNY',complete:true,freshness})});await route.fallback();});
+ await page.goto('/bills');await page.getByRole('button',{name:'信用卡还款',exact:true}).click();await page.getByRole('combobox',{name:'转入资产',exact:true}).click();await expect(page.getByRole('option')).toHaveCount(1);await expect(page.getByRole('option',{name:'信用卡 · CNY',exact:true})).toBeVisible();
+});
+
 test('previews both sides of a transfer and preserves the original operation after an unknown result', async ({ page }, testInfo) => {
   await mockReadApp(page); let draft: unknown = null, sent = 0;
   await page.route('**/api/actions', async (route) => {

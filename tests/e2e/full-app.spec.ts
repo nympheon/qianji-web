@@ -1,5 +1,19 @@
+import {parseWire} from '../../src/shared/wire-json';
 import { expect,test } from '@playwright/test';
 import { mockReadApp,ready,freshness } from './read-fixtures';
+import {summarizeBill} from '../../src/features/ledger/model';
+import {projectBill} from '../../src/features/sync/incremental';
+
+test('matches the bill list when showing source currency and gross input on the overview',async({page})=>{
+ await mockReadApp(page);const items=[
+  {id:'101',assetid:20,money:14,remark:'外币资产换算'},
+  {id:'102',assetid:20,money:12.6,remark:'外币优惠',extra:{transfee:-0.2}},
+  {id:'103',assetid:-1,money:1.8,remark:'无关联资产外币',extra:{transfee:-0.2}},
+ ].map(value=>summarizeBill(projectBill(parseWire(JSON.stringify({...value,bookid:10,type:0,time:1768881600,extra:{...value.extra,curr:{ss:'USD',sv:2,ts:'CNY',tv:12.6,bs:'CNY',bv:12.6}}})))));
+ await page.route('**/api/actions',async route=>{if(route.request().postDataJSON().action==='ledger.list')return route.fulfill({json:ready({items,rows:items.map(bill=>({kind:'bill',bill})),nextCursor:null,freshness,incompleteReasons:[]},freshness)});await route.fallback();});
+ await page.goto('/');for(const item of items){const row=page.locator('.recent-list > div').filter({hasText:item.remark});await expect(row).toContainText('原币录入 · USD');await expect(row).toContainText('$ 2.00');}
+ await page.goto('/bills');await expect(page.locator('.bill-money:visible').filter({hasText:'$ 2.00'})).toHaveCount(3);
+});
 test('makes every implemented business area reachable from navigation',async({page})=>{
   await mockReadApp(page);await page.goto('/more');await expect(page.getByRole('heading',{name:'更多功能',exact:true})).toBeVisible();
   for(const name of ['资产','借贷','账本','分类','标签','预算','周期任务','分期','存钱计划','图片上传','报销','服务'])await expect(page.getByRole('main').getByRole('link',{name,exact:true})).toBeVisible();

@@ -1,3 +1,4 @@
+import {bookOptions} from './options';
 import type { Coordinator } from '../../actor/coordinator';
 import type { Repository } from '../../storage/database';
 import type { ConnectionService } from '../connection/service';
@@ -48,11 +49,11 @@ export class LedgerWriteService {
   async transferOptions(): Promise<TransferOptions> {
     const source = await this.dependencies.assetSource?.list({ status: 0, limit: 200 });
     const scope = this.scope(), repository = this.dependencies.repository, baseCurrency = this.dependencies.baseCurrency?.() ?? 'CNY';
-    const assets = repository.readResources(scope, 'asset', { domain: 'assets', limit: 200 }), books = repository.readResources(scope, 'book', { domain: 'books', limit: 200 });
-    const freshness = this.transferFreshness();
+    const assets = repository.readResources(scope, 'asset', { domain: 'assets', limit: 200 }), books = bookOptions(repository,this.dependencies.clock??{nowMs:()=>Date.now(),nowIso:()=>new Date().toISOString()},scope);
+    const baseFreshness = this.transferFreshness(),freshness={...baseFreshness,complete:baseFreshness.complete&&books.complete,stale:baseFreshness.stale||books.stale};
     const ids = source?.freshness.syncedAt ? source.items.map((asset) => asset.id) : assets.items.map((asset) => asset.id);
     return { assets: ids.map((id) => loadTransferAsset({ repository }, scope, id, baseCurrency)),
-      books: books.items.map((book) => ({ id: book.id, name: typeof asBillObject(book.raw).name === 'string' ? String(asBillObject(book.raw).name) : book.id })), baseCurrency, complete: freshness.complete && !(source?.nextCursor ?? assets.nextCursor) && !books.nextCursor, freshness };
+      books: books.items.map((book) => ({ id: book.id, name: typeof asBillObject(book.raw).name === 'string' ? String(asBillObject(book.raw).name) : book.id })), baseCurrency, complete: freshness.complete && !(source?.nextCursor ?? assets.nextCursor) && books.complete, freshness };
   }
   previewTransfer(kind: 'transfer' | 'repay-card', input: TransferInput): TransferPreview {
     const clock = this.dependencies.clock ?? { nowMs: () => Date.now(), nowIso: () => new Date().toISOString() };

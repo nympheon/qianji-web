@@ -1,3 +1,4 @@
+import {resourceExisted} from '../../operations/identity';
 import type { MutationHandler, OperationContext, PreparedMutation } from '../../operations/contract';
 import type { ActorScope } from '../../shared/model';
 import { asBillObject, numericText } from '../../shared/bill-wire';
@@ -84,7 +85,7 @@ export function createBookMutationHandler(): MutationHandler {
       if (p.kind === 'visible' || p.kind === 'reorder') return { items: [{ id: p.logicalId, state: p.noop ? 'succeeded' : 'uncertain', ...(p.noop ? {} : { error: { code: 'BOOK_TARGET_CHECK', message: '账本请求已受理，需只读核对实际状态' } }) }] };
       if (p.kind === 'submit' || p.kind === 'configure') {
         const raw = validateBook(asBillObject(reply.data), p.create ? undefined : p.id), id = numericText(raw.bookid, ''), expected = asBillObject(p.expected);
-        if (p.create && (id === '-1' || numericText(raw.userid, '') !== p.scope.uid || ctx.repository.readResources(p.scope, 'book', { domain: 'books', ids: [id] }).items.length)) return assetError('BOOK_NEW_ID_INVALID', '新增账本回执复用了ID或不属于当前用户');
+        if (p.create && (id === '-1' || numericText(raw.userid, '') !== p.scope.uid || resourceExisted(prepared,ctx.repository,p.scope,'books','book',id,ctx.validatingHistoricalReceipt))) return assetError('BOOK_NEW_ID_INVALID', '新增账本回执复用了ID或不属于当前用户');
         if (!matchesBook(raw, expected)) return assetError('BOOK_RECEIPT_INVALID', '账本回执与本次名称、类型、封面或账期不一致');
         new ResourceCache(ctx.repository, ctx.clock).confirmResources(p.scope, 'books', [{ id, kind: 'book', raw }]); const affectedIds = [...prepared.affectedIds, `book:${id}`]; return { items: [{ id: p.logicalId, state: 'succeeded', affectedIds }], affectedIds, ...(p.create ? { idMap: { [p.logicalId]: id } } : {}) };
       }

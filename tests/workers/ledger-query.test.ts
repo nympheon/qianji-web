@@ -8,6 +8,25 @@ import { ResourceCache } from '../../src/storage/cache';
 import { parseWire } from '../../src/shared/wire-json';
 import { projectBill } from '../../src/features/sync/incremental';
 import { page } from '../support/fixtures';
+import {bookListKey} from '../../src/features/books/source';
+import {categoryKey} from '../../src/features/categories/source';
+import {tagCatalogKey} from '../../src/features/tags/source';
+
+it('uses authoritative option memberships while retaining old entities for historical bill names',async()=>{
+ const s=await scenario();await s.run(async(ledger,ctx)=>{
+  const cache=new ResourceCache(ctx.repository,s.clock),scope=s.app.scope;
+  const apply=(key:import('../../src/storage/cache').CacheKey,items:import('../../src/storage/resources').ResourceRecord[],complete=true)=>cache.applyRead(cache.captureRead(scope,key),{items,complete});
+  apply(bookListKey,[{id:'10',kind:'book',raw:{bookid:10,name:'current'}},{id:'11',kind:'book',raw:{bookid:11,name:'old book'}}]);
+  apply(bookListKey,[{id:'10',kind:'book',raw:{bookid:10,name:'current'}}]);
+  const key=categoryKey({bookId:'10',type:0});apply(key,[{id:'50',kind:'category',raw:{id:50,bookid:10,type:0,name:'old category'}}]);apply(key,[]);
+  apply(categoryKey({bookId:'10',type:1}),[]);apply(tagCatalogKey,[]);
+  expect(ledger.options()).toMatchObject({books:[{id:'10'}],categories:[],tags:[],complete:true});
+  expect((await ctx.ledgerWrites.transferOptions()).books.map(book=>book.id)).toEqual(['10']);
+  expect(ctx.repository.readResources(scope,'book',{domain:'books',ids:['11']}).items).toHaveLength(1);
+  expect(ctx.repository.readResources(scope,'category',{domain:'ledger',ids:['50']}).items).toHaveLength(1);
+  apply(key,[],false);expect(ledger.options().complete).toBe(false);
+ });
+});
 
 const january = { kind: 'month' as const, year: 2026, month: 1 };
 const time = (date: string) => Date.parse(`${date}T12:00:00+08:00`) / 1000;

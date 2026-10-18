@@ -442,25 +442,29 @@ cache.ts导出`CacheKey { domain:SyncDomain; queryKey:string }`、`CacheReadStam
 **Files:** Create `tools/acceptance/{run,cases,scope}.mts`、`docs/acceptance/{live-matrix,conflicts,protocol-gaps}.md`、`tests/workers/capabilities.test.ts`；Modify各域fixture/能力状态与协议记录，必要修复回所属任务文件。
 **Interfaces:** Consumes所有use-case、明确测试UID/账本/资源清单；Produces逐操作read/write验收状态及证据，不把mock-tested自动变为live-verified。
 
-- [ ] 写失败断言：未live-verified的正式写能力返回unavailable原因；验收模式只允许明确测试UID及账本/资源ID，拒绝真实生活数据目标；fixture与日志不含密码/token或个人原始账单。
-- [ ] Run `pnpm test -- tests/workers/capabilities.test.ts`；预期FAIL于能力/验收范围约束缺失。
-- [ ] 实现`pnpm acceptance -- <case>`，在独立本地/预览环境复用生产实现并注入限定测试能力，生产不开放任意写入开关或原始请求接口。测试账户、账本和命名资源未明确时只准备好用例后询问；已有授权直接沿用。登录仍在网页输入，不从聊天收密码。
+- [x] 写失败断言：未live-verified的正式写能力返回unavailable原因；验收模式只允许明确测试UID及账本/资源ID，拒绝真实生活数据目标；fixture与日志不含密码/token或个人原始账单。
+- [x] Run `pnpm test -- tests/workers/capabilities.test.ts`；预期FAIL于能力/验收范围约束缺失。
+- [x] 实现`pnpm acceptance -- <case>`，在独立本地/预览环境复用生产实现并注入限定测试能力，生产不开放任意写入开关或原始请求接口。测试账户、账本和命名资源未明确时只准备好用例后询问；已有授权直接沿用。登录仍在网页输入，不从聊天收密码。
 - [ ] M1起逐域执行相应用例：真实签名/三线路/只读同步；普通写回执→回拉→官方客户端；长ID/币种/跨期/删除/差额/本金利息/储蓄/计划/图片；手机离线的计划执行；多端同/异字段修改、删改交叉、ID冲突、响应丢失。记录提交顺序、实际响应、查回及客户端结果，既定测试对象清理也逐项记录，不自动清空账本。
 - [ ] 记录缓存真实向量：手机修改后普通查询在源校验过期时按需获取、显式增量绕过60秒但不清游标；空预算/空计划重复读取请求数、写回执后新增请求数、无变化检查与统计重算数。注明60秒是检查策略，没有闲置轮询或跨设备即时推送保证。
 - [ ] 对未确认的标签窗口、旧报销升级、images疑点、random/resetCount入口等逐条关闭证据或保留具体不可用原因；修复后运行对应回归与真实用例，验收矩阵每个范围都有结果。实际接口/权限限制须报告，不用mock通过替代，也不无声删功能。
-- [ ] 提交脱敏证据/修复及能力更新：`test: verify Qianji workflows against real upstream results`。真实个人数据和凭证不提交。
+- [x] 提交脱敏证据/修复及能力更新：`test: verify Qianji workflows against real upstream results`。真实个人数据和凭证不提交。
+
+已完成的真实场景与具体边界已写入验收矩阵；官方手机显示、离线计划执行、实际手机并发仍未完成。正式放行被自动审批以授权范围不足拒绝，等待用户明确答复，全部正式写入继续关闭。不能因已完成多数场景而勾选整项验收。
 
 ### Task 28：部署、ChatGPT联调、升级与恢复交付
 
 **Files:** Create `docs/{deployment,maintenance,release}.md`、`tools/ops/maintenance.mts`、`tests/workers/maintenance.test.ts`；Modify wrangler配置、package脚本和生产能力清单。
 **Interfaces:** Consumes通过验收的构建与能力清单；Produces一个Cloudflare生产Worker/单SQLite DO/静态资源部署，实际`/mcp`连接说明、Secret配置与恢复步骤。维护工具只走受控运维路径，不增加公开SQL/恢复API。
 
-- [ ] 写失败断言：维护状态即使数据库恢复出旧queued操作也不发送；解除暂停前须完成与钱迹现状核查；普通restart保留deviceId/UID/操作且不重新全量；预览与生产命名空间隔离。
-- [ ] Run `pnpm test -- tests/workers/maintenance.test.ts`；预期FAIL于维护恢复规则缺失。
-- [ ] 实现维护/恢复流程与SQL迁移说明，配合Cloudflare官方PITR；Worker Secret不随数据库恢复丢失，回退的操作状态不能冒充未发送。记录Code回滚与DB兼容边界、用量查看及付费开通方式，不实现产品内导出或运维后台。
+- [x] 写失败断言：维护状态即使数据库恢复出旧queued操作也不发送；解除暂停前须完成与钱迹现状核查；普通restart保留deviceId/UID/操作且不重新全量；预览与生产命名空间隔离。
+- [x] Run `pnpm test -- tests/workers/maintenance.test.ts`；预期FAIL于维护恢复规则缺失。
+- [x] 实现维护/恢复流程与SQL迁移说明，配合Cloudflare官方PITR；Worker Secret不随数据库恢复丢失，回退的操作状态不能冒充未发送。记录Code回滚与DB兼容边界、用量查看及付费开通方式，不实现产品内导出或运维后台。
 - [ ] Run `pnpm verify`及生产配置dry-run，检查实际打包无Android/Node原生依赖、无D1/Cron/常驻连接、Secret示例无真实值；整理版本、迁移、已验收能力与已知限制，再对已授权Cloudflare目标部署，不提前购买套餐或随意选择账户/域名。
 - [ ] 从实际入口验证网页/手机号或邮箱登录/MCP协议与工具调用；按用户Cloudflare保护规则测试ChatGPT可达、只读与受控写入、10秒任务返回/状态跟踪。完成在途任务后真实观察至少10分钟，上游请求计数不再增长；保存实际URL/版本/验收结论，不把dry-run当部署成功。
 - [ ] 提交：`docs: deliver Cloudflare deployment and verified operations guide`。只有真实部署和ChatGPT验证完成才标记M4交付；缺少外部账号权限时说明具体缺项，继续完成不依赖该项的本地交付。
+
+本地维护实现、隔离预览构建、生产 dry-run、运维文档与一次整支独立审查均已完成；四项 P2 已分别复现并修复，详见 `docs/acceptance/final-review.md`。本地持续10分钟闲置计数0增量通过。Cloudflare账号和目标未就绪，未部署、未实际连接ChatGPT、未进行远端PITR演练或生产观察，M4仍未交付。
 
 ## 依赖、验收和执行交接
 

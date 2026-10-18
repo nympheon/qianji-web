@@ -1,3 +1,4 @@
+import {resourceExisted} from '../../operations/identity';
 import { LosslessNumber } from 'lossless-json';
 import type { MutationHandler, MutationCommand, OperationContext, PreparedMutation } from '../../operations/contract';
 import type { ActorScope } from '../../shared/model';
@@ -91,7 +92,7 @@ export function createCategoryManagementHandler(): MutationHandler {
       const p = decode(prepared); if (p.kind === 'reorder') return { items: [{ id: p.logicalId, state: 'uncertain', error: { code: 'CATEGORY_ORDER_CHECK', message: '排序已受理，需读取官方父子分类顺序核对' } }] };
       const raw = asBillObject(reply.data), view = categoryView(raw);
       if ((!p.create && view.id !== p.id) || !matches(raw, p.expected)) return assetError('CATEGORY_RECEIPT_INVALID', '官方分类回执与本次名称、层级、账本或ID不一致');
-      if (p.create && ctx.repository.readResources(p.scope, 'category', { domain: 'ledger', ids: [view.id] }).items.length) return assetError('CATEGORY_NEW_ID_CONFLICT', '新增分类回执复用了已存在ID');
+      if (p.create && resourceExisted(prepared,ctx.repository,p.scope,'ledger','category',view.id,ctx.validatingHistoricalReceipt)) return assetError('CATEGORY_NEW_ID_CONFLICT', '新增分类回执复用了已存在ID');
       const group = view.level === 1 ? flattenCategories([raw], p.scopeInput) : [raw];
       if (view.level === 2 && Array.isArray(raw.sublist) && raw.sublist.length) return assetError('CATEGORY_LEVEL_UNSUPPORTED', '二级分类回执不应包含更深层级');
       new ResourceCache(ctx.repository, ctx.clock).confirmResources(p.scope, 'ledger', group.map((raw) => ({ id: numericText(raw.id, ''), kind: 'category', raw })));

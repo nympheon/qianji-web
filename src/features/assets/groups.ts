@@ -1,3 +1,4 @@
+import {resourceExisted} from '../../operations/identity';
 import type { MutationHandler } from '../../operations/contract';
 import { asBillObject, numericText, type BillObject } from '../../shared/bill-wire';
 import { assetError, loadAsset } from './model';
@@ -54,7 +55,7 @@ export function createAssetGroupMutationHandler(): MutationHandler {
       if (p.noop === true) { if (Array.isArray(p.reads)) cache.confirmResources(scope, 'assets', p.reads.map((raw) => ({ id: numericText(asBillObject(raw).id, ''), kind: 'asset', raw }))); return { items: [{ id, state: 'succeeded' }] }; }
       if (p.kind !== 'submit') return { items: [{ id, state: 'uncertain', error: { code: 'ASSET_GROUP_CHECK', message: '分组操作已受理，需读取官方资料核对' } }] };
       const record = groupRecord(reply.data, scope), raw = asBillObject(record.raw);
-      if (p.id !== null && record.id !== p.id || raw.name !== p.name || p.id === null && ctx.repository.readResources(scope, 'assetGroup', { domain: 'assets', ids: [record.id] }).items.length) return assetError('ASSET_GROUP_INVALID', '分组回执与本次创建或编辑不符');
+      if (p.id !== null && record.id !== p.id || raw.name !== p.name || p.id === null && resourceExisted(prepared,ctx.repository,scope,'assets','assetGroup',record.id,ctx.validatingHistoricalReceipt)) return assetError('ASSET_GROUP_INVALID', '分组回执与本次创建或编辑不符');
       cache.confirmResources(scope, 'assets', [record]); const affectedIds = [`asset-group:${record.id}`];
       return { items: [{ id, state: 'succeeded', affectedIds }], affectedIds, ...(p.id === null ? { idMap: { [id]: record.id } } : {}) };
     },

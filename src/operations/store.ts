@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import {captureIdentityBaseline} from './identity';
 import { isLosslessNumber } from 'lossless-json';
 import type { ActorScope, Clock, Id } from '../shared/model';
 import type { Problem } from '../shared/reply';
@@ -50,7 +51,7 @@ function aggregate(items: readonly OperationItem[]): OperationState {
   return 'uncertain';
 }
 function encodePrepared(prepared: PreparedMutation): string {
-  return stringifyWire({ payload: prepared.payload, affectedIds: [...prepared.affectedIds], affectedDomains: [...prepared.affectedDomains ?? []], items: prepared.items.map((item) => ({ id: item.id, affectedIds: [...item.affectedIds], ...(item.assetEffects ? { assetEffects: item.assetEffects.map((effect) => ({ ...effect })) } : {}) })),...(prepared.received?{received:{applied:prepared.received.applied,reply:{...prepared.received.reply}}}:{}) });
+  return stringifyWire({ ...(prepared.identityBaseline?{identityBaseline:{...prepared.identityBaseline}}:{}), payload: prepared.payload, affectedIds: [...prepared.affectedIds], affectedDomains: [...prepared.affectedDomains ?? []], items: prepared.items.map((item) => ({ id: item.id, affectedIds: [...item.affectedIds], ...(item.assetEffects ? { assetEffects: item.assetEffects.map((effect) => ({ ...effect })) } : {}) })),...(prepared.received?{received:{applied:prepared.received.applied,reply:{...prepared.received.reply}}}:{}) });
 }
 
 export class OperationStore {
@@ -79,6 +80,8 @@ export class OperationStore {
   }
   prepare(operation: StoredOperation, prepared: PreparedMutation): StoredOperation {
     this.repository.assertScope(operation.scope); rejectCredentials(prepared.payload);
+    const {identityBaseline:_old,...body}=prepared,baseline=captureIdentityBaseline(this.repository,operation.scope,operation.action);
+    prepared={...body,...(baseline?{identityBaseline:baseline}:{})};
     if (prepared.items.length === 0 || new Set(prepared.items.map((item) => item.id)).size !== prepared.items.length) throw new DomainError('INVALID_PREPARED_ITEMS', '操作必须包含明确且唯一的项目');
     const items: OperationItem[] = prepared.items.map((item) => ({ ...item, affectedIds: [...item.affectedIds], state: 'queued', error: null }));
     return this.repository.transaction(() => {

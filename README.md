@@ -17,7 +17,7 @@ pnpm dev
 
 - [部署与 ChatGPT 接入](docs/deployment.md)
 - [升级、暂停、数据库恢复](docs/maintenance.md)
-- [版本状态与验收](docs/release.md)
+- [版本状态与验收](docs/release.md) / [独立审查及修复](docs/acceptance/final-review.md)
 - [设计](docs/superpowers/specs/2026-10-18-qianji-workers-design.md) / [计划](docs/superpowers/plans/2026-10-18-qianji-development-plan.md)
 
 普通使用超过来源校验窗口才按需增量更新，显式同步绕过60秒窗口但保留原游标和5秒冷却。闲置不轮询；未来计划由钱迹处理，网页预览不补造账单。未知写入保留原请求键，只读核查，禁止换键重试。

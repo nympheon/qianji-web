@@ -11,6 +11,7 @@ export interface MutationCommand { action: string; input: WireJson; scope: Actor
 export interface ExpectedAssetEffect { assetId: Id; currency: Id; delta: string; balanceBefore: string; expectedBalance: string; expectedLastPayTimeSec?: string; confirmation: 'expected' }
 export interface PreparedItem { id: Id; affectedIds: readonly Id[]; assetEffects?: ExpectedAssetEffect[] }
 export interface PreparedMutation { payload: WireJson; items: readonly PreparedItem[]; affectedIds: readonly Id[]; affectedDomains?: readonly SyncDomain[];
+  identityBaseline?:{domain:SyncDomain;kind:import('../storage/resources').ResourceKind;resources:string[];bills?:string[]};
   received?:{applied:boolean;reply:{ec:string;data:WireJson;httpStatus:string;hasMore?:boolean}};
 }
 export interface OperationItem extends PreparedItem { state: ItemState; error: Problem | null }
@@ -34,6 +35,8 @@ export interface OperationContext {
   authorizeMutation?: (command:MutationCommand) => void;
   authorizePrepared?: (command:MutationCommand, prepared:PreparedMutation) => void;
   writesPaused?: () => boolean;
+  /** Only while validating a saved receipt inside a deliberately rolled-back transaction. */
+  validatingHistoricalReceipt?:boolean;
   /** Available only during the original send; never during read-only reconciliation. */
   currentOperation?: () => StoredOperation;
   checkpoint?: (prepared: PreparedMutation, update: OperationUpdate | (() => OperationUpdate)) => void;

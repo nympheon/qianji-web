@@ -1,3 +1,4 @@
+import {resourceExisted} from '../../operations/identity';
 import type { MutationHandler, OperationContext, PreparedMutation, ItemUpdate } from '../../operations/contract';
 import { asBillObject, numericText, type BillObject } from '../../shared/bill-wire';
 import type { ActorScope } from '../../shared/model';
@@ -46,7 +47,7 @@ export function createTagMutationHandler(dependencies: { reconcileSource?: (ctx:
         return { items: [{ id: logicalId, state: 'succeeded' }, ...(Array.isArray(p.beforeBillIds) && p.beforeBillIds.length ? [{ id: `tag-ledger:${id}`, state: 'uncertain' as const, error: { code: 'TAG_LEDGER_CHECK', message: '标签已删除，关联账单等待只读同步核查' } }] : [])] };
       }
       const raw = asBillObject(reply.data), isGroup = kind === 'group-submit', view = isGroup ? tagGroupView(raw) : tagView(raw), record: ResourceRecord = { id: view.id, kind: isGroup ? 'tagGroup' : 'tag', raw };
-      if (id && view.id !== id || !exact(raw, expected, kind) || raw.userid != null && numericText(raw.userid, '') !== scope.uid || !id && ctx.repository.readResources(scope, record.kind, { domain: 'tags', ids: [view.id] }).items.length) return assetError('TAG_RECEIPT_INVALID', '官方标签回执与本次目标不符'); cache.confirmResources(scope, 'tags', [record]); const affectedIds = [...new Set([...prepared.affectedIds, `${record.kind}:${record.id}`])]; return { items: [{ id: logicalId, state: 'succeeded', affectedIds }], affectedIds, ...(!id ? { idMap: { [logicalId]: view.id } } : {}) };
+      if (id && view.id !== id || !exact(raw, expected, kind) || raw.userid != null && numericText(raw.userid, '') !== scope.uid || !id && resourceExisted(prepared,ctx.repository,scope,'tags',record.kind,view.id,ctx.validatingHistoricalReceipt)) return assetError('TAG_RECEIPT_INVALID', '官方标签回执与本次目标不符'); cache.confirmResources(scope, 'tags', [record]); const affectedIds = [...new Set([...prepared.affectedIds, `${record.kind}:${record.id}`])]; return { items: [{ id: logicalId, state: 'succeeded', affectedIds }], affectedIds, ...(!id ? { idMap: { [logicalId]: view.id } } : {}) };
     },
     reconcile: async (operation, ctx) => {
       if (!operation.prepared) return { items: [] }; const { p, scope, kind, id, logicalId, expected } = decode(operation.prepared); if ((kind === 'tag-submit' || kind === 'group-submit') && !id) return { items: [] };

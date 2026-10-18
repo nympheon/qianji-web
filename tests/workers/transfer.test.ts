@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createTestApp } from '../support/app';
 import { createUpstream, TestClock } from '../support/upstream';
 import { Coordinator } from '../../src/actor/coordinator';
-import { createTransferMutationHandler, transferAmounts, transferEffects } from '../../src/features/ledger/transfer';
+import { createTransferMutationHandler, transferAmounts, transferEffects,prepareTransfer } from '../../src/features/ledger/transfer';
 import type { TransferAsset, TransferMovement } from '../../src/features/ledger/transfer-contract';
 import { projectBill } from '../../src/features/sync/incremental';
 import { asBillObject, numericText } from '../../src/shared/bill-wire';
@@ -15,6 +15,16 @@ import { calculateBudget } from '../../src/features/budget/calculate';
 
 const assets: TransferAsset[] = [{ id: '10', name: 'A', type: 0, currency: 'CNY', money: '1000', lastPayTimeSec: '0' }, { id: '20', name: 'B', type: 2, currency: 'CNY', money: '-200', lastPayTimeSec: '100' }, { id: '30', name: 'C', type: 0, currency: 'USD', money: '500', lastPayTimeSec: '0' }];
 const movement = (fromAssetId = '10', targetAssetId = '20', principal = '100'): TransferMovement => ({ fromAssetId, targetAssetId, principal, fee: '0', currency: null, type: 2, timeSec: 200 });
+it('requires a credit-card target for both new and edited repayments before any send',async()=>{
+ const s=await setup();await s.app.repository(repository=>{
+  const cache=new ResourceCache(repository,s.clock),ctx={repository,clock:s.clock},command={scope:s.app.scope,requestId:'invalid-card',action:'ledger.repayCard',input:s.input};
+  for(const type of [0,1,3,4]){cache.confirmResources(s.app.scope,'assets',[{id:'20',kind:'asset',raw:{...assets[1]!,type}}]);expect(()=>prepareTransfer(command,ctx)).toThrow('REPAY_CARD_TARGET_REQUIRED');}
+  cache.confirmResources(s.app.scope,'assets',[{id:'20',kind:'asset',raw:{...assets[1]!}},{id:'40',kind:'asset',raw:{...assets[0]!,id:'40',type:1}}]);expect(()=>prepareTransfer(command,ctx)).not.toThrow();
+  expect(()=>prepareTransfer({...command,action:'ledger.transfer',input:{...s.input,targetAssetId:'40'}},ctx)).not.toThrow();
+  const bill=projectBill(parseWire('{"id":55,"bookid":1,"type":3,"money":100,"time":200,"fromid":10,"targetid":20,"extra":{"transfee":3}}'));repository.applyPage(s.app.scope,'ledger',{upserts:[bill],deletes:[],resources:[],pageState:null});
+  expect(()=>prepareTransfer({...command,input:{mode:'edit',id:'55',expectedVersion:billVersion(bill.raw),changes:{targetAssetId:'40'}}},ctx)).toThrow('REPAY_CARD_TARGET_REQUIRED');expect(s.upstream.calls).toHaveLength(0);
+ });
+});
 async function setup() {
   const app = await createTestApp(), clock = new TestClock(Date.now() + 3600_000), upstream = createUpstream(clock, app.scope);
   await app.repository((repository) => {

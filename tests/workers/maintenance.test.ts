@@ -4,6 +4,7 @@ import {TestClock,createUpstream} from '../support/upstream';
 import {Coordinator} from '../../src/actor/coordinator';
 import {Maintenance,maintenanceSources} from '../../src/actor/maintenance';
 import {ResourceCache} from '../../src/storage/cache';
+import {createActorContext} from '../../src/actor/context';
 import type {MutationHandler} from '../../src/operations/contract';
 it('quarantines restored queued intents and never sends them on restart or after lifting the environment pause',async()=>{
  const app=await createTestApp(),clock=new TestClock(),upstream=createUpstream(clock,app.scope);let sent=0;
@@ -20,5 +21,11 @@ it('requires fresh official source checkpoints and an unchanged reviewed digest 
   repository.createDataset(app.scope,'ledger','ledger');repository.applyPage(app.scope,'ledger',{upserts:[],deletes:[],resources:[],pageState:null,complete:true,validatedAt:clock.nowIso()});repository.switchDataset(app.scope,'ledger','ledger',null);const cache=new ResourceCache(repository,clock);for(const [domain,queryKey]of maintenanceSources){const key={domain:domain as import('../../src/storage/mirror').SyncDomain,queryKey};cache.applyRead(cache.captureRead(app.scope,key),{items:[],complete:true});}
   const checked=maintenance.markChecked();expect(checked.phase).toBe('checked');expect(()=>maintenance.resume('wrong-digest')).toThrow('MAINTENANCE_REVIEW_CHANGED');expect(maintenance.resume(checked.proof!).paused).toBe(false);
   maintenance.pause();const second=maintenance.markChecked();repository.sql.exec("UPDATE datasets SET revision=revision+1 WHERE domain='ledger'").toArray();expect(()=>maintenance.resume(second.proof!)).toThrow('MAINTENANCE_REVIEW_CHANGED');
+ });
+});
+it('applies the external restore fence before the real actor context can recover its old queue',async()=>{
+ const app=await createTestApp(),clock=new TestClock(),upstream=createUpstream(clock,app.scope);let requestId='';await app.repository(async(repository,storage)=>{
+  const c=new Coordinator({repository,clock,client:upstream.client},new Map([['test.write',{prepare:async()=>({payload:{},items:[],affectedIds:[]}),send:async()=>{throw new Error('must not send');},applyReceipt:()=>({items:[]}),reconcile:async()=>({items:[]})}]]));
+  const original=await c.submit({scope:app.scope,action:'test.write',requestId:'pre-rollback-queue',input:{}});requestId=original.id;repository.sql.exec("UPDATE connection SET state='connected' WHERE singleton=1").toArray();const context=createActorContext(storage,{QIANJI_MAINTENANCE:'paused',QIANJI_RESTORE_ID:'external-restore-002'});await context.coordinator.recover();await context.coordinator.resumeJobs();expect(context.coordinator.getOperation(app.scope,requestId)?.state).toBe('uncertain');expect(context.maintenance.view().phase).toBe('restore-required');await expect(context.coordinator.submit({scope:app.scope,action:'ledger.create',requestId:'new-while-restoring',input:{}})).rejects.toThrow('MAINTENANCE_PAUSED');expect(upstream.calls).toHaveLength(0);
  });
 });

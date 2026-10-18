@@ -73,6 +73,7 @@ export function prepareTransfer(command: MutationCommand, ctx: Pick<OperationCon
     const fromAssetId = changes.fromAssetId ?? previous!.fromAssetId, targetAssetId = changes.targetAssetId ?? previous!.targetAssetId;
     if (fromAssetId === targetAssetId) return fail('TRANSFER_SAME_ASSET', '转出和转入资产必须不同');
     const from = asset(fromAssetId), target = asset(targetAssetId);
+    if(command.action==='ledger.repayCard'&&target.type!==2)return fail('REPAY_CARD_TARGET_REQUIRED','信用卡还款只能选择信用卡作为转入资产');
     if ([from, target].some((asset) => asset.type === 5 || asset.type === 6)) return fail('DEBT_ASSET_UNSUPPORTED', '借贷或汇总资产不能用于普通转账');
     const bookId = changes.bookId ?? numericText(raw.bookid, '');
     if (!ctx.repository.readResources(scope, 'book', { domain: 'books', ids: [bookId] }).items.length) return fail('BOOK_NOT_LOADED', '请先载入目标账本');

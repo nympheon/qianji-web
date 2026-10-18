@@ -14,6 +14,7 @@ import type { OperationView } from '../../src/operations/contract';
 import { AcceptanceScope,type AcceptanceManifest,type TestResource } from './scope.mts';
 import { caseNames,type CaseName } from './contract.mts';
 import { runCase,testActions } from './cases.mts';
+import {AcceptanceMonitor} from './monitor.mts';
 
 interface Manifest extends AcceptanceManifest {
  aliases:Record<string,string>;
@@ -35,22 +36,21 @@ export class QianjiState extends DurableObject<Env>{
  #trace:Trace[]=[];
  #dropBillReceipt=false;
  #billPosts=0;
- #networkRequests=0;
- #lastNetworkAt:string|null=null;
- readonly #monitorId=crypto.randomUUID();
+ private readonly monitor:AcceptanceMonitor;
  constructor(state:DurableObjectState,env:Env){
   super(state,env);
   this.context=createActorContext(state.storage,env,undefined,{authorizeMutation:command=>{
    const policy=this.policy(),input=restoreBillInput(command.input);
    policy.authorize(command.scope.uid,command.action,{...(input as Record<string,unknown>),requestId:command.requestId});
   },authorizePrepared:(command,prepared)=>this.policy().authorizePrepared(command.scope.uid,prepared),fetch:async(url,init)=>{
-   this.#networkRequests++;this.#lastNetworkAt=new Date().toISOString();
+   this.monitor.attempt(new Date().toISOString());
    const billPost=new URL(url).pathname==='/bill/syncall';if(billPost)this.#billPosts++;
    const response=await fetch(url,init);
    if(billPost&&this.#dropBillReceipt){this.#dropBillReceipt=false;const accepted=await response.clone().json() as {ec:unknown};if(response.ok&&String(accepted.ec)==='200'){this.#trace.push({operation:'wire:bill.receiptDropped',ec:'200',shape:null});throw new Error('simulated accepted response loss');}}
    if(new URL(url).pathname==='/repeat_task/toggle')try{const wire=await response.clone().json() as {ec:unknown;data?:unknown};this.#trace.push({operation:'wire:repeat.toggle',ec:String(wire.ec),shape:shape(wire.data??null)});}catch{this.#trace.push({operation:'wire:repeat.toggle',ec:'UNREADABLE',shape:null});}
    return response;
   }});
+  this.monitor=new AcceptanceMonitor(this.context.repository);
   const request=this.context.client.request.bind(this.context.client);
   this.context.client.request=async(...args)=>{
    try{const reply=await request(...args);this.#trace.push({operation:args[0],ec:reply.ec,shape:shape(reply.data)});return reply;}
@@ -121,7 +121,7 @@ export class QianjiState extends DurableObject<Env>{
    };
    const checkpoint=<T,>(key:string,value:T):T=>{const observations=current.observations??={};if(Object.hasOwn(observations,key))return observations[key] as T;observations[key]=value;this.save(current);return value;};
    const result=await runCase(name,{prefix:current.prefix,read,write,remember,known,synchronize,checkpoint,invalidateSource:key=>this.context.cache.invalidateSource(account,key),optional:alias=>current.aliases[alias],billPostCount:()=>this.#billPosts,armReceiptLoss:()=>{if(name!=='receipt-loss')throw new DomainError('ACCEPTANCE_SCOPE_DENIED','故障仅限专用响应丢失场景');this.#dropBillReceipt=true;}});
-   return {...result,case:name,resources:Object.fromEntries(Object.entries(current.resources).map(([kind,ids])=>[kind,ids?.length??0])),operations,partialReads,trace:this.#trace,networkRequests:this.#networkRequests,lastNetworkAt:this.#lastNetworkAt,monitorId:this.#monitorId,observedAt:new Date().toISOString()};
+   return {...result,case:name,resources:Object.fromEntries(Object.entries(current.resources).map(([kind,ids])=>[kind,ids?.length??0])),operations,partialReads,trace:this.#trace,...this.monitor.snapshot(),observedAt:new Date().toISOString()};
   }catch(error){return {case:name,state:'error',error:error instanceof DomainError?{code:error.code,message:error.detail}:{code:'ACCEPTANCE_FAILED',message:'本地验收未完成'},operations,trace:this.#trace};}
  }
 }
