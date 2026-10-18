@@ -20,6 +20,14 @@ export async function seedActions() {
 }
 export const action = (name: string, input: unknown = {}) => exports.default.fetch('https://test/api/actions', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: name, input }) });
 describe('shared HTTP actions', () => {
+  it('keeps unverified debt writes gated and persists an empty typed creation draft', async () => {
+    await seedActions(); const input = { direction: 'borrow', name: '专用测试借入', principal: '100', bookId: '10', aboutAssetId: null, startDate: '2026-01-01', inCount: true, requestId: 'debt-create' };
+    expect(await (await action('debt.create', input)).json()).toMatchObject({ status: 'unavailable', error: { code: 'WRITE_LIVE_UNVERIFIED' } });
+    const { requestId: _requestId, ...fields } = input, draft = { kind: 'debt', action: 'debt.create', requestId: 'debt-draft', input: { ...fields, name: '', principal: '' } };
+    expect(await (await action('debt.draft.save', { key: 'new:borrow', draft })).json()).toMatchObject({ status: 'ready', data: { draft, operationId: null } });
+    expect(await (await action('debt.draft.get', { key: 'new:borrow' })).json()).toMatchObject({ status: 'ready', data: { draft } });
+    expect(await (await action('debt.list', { direction: 'borrow', finished: false })).json()).toMatchObject({ status: 'partial', data: { items: [], freshness: { complete: false } } });
+  });
   it('keeps asset writes unavailable and persists a typed empty asset draft', async () => {
     await seedActions();
     const input = { mode: 'create', fields: { type: 1, subtype: 11, name: '测试现金', money: '0', currency: 'CNY', inCount: true }, requestId: 'new-asset' };

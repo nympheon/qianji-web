@@ -1,0 +1,8 @@
+{
+  "description": "Synthetic asset.submit creation fixture based on SubmitLoanViewImpl.z and BaseSubmitAssetPresenterImpl$b; initial principal comes from server data.bill",
+  "requestExtra": {"bookid":1,"accountId":10},
+  "reply": {"ec":200,"data":{
+    "asset":{"id":1000,"userid":"user-A","name":"测试借入","type":5,"stype":51,"money":"-100","currency":"CNY","status":0,"incount":1,"loan":{"accountId":10,"money":"-100","totalpay":"0","startdate":"2026-01-01"}},
+    "bill":{"id":1792000000123100011,"bookid":1,"userid":"user-A","type":6,"money":"100","time":1767196800,"assetid":1000,"targetid":10,"fromid":-1,"status":1,"extra":{}}
+  }}
+}

@@ -6,6 +6,13 @@ import { useCase, type UseCase, type UseCaseContext } from './use-case';
 
 function scope(context: UseCaseContext) { const scope = context.connection.scope(); if (!scope) throw new DomainError('CONNECTION_REQUIRED', '请先连接钱迹'); return scope; }
 const handlers: Record<ActionName, UseCase> = {
+  'debt.list': useCase('debt.list', (ctx, input) => ctx.debt.list(input)), 'debt.options': useCase('debt.options', (ctx) => ctx.debt.options()),
+  'debt.preview': useCase('debt.preview', (ctx, input) => ctx.debt.preview(input.action, input.input)),
+  'debt.create': useCase('debt.create', (ctx, { requestId, ...input }) => ctx.debt.create(input, { requestId })),
+  'debt.appendPrincipal': useCase('debt.appendPrincipal', (ctx, { requestId, ...input }) => ctx.debt.appendPrincipal(input, { requestId })),
+  'debt.editPrincipal': useCase('debt.editPrincipal', (ctx, { requestId, ...input }) => ctx.debt.editPrincipal(input, { requestId })),
+  'debt.pay': useCase('debt.pay', (ctx, { requestId, ...input }) => ctx.debt.pay(input, { requestId })),
+  'debt.draft.get': useCase('debt.draft.get', (ctx, input) => ctx.debt.getDraft(input.key)), 'debt.draft.save': useCase('debt.draft.save', (ctx, input) => ctx.debt.saveDraft(input.key, input.draft)),
   'connection.status': useCase('connection.status', (ctx) => ctx.connection.view()),
   'connection.check': useCase('connection.check', (ctx) => ctx.connection.check()),
   'connection.refresh': useCase('connection.refresh', (ctx) => ctx.connection.refresh()),
@@ -85,7 +92,7 @@ export class AppRegistry {
         return { status: ['queued', 'sending', 'verifying'].includes(operation.state) ? 'running' : operation.state === 'uncertain' ? 'uncertain' : operation.state === 'partial' ? 'partial' : operation.state === 'failed' ? 'error' : 'ready', data, freshness: null, operationId: operation.id, ...(operation.error ? { error: operation.error } : {}) };
       }
       const freshness = data && typeof data === 'object' && 'freshness' in data ? (data as { freshness: AppReply<unknown>['freshness'] }).freshness : null;
-      if (action.startsWith('assets.') && data && typeof data === 'object' && 'problem' in data && data.problem && typeof data.problem === 'object' && 'code' in data.problem && 'message' in data.problem && typeof data.problem.code === 'string' && typeof data.problem.message === 'string') return { status: 'partial', data, freshness, error: { code: data.problem.code, message: data.problem.message } };
+      if ((action.startsWith('assets.') || action.startsWith('debt.')) && data && typeof data === 'object' && 'problem' in data && data.problem && typeof data.problem === 'object' && 'code' in data.problem && 'message' in data.problem && typeof data.problem.code === 'string' && typeof data.problem.message === 'string') return { status: 'partial', data, freshness, error: { code: data.problem.code, message: data.problem.message } };
       const job = action.startsWith('ledger.') ? this.currentJob() : null;
       return { status: job ? 'running' : freshness && !freshness.complete ? 'partial' : 'ready', data, freshness, ...(job ? { jobId: job.id } : {}) };
     } catch (error) {

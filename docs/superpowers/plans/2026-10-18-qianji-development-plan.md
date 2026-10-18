@@ -314,11 +314,12 @@ cache.ts导出`CacheKey { domain:SyncDomain; queryKey:string }`、`CacheReadStam
 **Files:** Create `src/features/debt/{contract,service,use-cases,accounting}.ts`、`src/web/pages/DebtPage.tsx`、`tests/workers/debt.test.ts`；Modify AssetsPage和registry。
 **Interfaces:** Consumes任务12/16；Produces `DebtService.create/appendPrincipal/editPrincipal/pay`，分别使用`CreateDebtInput/AppendPrincipalInput/EditPrincipalInput/DebtPaymentInput`及CallMeta；pay返回包含本金/利息逐项状态的OperationView。
 
-- [ ] 先核对借贷资产创建是否由官方生成初始本金记录，形成独立fixture，防止本地再次生成。写失败断言：C=-100偿还本金30/利息5→C=-70、现金一次-35、统计支出5；输入120按APK拆100本金/20利息；纯利息无本金记录。
-- [ ] Run `pnpm test -- tests/workers/debt.test.ts`；预期FAIL于专用借贷分派缺失。
-- [ ] 实现6/7、9/4、10/11的真实assetid/fromid/targetid映射及LoanInfo更新；本金/利息独立ID和回执，放入账单同步，不另造归还API或多一次资产submit。保留编辑/删除边界、非本位币拒绝、金额上限9,999,999,999及缺LoanInfo处理。
-- [ ] 重跑追加与编辑差额、换资产、本金成功利息未知、单删本金保留利息、余额符号夹取，PASS；真实核查两条账单/资产/LoanInfo，不能以批次HTTP成功承诺原子性。
-- [ ] 提交：`feat: implement principal and interest debt workflows`。
+- [x] 先核对借贷资产创建是否由官方生成初始本金记录，形成独立fixture，防止本地再次生成。写失败断言：C=-100偿还本金30/利息5→C=-70、现金一次-35、统计支出5；输入120按APK拆100本金/20利息；纯利息无本金记录。
+- [x] Run `pnpm test -- tests/workers/debt.test.ts`；预期FAIL于专用借贷分派缺失。
+- [x] 实现6/7、9/4、10/11的真实assetid/fromid/targetid映射及LoanInfo更新；本金/利息独立ID和回执，放入账单同步，不另造归还API或多一次资产submit。保留编辑/删除边界、非本位币拒绝、金额上限9,999,999,999及缺LoanInfo处理。
+- [x] 重跑追加与编辑差额、换资产、本金成功利息未知、单删本金保留利息、余额符号夹取，PASS（15个核心/来源测试、HTTP草稿与保护、桌面/手机交互）。
+- [ ] 真实核查两条账单/资产/LoanInfo，不能以批次HTTP成功承诺原子性（按已定隔离测试策略，在任务27仅用新建专用测试账本/资产验收）。
+- [x] 提交：`feat: implement principal and interest debt workflows`。
 
 ## M3：完整资料与高级业务
 

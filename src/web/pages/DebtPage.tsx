@@ -1,0 +1,31 @@
+import { useState } from 'react';
+import { ArrowDownLeftIcon, ArrowUpRightIcon, PlusIcon } from 'lucide-react';
+import type { DebtDraft, DebtView } from '../../features/debt/contract';
+import type { TransferOptions } from '../../features/ledger/transfer-contract';
+import { api } from '../api';
+import { useAction } from '../lib/use-action';
+import { Button } from '../components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../components/ui/dialog';
+import { DebtEditor } from '../components/DebtEditor';
+import { EmptyState } from '../components/EmptyState';
+import { DataStatus } from '../components/DataStatus';
+import { formatMoney } from '../components/Totals';
+export function DebtPage() {
+  const [direction, setDirection] = useState<'borrow' | 'lend'>('borrow'), [finished, setFinished] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null);
+  const query = useAction('debt.list', { direction, finished }), capabilities = useAction('capabilities.list', {}), [editor, setEditor] = useState<{ draft: DebtDraft; key: string; options: TransferOptions; title: string; balance?: string } | null>(null);
+  const allowed = (action: string) => capabilities.data?.some((item) => item.action === action && item.enabled) ?? false;
+  async function open(mode: 'create' | 'append' | 'pay', debt?: DebtView) {
+    setBusy(true); setError(null);
+    try {
+      const reply = await api('debt.options', {}), options = reply.data; if (!options?.books.length) { setError(reply.error?.message ?? '请先载入目标账本与资产选项'); return; }
+      const now = Math.floor(Date.now() / 1000), base = { kind: 'debt' as const, requestId: crypto.randomUUID() }, fields = { principal: '', bookId: options.books[0]!.id, aboutAssetId: debt?.aboutAssetId ?? null, timeSec: now, remark: '' };
+      const draft: DebtDraft = mode === 'create' ? { ...base, action: 'debt.create', input: { direction, name: '', principal: '', bookId: options.books[0]!.id, aboutAssetId: null, startDate: new Date((now + 8 * 3600) * 1000).toISOString().slice(0, 10), endDate: null, inCount: true, remark: '' } } : mode === 'append' ? { ...base, action: 'debt.appendPrincipal', input: { id: debt!.asset.id, expectedVersion: debt!.asset.editVersion, ...fields } } : { ...base, action: 'debt.pay', input: { id: debt!.asset.id, expectedVersion: debt!.asset.editVersion, ...fields, interest: '0' } };
+      setEditor({ draft, key: mode === 'create' ? `new:${direction}` : `${mode}:${debt!.asset.id}`, options, title: mode === 'create' ? direction === 'borrow' ? '新增借入' : '新增借出' : mode === 'append' ? '追加本金' : direction === 'borrow' ? '还款' : '收款', ...(debt ? { balance: debt.asset.money } : {}) });
+    } finally { setBusy(false); }
+  }
+  return <div className="page-stack"><DataStatus reply={query.reply} retained={!!query.data} /><div className="flex flex-wrap items-center justify-between gap-3"><div className="flex gap-2"><Button variant={direction === 'borrow' ? 'default' : 'outline'} disabled={busy} onClick={() => setDirection('borrow')}>借入</Button><Button variant={direction === 'lend' ? 'default' : 'outline'} disabled={busy} onClick={() => setDirection('lend')}>借出</Button></div><div className="flex flex-wrap items-center gap-3"><label className="flex items-center gap-2 text-sm"><input type="checkbox" className="size-4 accent-primary" checked={finished} onChange={(event) => setFinished(event.target.checked)} />已结清</label><Button disabled={busy || !allowed('debt.create')} onClick={() => { void open('create'); }}><PlusIcon />{direction === 'borrow' ? '新增借入' : '新增借出'}</Button></div></div>
+    <section className="grid gap-4 md:grid-cols-2">{query.data?.items.map((debt) => { const Icon = direction === 'borrow' ? ArrowDownLeftIcon : ArrowUpRightIcon; return <article className="rounded-xl border bg-card p-5" key={debt.asset.id}><div className="flex items-start justify-between gap-3"><div className="flex items-center gap-3"><span className="asset-symbol"><Icon /></span><div><h2 className="text-base font-semibold">{debt.asset.name}</h2><p className="text-xs text-muted-foreground">{debt.startDate ?? '开始日期未知'}{debt.endDate ? ` — ${debt.endDate}` : ''}</p></div></div><span className="text-xs text-muted-foreground">{debt.asset.finished ? '已结清' : direction === 'borrow' ? '待归还' : '待收回'}</span></div><p className="my-5 text-2xl font-semibold tabular-nums">{formatMoney(debt.asset.money)} <span className="text-sm font-normal text-muted-foreground">{debt.asset.currency}</span></p>{debt.state ? <dl className="mb-5 grid grid-cols-2 gap-3 text-sm"><div><dt className="text-muted-foreground">累计本金</dt><dd>{formatMoney(debt.state.totalPrincipal)}</dd></div><div><dt className="text-muted-foreground">已还本金</dt><dd>{formatMoney(debt.state.totalPaid)}</dd></div></dl> : <p className="mb-4 text-sm text-muted-foreground">借贷资料不完整，请先刷新或在手机客户端核查。</p>}<div className="flex flex-wrap gap-2"><Button aria-label={`${direction === 'borrow' ? '还款' : '收款'} ${debt.asset.name}`} disabled={busy || finished || debt.loanInfoMissing || !allowed('debt.pay')} onClick={() => { void open('pay', debt); }}>{direction === 'borrow' ? '还款' : '收款'}</Button><Button variant="outline" disabled={busy || finished || debt.loanInfoMissing || !allowed('debt.appendPrincipal')} onClick={() => { void open('append', debt); }}>追加本金</Button><Button variant="ghost" asChild><a href="/assets">资产管理</a></Button></div></article>; })}</section>
+    {query.reply && !query.data?.items.length ? <EmptyState title={finished ? '没有已结清的借贷' : direction === 'borrow' ? '暂无借入记录' : '暂无借出记录'} description="借贷资料以钱迹官方列表为准。" /> : null}{error ? <p role="alert">{error}</p> : null}
+    <Dialog open={!!editor} onOpenChange={(open) => { if (!open) setEditor(null); }}><DialogContent className="editor-dialog"><DialogHeader><DialogTitle>{editor?.title ?? '借贷'}</DialogTitle><DialogDescription>草稿自动保存，资金变动以钱迹回执为准。</DialogDescription></DialogHeader>{editor ? <DebtEditor key={editor.key} initial={editor.draft} draftKey={editor.key} options={editor.options} direction={direction} allowed={allowed(editor.draft.action)} {...(editor.balance === undefined ? {} : { balance: editor.balance })} onComplete={query.refetch} /> : null}</DialogContent></Dialog>
+  </div>;
+}

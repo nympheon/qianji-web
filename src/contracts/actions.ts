@@ -11,6 +11,7 @@ import { refundInputSchema } from '../features/ledger/refund-contract';
 import { cancelReimbursementInputSchema, reimburseInputSchema, reimbursableInputSchema, type ReimbursementMembers } from '../features/ledger/reimbursement-contract';
 import { assetDraftSchema, assetDeleteSchema, assetGroupAddSchema, assetGroupDeleteSchema, assetGroupRemoveSchema, assetGroupReorderSchema, assetGroupSubmitSchema, assetIdSchema, assetListSchema, assetReorderSchema, assetSubmitSchema, assetTrendSchema, assetVisibleSchema, balanceAdjustmentSchema, debtFinishSchema, type AssetDetailView, type AssetDeleteCheckView, type AssetGroupsView, type AssetListView, type AssetTrendView, type AssetTypesView, type AssetDraftView, type AssetSummaryView } from '../features/assets/contract';
 const empty = z.strictObject({}), id = z.string().min(1).max(200);
+import { createDebtSchema, appendPrincipalSchema, editPrincipalSchema, debtPaymentSchema, debtListSchema, debtPreviewSchema, debtDraftSchema, type DebtListView, type DebtPreview, type DebtDraftView } from '../features/debt/contract';
 const route = z.strictObject({ route: z.enum(['main', 'backup', 'overseas']) });
 export const actionSchemas = {
   'connection.status': empty, 'connection.check': empty, 'connection.refresh': empty, 'connection.logout': empty,
@@ -35,6 +36,9 @@ export const actionSchemas = {
   'assets.groups.submit': assetGroupSubmitSchema.safeExtend({ requestId: id }), 'assets.groups.delete': assetGroupDeleteSchema.extend({ requestId: id }), 'assets.groups.reorder': assetGroupReorderSchema.extend({ requestId: id }),
   'assets.groups.add': assetGroupAddSchema.extend({ requestId: id }), 'assets.groups.remove': assetGroupRemoveSchema.extend({ requestId: id }),
   'assets.draft.get': z.strictObject({ key: z.string().min(1).max(300) }), 'assets.draft.save': z.strictObject({ key: z.string().min(1).max(300), draft: assetDraftSchema }),
+  'debt.list': debtListSchema, 'debt.options': empty, 'debt.preview': debtPreviewSchema,
+  'debt.create': createDebtSchema.extend({ requestId: id }), 'debt.appendPrincipal': appendPrincipalSchema.extend({ requestId: id }), 'debt.editPrincipal': editPrincipalSchema.extend({ requestId: id }), 'debt.pay': debtPaymentSchema.extend({ requestId: id }),
+  'debt.draft.get': z.strictObject({ key: z.string().min(1).max(300) }), 'debt.draft.save': z.strictObject({ key: z.string().min(1).max(300), draft: debtDraftSchema }),
 } as const;
 export type ActionName = keyof typeof actionSchemas;
 export type ActionInput<A extends ActionName> = z.infer<typeof actionSchemas[A]>;
@@ -52,6 +56,8 @@ export interface ActionOutputs {
   'assets.groups.submit': OperationView; 'assets.groups.delete': OperationView; 'assets.groups.reorder': OperationView; 'assets.groups.add': OperationView; 'assets.groups.remove': OperationView;
   'assets.draft.get': AssetDraftView | null; 'assets.draft.save': AssetDraftView;
   'assets.summary': AssetSummaryView;
+  'debt.list': DebtListView; 'debt.options': TransferOptions; 'debt.preview': DebtPreview;
+  'debt.create': OperationView; 'debt.appendPrincipal': OperationView; 'debt.editPrincipal': OperationView; 'debt.pay': OperationView; 'debt.draft.get': DebtDraftView | null; 'debt.draft.save': DebtDraftView;
 }
 export interface ActionDefinition { title: string; description: string; kind: CapabilityView['kind']; evidence: CapabilityView['evidence']; requiresAccount: boolean; readOnly: boolean; destructive: boolean; unavailable?: { code: string; reason: string } }
 const read = { kind: 'read', evidence: 'apk-static', requiresAccount: true, readOnly: true, destructive: false } as const;
@@ -59,6 +65,15 @@ const connection = { ...read, kind: 'connection', requiresAccount: false } as co
 const write = { ...read, kind: 'write', readOnly: false, unavailable: { code: 'WRITE_LIVE_UNVERIFIED', reason: '账单写入已完成契约与模拟测试，待专用测试账本真实验收后启用' } } as const;
 const assetWrite = { ...write, unavailable: { code: 'WRITE_LIVE_UNVERIFIED', reason: '资产写入待命名测试资产真实验收后启用' } } as const;
 export const actionDefinitions: Record<ActionName, ActionDefinition> = {
+  'debt.list': { ...read, title: '查询借贷', description: '按借入或借出、结清状态调用原生listloan，与资产列表共用真实资产ID和官方余额。按需60秒刷新，缺少LoanInfo时展示缺失状态，不能按零推算本金。' },
+  'debt.options': { ...read, title: '借贷账本与关联资产选项', description: '按需载入当前资产与账本；借贷只允许选择本位币普通资产或信用卡，不使用当前汇率自动换算。' },
+  'debt.preview': { ...read, evidence: 'local', title: '预览借贷本金及利息', description: '仅根据本地已载入资料计算原生本金、利息拆分及预期LoanInfo和资金变化，不写入钱迹。超出余额的本金输入会归入利息；预期值不是已确认资产余额。' },
+  'debt.create': { ...assetWrite, title: '新建借入或借出', description: 'asset.submit由官方返回新借贷ID和初始本金账单，不能再补造初始记录。需目标账本、金额、日期及可选本位币实际资金资产。复用requestId，未知结果不凭同名猜测成功。' },
+  'debt.appendPrincipal': { ...write, title: '追加借贷本金', description: '按资产详情版本创建type6借入或7借出本金记录，沿用LoanInfo累计本金及余额方向；只通过bill.syncall上传，不另发资产余额修改。未知结果只读核查原操作。' },
+  'debt.editPrincipal': { ...write, title: '编辑借贷本金记录', description: '仅编辑真实type6/7本金，按原账单版本保留ID；旧资产回滚、新资产应用后合并预期差额。本位币且LoanInfo完整；不支持把4/9/10/11当成本金编辑。复用requestId。' },
+  'debt.pay': { ...write, title: '还款或收回借贷', description: '借入生成9本金/10利息，借出生成4本金/11利息；本金为零时只生成利息。输入本金超过余额时超出部分替换利息。两条记录独立ID与结果，部分成功不承诺原子性，不自动结清、不额外asset.submit，金额各自不超过9999999999。必须复用requestId。' },
+  'debt.draft.get': { ...read, evidence: 'local', title: '读取借贷草稿', description: '读取结构化本地草稿和原请求键对应的操作，不请求钱迹。' },
+  'debt.draft.save': { ...read, readOnly: false, evidence: 'local', title: '保存借贷草稿', description: '保存本地本金、利息与关联资产输入，未核清的原操作禁止替换请求键重复提交。' },
   'connection.status': { ...connection, title: '钱迹连接状态', description: '读取本服务连接状态、当前线路及登录有效性，不请求钱迹。' },
   'connection.check': { ...connection, title: '检查登录状态', description: '主动请求钱迹配置，检查当前登录状态。' },
   'connection.refresh': { ...connection, title: '刷新登录状态', description: '查询刷新能力；未验证时请在连接页面重新登录。', unavailable: { code: 'REFRESH_UNVERIFIED', reason: '令牌刷新尚未真实验证，请在连接页面重新登录' } },

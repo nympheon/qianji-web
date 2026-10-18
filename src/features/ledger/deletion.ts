@@ -7,6 +7,7 @@ import { deleteBillsSchema } from './write-contract';
 import { loadTransferAsset } from './transfer';
 import type { BillRecord } from '../../storage/mirror';
 import type { WireJson } from '../../shared/wire-json';
+import { debtDeletionEffects } from '../debt/deletion';
 
 const fail = (code: string, message: string): never => { throw new DomainError(code, message); };
 function deleteRefundIds(raw: BillObject): string[] {
@@ -14,6 +15,7 @@ function deleteRefundIds(raw: BillObject): string[] {
   return [...new Set([...current, ...(legacy && compareMoney(moneyText(extra.refundv), '0') > 0 ? [legacy] : [])])];
 }
 function deletionEffect(record: BillRecord, context: OperationContext, scope: { uid: string; connectionEpoch: string }, baseCurrency: string): ExpectedAssetEffect[] {
+  if ([4, 6, 7, 9, 10, 11].includes(record.type)) return debtDeletionEffects(record, context, scope, baseCurrency);
   const raw = asBillObject(record.raw), assetId = positiveBillId(raw.assetid); if (!assetId) return [];
   const asset = loadTransferAsset(context, scope, assetId, baseCurrency);
   let amount = record.money;
@@ -42,7 +44,7 @@ export function createLedgerDeletionHandler(dependencies: { baseCurrency?: () =>
     const checks = new Map<string, Set<string>>(), sourceIds = new Set<string>();
     for (const record of records.values()) {
       const raw = asBillObject(record.raw);
-      if (![0, 1, 5, 20, 21].includes(record.type)) return fail('BILL_TYPE_UNSUPPORTED', '该记录需要对应类型的专用删除操作');
+      if (![0, 1, 4, 5, 6, 7, 9, 10, 11, 20, 21].includes(record.type)) return fail('BILL_TYPE_UNSUPPORTED', '该记录需要对应类型的专用删除操作');
       if ([0, 5].includes(record.type)) {
         for (const id of deleteRefundIds(raw)) {
           if (records.has(id)) continue;

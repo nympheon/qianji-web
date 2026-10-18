@@ -19,6 +19,8 @@ import { createLedgerDeletionHandler } from '../features/ledger/deletion';
 import { AssetService } from '../features/assets/service';
 import { createAssetMutationHandler } from '../features/assets/use-cases';
 import { createAssetGroupMutationHandler } from '../features/assets/groups';
+import { createDebtMutationHandler, createDebtBillMutationHandler } from '../features/debt/use-cases';
+import { DebtService } from '../features/debt/service';
 
 export function createActorContext(storage: DurableObjectStorage, secrets: { QIANJI_CREDENTIAL_KEY?: string } = {}, execution?: { waitUntil(task: Promise<unknown>): void }) {
   const repository = new Repository(storage);
@@ -41,7 +43,8 @@ export function createActorContext(storage: DurableObjectStorage, secrets: { QIA
   const refundHandler = createRefundMutationHandler({ reconcileSource }), deletionHandler = createLedgerDeletionHandler({ reconcileSource });
   const reimbursementHandler = createReimbursementMutationHandler({ reconcileSource: async (ctx, ids) => { if (!await reconcileSource()) return false; for (const id of ids) await assets.refreshInfo(id, ctx.client); return true; } });
   const assetHandler = createAssetMutationHandler({ reconcileLedger: reconcileSource }), groupHandler = createAssetGroupMutationHandler();
-  const coordinator = new Coordinator({ repository, client, clock }, new Map([...['assets.submit', 'assets.adjustBalance', 'assets.setFinished', 'assets.setVisible', 'assets.reorder', 'assets.delete'].map((action) => [action, assetHandler] as const), ...['assets.groups.submit', 'assets.groups.delete', 'assets.groups.reorder', 'assets.groups.add', 'assets.groups.remove'].map((action) => [action, groupHandler] as const), ...['ledger.create', 'ledger.edit'].map((action) => [action, billHandler] as const), ...['ledger.transfer', 'ledger.repayCard'].map((action) => [action, transferHandler] as const), ...['ledger.reimburse', 'ledger.cancelReimbursement'].map((action) => [action, reimbursementHandler] as const), ['ledger.setReimbursable', createReimbursableMutationHandler({ reconcileSource })], ['ledger.refund', refundHandler], ['ledger.delete', deletionHandler]]), executionOptions);
+  const debtHandler = createDebtBillMutationHandler({ reconcileSource });
+  const coordinator = new Coordinator({ repository, client, clock }, new Map([['debt.create', createDebtMutationHandler()], ...['debt.appendPrincipal', 'debt.editPrincipal', 'debt.pay'].map((action) => [action, debtHandler] as const), ...['assets.submit', 'assets.adjustBalance', 'assets.setFinished', 'assets.setVisible', 'assets.reorder', 'assets.delete'].map((action) => [action, assetHandler] as const), ...['assets.groups.submit', 'assets.groups.delete', 'assets.groups.reorder', 'assets.groups.add', 'assets.groups.remove'].map((action) => [action, groupHandler] as const), ...['ledger.create', 'ledger.edit'].map((action) => [action, billHandler] as const), ...['ledger.transfer', 'ledger.repayCard'].map((action) => [action, transferHandler] as const), ...['ledger.reimburse', 'ledger.cancelReimbursement'].map((action) => [action, reimbursementHandler] as const), ['ledger.setReimbursable', createReimbursableMutationHandler({ reconcileSource })], ['ledger.refund', refundHandler], ['ledger.delete', deletionHandler]]), executionOptions);
   const instanceId = repository.sql.exec<{ value: string }>("SELECT value FROM instance_meta WHERE key='instance_id'").one().value;
   const vault = new CredentialVault(secrets.QIANJI_CREDENTIAL_KEY, instanceId);
   const connection = new ConnectionService({ repository, client, coordinator, clock, vault });
@@ -52,5 +55,6 @@ export function createActorContext(storage: DurableObjectStorage, secrets: { QIA
   const assets = new AssetService({ repository, cache, client, clock, connection, coordinator });
   const ledgerWrites = new LedgerWriteService({ repository, coordinator, connection, clock, assetSource: assets });
   const ledger = new LedgerService({ repository, connection, freshness, clock, writes: ledgerWrites });
-  return { repository, clock, client, coordinator, connection, sync, cache, rebuild, freshness, ledger, ledgerWrites, assets };
+  const debt = new DebtService({ repository, cache, client, clock, connection, coordinator, ledgerWrites });
+  return { repository, clock, client, coordinator, connection, sync, cache, rebuild, freshness, ledger, ledgerWrites, assets, debt };
 }
