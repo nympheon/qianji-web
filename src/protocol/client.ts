@@ -19,6 +19,7 @@ export interface ClientOptions {
   profile?: Readonly<ClientProfile>;
   fetch?: (url: string, init: RequestInit) => Promise<Response>;
   readOnly?: boolean;
+  onSessionExpired?(scope: ActorScope, credentialGeneration: number | undefined): void;
 }
 
 function object(value: WireJson | undefined): value is WireObject {
@@ -34,6 +35,7 @@ export class QianjiClient {
   constructor(private readonly options: ClientOptions) {}
 
   asReadOnly(): QianjiClient { return new QianjiClient({ ...this.options, readOnly: true }); }
+  withRoute(route: RouteId): QianjiClient { return new QianjiClient({ ...this.options, route: () => route }); }
 
   async request(op: ProtocolOperation, params: WireObject, scope: ActorScope | null): Promise<ProtocolReply> {
     const operation = operationDefinition(op);
@@ -88,7 +90,10 @@ export class QianjiClient {
       }
       return { ec, data, httpStatus: response.status };
     } catch (error) {
-      if (error instanceof ProtocolError) throw error;
+      if (error instanceof ProtocolError) {
+        if (error.code === 'QIANJI_SESSION_EXPIRED' && scope !== null) this.options.onSessionExpired?.(scope, session?.credentialGeneration);
+        throw error;
+      }
       if (controller.signal.aborted) throw new ProtocolError('QIANJI_TIMEOUT', '钱迹请求超时，结果可能需要核查', 'timeout', 'unknown');
       throw new ProtocolError('QIANJI_NETWORK_ERROR', '无法连接钱迹服务', 'network', 'unknown');
     } finally {

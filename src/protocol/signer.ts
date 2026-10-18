@@ -10,7 +10,7 @@ import { ROUTES } from './profile';
 import type { ClientProfile, RouteId } from './profile';
 
 export type WireObject = { [key: string]: WireJson | undefined };
-export interface ProtocolSession { scope: ActorScope; utoken: string }
+export interface ProtocolSession { scope: ActorScope; utoken: string; credentialGeneration?: number }
 export interface SigningInput {
   op: ProtocolOperation;
   params: WireObject;

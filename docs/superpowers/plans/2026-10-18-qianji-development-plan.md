@@ -177,11 +177,11 @@ contract导出MutationCommand/StoredOperation/PreparedMutation/OperationUpdate/R
 **Files:** Create `src/features/connection/{contract,service,use-cases,vault}.ts`、`tests/workers/connection.test.ts`、`tests/http/connection.test.ts`；Modify worker的专用login路由。连接网页归任务11，避免先于实际路由/客户端创建无法运行的页面测试。
 **Interfaces:** Consumes任务03–05；Produces `ConnectionService.login(input:PasswordLoginInput):Promise<ConnectionView>`、`check/refresh/logout():Promise<ConnectionView>`、`selectRoute(route:RouteId):Promise<ConnectionView>`、`testRoute(route:RouteId):Promise<RouteCheckView>`；QianjiState的专用login RPC同签名委托service，后续通用动作在11注册。公开ConnectionView不含凭证，login不进入MCP。
 
-- [ ] 写失败断言：同UID重新登录deviceId/connectionEpoch/操作不变；不同UID不混数据和旧操作；断网不报密码错；查状态不泄漏token，账号失效码40005与其他错误分开；专用HTTP入口只返回脱敏ConnectionView。
-- [ ] Run `pnpm test -- tests/workers/connection.test.ts tests/http/connection.test.ts`；预期FAIL于连接服务/路由缺失。
-- [ ] 按实际login协议实现手机号/邮箱+密码；token用Worker Secret派生的AES-GCM加密。初次无UID使用连接变更通道，不造假UID或持久化密码，重启不恢复登录请求。登录/退出/切线入协调顺序，三线路按需测试；refreshToken未真实验证前明确不可用，保留重新登录。
-- [ ] 重跑连接测试及`pnpm test -- tests/http/connection.test.ts`，验证专用密码入口映射同一login RPC、业务错误与脱敏响应；检查日志/持久库无密码或摘要，PASS。任务11网页可用后安排任务27首次只读连接，凭证只在网页输入，不进聊天或仓库。
-- [ ] 提交：`feat: connect Qianji account and manage encrypted credentials`。
+- [x] 写失败断言：同UID重新登录deviceId/connectionEpoch/操作不变；不同UID不混数据和旧操作；断网不报密码错；查状态不泄漏token，账号失效码40005与其他错误分开；专用HTTP入口只返回脱敏ConnectionView。
+- [x] Run `pnpm test -- tests/workers/connection.test.ts tests/http/connection.test.ts`；预期FAIL于连接服务/路由缺失。
+- [x] 按实际login协议实现手机号/邮箱+密码；token用Worker Secret派生的AES-GCM加密。初次无UID使用连接变更通道，不造假UID或持久化密码，重启不恢复登录请求。登录/退出/切线入协调顺序，三线路按需测试；refreshToken未真实验证前明确不可用，保留重新登录。
+- [x] 重跑连接测试及`pnpm test -- tests/http/connection.test.ts`，验证专用密码入口映射同一login RPC、业务错误与脱敏响应；检查日志/持久库无密码或摘要，PASS。任务11网页可用后安排任务27首次只读连接，凭证只在网页输入，不进聊天或仓库。
+- [x] 提交：`feat: connect Qianji account and manage encrypted credentials`。
 
 ### Task 07：账单与标签的按页增量同步
 

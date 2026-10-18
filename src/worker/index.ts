@@ -1,10 +1,12 @@
 import type { Env } from './env';
+import { passwordLogin } from '../features/connection/use-cases';
 
 export { QianjiState } from '../actor/QianjiState';
 
 export default {
   async fetch(request, env): Promise<Response> {
     const { pathname } = new URL(request.url);
+    if (pathname === '/api/connection/login') return passwordLogin(request, env);
     if (pathname === '/health') {
       return Response.json({ status: 'ok', service: 'qianji' }, {
         headers: { 'cache-control': 'no-store' },
