@@ -153,11 +153,11 @@ Tailwind CSS 4.3通过`@tailwindcss/vite`编译；唯一全局入口`src/web/sty
 **Files:** Create `src/storage/{database,migrations,mirror,resources,relations}.ts`、`src/storage/sql/0001-base.sql`、`src/actor/context.ts`、`tests/support/{app,fixtures}.ts`、`tests/workers/storage.test.ts`；Modify `QianjiState.ts`。
 **Interfaces:** Consumes shared模型；Produces `Repository.transaction<T>(fn:()=>T):T`、`applyPage(scope:ActorScope,datasetId:Id,page:MirrorPage):void`、`readBill(scope:ActorScope,id:Id):BillRecord|null`、`readResources(scope:ActorScope,kind:ResourceKind,query:ResourceQuery):ResourcePage`、`switchDataset(scope:ActorScope,domain:SyncDomain,id:Id,cursor:WireJson):void`。类型由storage导出：MirrorPage含upserts/deletes/resources/pageState；BillRecord含id/bookId/type/timeSec/money/raw/relations，`ResourceRecord {id:Id;kind:ResourceKind;raw:WireJson}`、ResourcePage含items/nextCursor/revision；事务同步，业务ID为TEXT。
 
-- [ ] 写失败断言：同billid在不同UID/数据集不串行；重复页upsert不增记录；本页中途异常回滚数据/关系/修订/进度；旧raw未知字段仍可读取。
-- [ ] Run `pnpm test -- tests/workers/storage.test.ts`；预期FAIL于Repository缺失。
-- [ ] 建立connection、datasets、sync_state、bills、bill_relations、resources、drafts和schema_version；原始JSON+必要规范化索引，不按APK每字段建列。支持业务ID删除、active_dataset指针，任务/操作后续独立于可替换集合。
-- [ ] 在真实workerd SQLite重跑并测试升级两次幂等、迁移失败回滚、SQL游标不跨await，PASS；建立上述createTestApp支持，不用内存Map代替持久化测试。
-- [ ] 提交：`feat: persist scoped mirrors in Durable Object SQLite`。
+- [x] 写失败断言：同billid在不同UID/数据集不串行；重复页upsert不增记录；本页中途异常回滚数据/关系/修订/进度；旧raw未知字段仍可读取。
+- [x] Run `pnpm test -- tests/workers/storage.test.ts`；预期FAIL于Repository缺失。
+- [x] 建立connection、datasets、sync_state、bills、bill_relations、resources、drafts和schema_version；原始JSON+必要规范化索引，不按APK每字段建列。支持业务ID删除、active_dataset指针，任务/操作后续独立于可替换集合。
+- [x] 在真实workerd SQLite重跑并测试升级两次幂等、迁移失败回滚、SQL游标不跨await，PASS；建立上述createTestApp支持，不用内存Map代替持久化测试。
+- [x] 提交：`feat: persist scoped mirrors in Durable Object SQLite`。
 
 ### Task 05：持久写键、操作队列、结果核查与alarm恢复
 
