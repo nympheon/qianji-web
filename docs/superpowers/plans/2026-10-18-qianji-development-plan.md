@@ -10,6 +10,8 @@
 
 **Spec:** [已批准主设计](../specs/2026-10-18-qianji-workers-design.md)，基线提交 `sanitized-history`；用户在2026-10-18明确“使用这个设计”。任务执行同时阅读主设计及相应APK研究，不用旧报告中的D1背景替代最新SQLite DO选型。
 
+缓存策略补充：用户要求与APK比较后采用更合适的逻辑，已按[缓存与更新比较](../../research/2026-10-18-apk-cache-update-comparison.md)细化主设计§6.3及任务08/10/11；60秒为远端检查新鲜期，当前副本不按TTL删除，写回执驱动局部更新。
+
 ## Global Constraints
 
 - “只有一个服务使用者、一个当前连接的钱迹账号，不建设多用户注册、租户或权限体系。”
@@ -17,6 +19,7 @@
 - “钱迹登录仅支持手机号或邮箱加密码，不实现微信、Apple 等第三方登录。”密码与可重放摘要不持久化、不进入MCP或日志。
 - “使用时按需更新。闲置且没有用户发起的在途任务时，不向钱迹发起请求，不做周期性后台轮询。”
 - “普通查询使用 60 秒数据新鲜期；同步任务共享、合并。”APK普通同步冷却5秒；手动增量不清游标，强制全量仅清任务起点。
+- 源数据校验时间、数据修订和派生缓存独立；完整空集合可缓存，读取不续期，局部写不刷新整域校验时间；慢读不能覆盖稍后确认的新写。具体缓存测试见任务08、10、11。
 - Workers Paid + Static Assets + 一个SQLite DO；不引入D1、Cron、Queues、Workflows、常驻WebSocket或另一台服务器。R2仅在官方图片链路证明需要暂存时另作有证据的变更。
 - 默认 `Asia/Shanghai`；上游20秒默认超时、零自动重试；MCP用例默认最多等待10秒，超出返回真实任务/操作状态。
 - ID、金额及原始JSON无损。整数ID十进制字符串、其他ID原样字符串；钱迹wire数字和嵌套字符串JSON按各操作契约编码。
@@ -62,6 +65,7 @@ M1不是最终范围裁剪。某写能力未真实验收时，保留交付目标
 | `src/operations/{contract,store,runner,reconcile}.ts`、`src/actor/{coordinator,jobs}.ts` | UID写键、发送事实、续跑和目标影响，05 |
 | `src/features/<domain>/{contract,service,use-cases}.ts` | 每个业务域的DTO/校验、领域逻辑和用例注册，所属业务任务 |
 | `src/features/sync/{incremental,rebuild,freshness}.ts` | 同步页、完整性、按需刷新，07–08 |
+| `src/storage/cache.ts`、`src/storage/sql/0003-cache.sql` | 查询范围校验、有效空结果、资源代次和迟到响应保护，08 |
 | `src/features/ledger/{query,write,transfer,refund,reimbursement,statistics}.ts` | 账单专有算法，09–15；资产借贷算法放对应域 |
 | `src/app/{use-case,registry}.ts`、`src/contracts/actions.ts` | 显式业务注册及调用类型，11及各域增量注册；不接受任意上游路径 |
 | `src/worker/{http,mcp}.ts` | 同一用例的HTTP/MCP映射，11及各业务任务 |
@@ -85,6 +89,7 @@ M1不是最终范围裁剪。某写能力未真实验收时，保留交付目标
 - 后文省略签名的方法遵循统一规则：读方法`method(input:MethodInput):Promise<MethodView>`，写方法`method(input:MethodInput,meta:CallMeta):Promise<OperationView>`，Method为方法名首字母大写；类型定义在该域contract中。已有显式签名优先，例如book的`members(input:MembersInput):Promise<MembersView>`、`quit(input:QuitInput,meta):Promise<OperationView>`；`preview/project`均为只读计算，返回其具名View，不进入发送队列。
 - 测试支持`createTestApp(scenario):Promise<TestApp>`由任务04–05建立，先提供`actor/repository/seed/restart/runAlarm`、可控clock和脱敏upstream.calls；各任务注入其领域服务。统一`call`在任务11接入真实registry后才使用，不在04–10伪造另一套业务dispatch。底层依赖真实workerd SQLite与fake上游，预期值来自APK向量/独立计算，不从被测函数自动生成。
 - active_dataset按`(uid,syncDomain)`保存：账单、关系与其同步下发资料为ledger组，标签与分组为tags组，其他在线资源使用各自缓存域。重建仅切换所选域，不能以一个全局指针抹掉未选择域；跨域查询的新鲜度/分页修订包含所依赖域的修订组合。
+- `Freshness.syncedAt`表示所声明源范围最近一次完整成功校验，不是最近本地读取或单条写入时间。派生键加入实际业务日期/时间范围与依赖修订；无变化的校验不推进业务数据revision。源范围不完整、被确实失效或操作未核清时，不能仅凭未满60秒标成可用于完整结果。
 
 ### 命令与开发约定
 
@@ -146,7 +151,7 @@ Tailwind CSS 4.3通过`@tailwindcss/vite`编译；唯一全局入口`src/web/sty
 ### Task 04：SQLite持久模型、迁移与账号/数据集边界
 
 **Files:** Create `src/storage/{database,migrations,mirror,resources,relations}.ts`、`src/storage/sql/0001-base.sql`、`src/actor/context.ts`、`tests/support/{app,fixtures}.ts`、`tests/workers/storage.test.ts`；Modify `QianjiState.ts`。
-**Interfaces:** Consumes shared模型；Produces `Repository.transaction<T>(fn:()=>T):T`、`applyPage(scope:ActorScope,datasetId:Id,page:MirrorPage):void`、`readBill(scope:ActorScope,id:Id):BillRecord|null`、`readResources(scope:ActorScope,kind:ResourceKind,query:ResourceQuery):ResourcePage`、`switchDataset(scope:ActorScope,domain:SyncDomain,id:Id,cursor:WireJson):void`。类型由storage导出：MirrorPage含upserts/deletes/resources/pageState；BillRecord含id/bookId/type/timeSec/money/raw/relations，ResourcePage含items/nextCursor/revision；事务同步，业务ID为TEXT。
+**Interfaces:** Consumes shared模型；Produces `Repository.transaction<T>(fn:()=>T):T`、`applyPage(scope:ActorScope,datasetId:Id,page:MirrorPage):void`、`readBill(scope:ActorScope,id:Id):BillRecord|null`、`readResources(scope:ActorScope,kind:ResourceKind,query:ResourceQuery):ResourcePage`、`switchDataset(scope:ActorScope,domain:SyncDomain,id:Id,cursor:WireJson):void`。类型由storage导出：MirrorPage含upserts/deletes/resources/pageState；BillRecord含id/bookId/type/timeSec/money/raw/relations，`ResourceRecord {id:Id;kind:ResourceKind;raw:WireJson}`、ResourcePage含items/nextCursor/revision；事务同步，业务ID为TEXT。
 
 - [ ] 写失败断言：同billid在不同UID/数据集不串行；重复页upsert不增记录；本页中途异常回滚数据/关系/修订/进度；旧raw未知字段仍可读取。
 - [ ] Run `pnpm test -- tests/workers/storage.test.ts`；预期FAIL于Repository缺失。
@@ -189,15 +194,19 @@ contract导出MutationCommand/StoredOperation/PreparedMutation/OperationUpdate/R
 - [ ] 重跑并测重复页、失效分页、标签失败与账单成功独立、未知响应结构不清库、上传阶段不绕过持久操作状态，PASS；记录标签时间窗口真实核验项，不自造安全游标。
 - [ ] 提交：`feat: synchronize Qianji incremental pages and tag groups`。
 
-### Task 08：新鲜度合并、全量重建和跨请求连续任务
+### Task 08：分层缓存、新鲜度合并、全量重建和跨请求连续任务
 
-**Files:** Create `src/features/sync/{freshness,rebuild}.ts`、`tests/workers/sync-lifecycle.test.ts`；Modify coordinator/jobs和sync.service。
+**Files:** Create `src/features/sync/{freshness,rebuild}.ts`、`src/storage/cache.ts`、`src/storage/sql/0003-cache.sql`、`tests/workers/{cache-policy,sync-lifecycle}.test.ts`；Modify coordinator/jobs、sync.service、Repository及actor.context。
 **Interfaces:** Consumes任务05、07；Produces `ensureFresh(scope:ActorScope,domains:SyncDomain[],mode:FreshnessMode):Promise<FreshnessResult>`、`rebuild(scope:ActorScope,domains:SyncDomain[]):Promise<JobView>`；sync.contract导出FreshnessMode=`normal/manual-incremental`、FreshnessResult含freshness及可空job。仅rebuild任务起点清游标，active集合成功游标保持至切换。
 
+cache.ts导出`CacheKey { domain:SyncDomain; queryKey:string }`、`CacheReadStamp {scope:ActorScope;key:CacheKey;datasetId:Id|null;generation:number}`、`ResourceRefresh {items:ResourceRecord[];complete:boolean;deletes?:Id[]}`及`ResourceCache.captureRead(scope:ActorScope,key:CacheKey):CacheReadStamp`、`applyRead(stamp:CacheReadStamp,result:ResourceRefresh):'applied'|'superseded'`、`invalidateSource(scope:ActorScope,key:CacheKey):void`。ResourceRefresh只表达本查询范围；记录validatedAt/changedAt/complete与源代次。列表、详情、选择器共享相应源域的写入代次和资源行，查询缓存只记录成员关系/顺序，不各存一份对象。业务写开始/回执和同步变更推进相关代次，失效派生结果；只有缺失或不可靠源数据才调用invalidateSource，完整回执不一概失效为需重新拉取。
+
 - [ ] 写失败断言：60秒内同域查询无新请求、并发冷查询只启动一任务；普通冷却5秒；重建首/中/末页排队写均在切换后执行且结果不丢；重建失败保留原集合与游标。
-- [ ] Run `pnpm test -- tests/workers/sync-lifecycle.test.ts`；预期FAIL于生命周期缺失。
+- [ ] 写缓存失败断言：t=0校验、t=40读取、t=80仍需检查；t=50单条写不推迟t=65整域检查；完整空列表60秒内不再请求；重复/无变化页不推进数据revision；旧读A迟于写B确认到达不能覆盖B，UID/数据集切换同样拒绝旧响应。
+- [ ] Run `pnpm test -- tests/workers/cache-policy.test.ts tests/workers/sync-lifecycle.test.ts`；预期FAIL于缓存/生命周期缺失。
+- [ ] 实现ResourceCache与元数据迁移；源校验、业务变化和派生失效分开。资源过期只在使用时获取，保留SQLite副本；按需检查无变化时只更新validatedAt。对完整回执局部落库并更新依赖，不固定增加全域pull；不完整查询不标为已完整空集合。筛选列表为空只更新其查询成员，不能删除别的筛选或其他域资源；实体删除仅采已核对的明确删除或完整覆盖契约。旧响应应用前复核轻量代次，过时则保留新数据及必要失效状态，不重发写入。
 - [ ] 实现临时集合/同库切换、任务级远端写串行边界与短页事务；草稿/日志不随集合替换。允许未知写的只读核查使用重建，不互相等待；仅未发送或明确ID拒绝可继续的项进入push。
-- [ ] 重跑并测只重建tags不切ledger、断开页面后有限alarm续跑、恢复不重发未知写、冷却不使已发生写入变失败、任务终止后虚拟时钟推进10分钟上游计数不变，PASS。
+- [ ] 重跑并测过期失败保留副本/陈旧状态、不自动持续重试；空的过滤查询不清其他资源、不伪装全域已校验；只重建tags不切ledger、断开页面后有限alarm续跑、恢复不重发未知写、冷却不使已发生写入变失败、任务终止后虚拟时钟推进10分钟上游计数不变，PASS。
 - [ ] 提交：`feat: merge on-demand refresh and rebuild mirrors safely`。
 
 ### Task 09：账单筛选、关系详情、日历与稳定分页边界
@@ -214,11 +223,12 @@ contract导出MutationCommand/StoredOperation/PreparedMutation/OperationUpdate/R
 ### Task 10：共用收支、历史币种与预算执行计算
 
 **Files:** Create `src/features/ledger/statistics.ts`、`src/features/budget/{contract,calculate}.ts`、`fixtures/apk-454/statistics.json`、`tests/unit/statistics.test.ts`、`tests/workers/statistics-read.test.ts`；Modify ledger.contract/service。
-**Interfaces:** Consumes BillDetail/数字日期函数；Produces `toStatItem(bill:BillDetail,mode:'statistics'|'budget',currency:Id):StatItem`、`aggregate(items:Iterable<StatItem>):StatSummary`、`calculateBudget(input:BudgetCalculationInput):BudgetProgress`及`LedgerService.statistics(input:StatisticsInput):Promise<StatisticsView>`。StatisticsInput含BillFilter、目标币种、按日/月/年趋势、分类层级/标签/成员/资产维度及可选同期范围；View区分总额、分组、趋势、比较及不完整原因。查询用相关域修订号缓存，资产债务汇总由任务16接入。
+**Interfaces:** Consumes BillDetail/数字日期函数/分层缓存规则；Produces `toStatItem(bill:BillDetail,mode:'statistics'|'budget',currency:Id):StatItem`、`aggregate(items:Iterable<StatItem>):StatSummary`、`calculateBudget(input:BudgetCalculationInput):BudgetProgress`及`LedgerService.statistics(input:StatisticsInput):Promise<StatisticsView>`。StatisticsInput含BillFilter、目标币种、按日/月/年趋势、分类层级/标签/成员/资产维度及可选同期范围；View区分总额、分组、趋势、比较及不完整原因。查询键包含相关域修订、规范化筛选、实际业务日期/范围、时区和币种，资产债务汇总由任务16接入。
 
 - [ ] 写失败断言：已保存money90/transfee-10得到支出90/优惠10，不再扣到80；一月支出100二月退款30令一月70、二月退款独列30；待报销100无入账总支出0；本金不算收支，双flag独立，父子预算总额只算一次。
 - [ ] Run `pnpm test -- tests/unit/statistics.test.ts tests/workers/statistics-read.test.ts`；预期FAIL于统计模型未实现。
 - [ ] 按BillStatItem/StatSet与研究公式实现逐类型槽位，补历史src/target/base优先级、费用和舍入；有界补载/汇总，不用SQL浮点SUM或现汇重算。不完整数据、缺关联及异常超额flag组合明确标状态。
+- [ ] 增加缓存行为断言：源远端检查无变化不重复aggregate；源revision不变但跨过业务日/月起日边界时，“今天”、同期范围与预算日均可用正确换键；退款改变源历史期时对应缓存失效，不主动重算未被访问的无关期。不以60秒计时器重算全部统计。
 - [ ] 重跑完整研究向量，包含旧字段优先级、退款超额、三币种余数、同币种匹配优先级、闰年/合法自定义周期；正常组装type22不重复入统计。同一过滤结果的日/月趋势合计一致，分类层级/标签/成员/资产分组和同期比较仍使用同一StatItem口径；多标签分组允许重叠但总额不重复相加，PASS。
 - [ ] 提交：`feat: reproduce APK accounting and budget calculations`。
 
@@ -227,11 +237,12 @@ contract导出MutationCommand/StoredOperation/PreparedMutation/OperationUpdate/R
 **Files:** Create `src/app/{use-case,registry,capabilities}.ts`、`src/contracts/{actions,capabilities}.ts`、`src/worker/{http,mcp}.ts`、`src/web/{App.tsx,api.ts}`、`components.json`、`src/web/lib/utils.ts`、按需`src/web/components/ui/`、`src/web/components/{Filters,DataStatus,TaskStatus}.tsx`、`src/web/pages/{Connection,Overview,Bills,Calendar,Statistics,Service}Page.tsx`、`tests/{http/actions,mcp/transport}.test.ts`、`tests/e2e/{connection,read-only}.spec.ts`；Modify `main.tsx/styles.css`、Vite/tsconfig别名、工具依赖和`docs/development.md`。
 **Interfaces:** Consumes任务06–10；Produces上述共用调用契约，注册`connection.status/check/refresh/logout/selectRoute/testRoute`、`sync.start/status`、`ledger.list/detail/calendar/statistics`、`operations.get/reconcile`、`capabilities.list`；HTTP与MCP返回相同AppReply。`listCapabilities():CapabilityView[]`从已核对的动作元数据及运行连接/权益取得状态，View含动作、读写类型、协议/证据阶段、enabled/reason；不因mock成功自动启用。
 
-- [ ] 写失败断言：HTTP与MCP同筛选集合/金额/新鲜度一致；无账号返回连接页面地址；缺失能力给原因；超过10秒只返回running/jobId而不重复启动任务；MCP不暴露密码、SQL或任意上游请求工具。
+- [ ] 写失败断言：HTTP与MCP同筛选集合/金额/新鲜度一致；无账号返回连接页面地址；缺失能力给原因；超过10秒只返回running/jobId而不重复启动任务；MCP不暴露密码、SQL或任意上游请求工具；动态业务响应为no-store，浏览器不另开独立刷新轮询。
 - [ ] Run `pnpm test -- tests/http/actions.test.ts tests/mcp/transport.test.ts`；预期FAIL于注册和映射缺失。
 - [ ] 用SDK v2 per-request factory及`legacy:'stateless'`实现`handleMcp(request,env,ctx):Promise<Response>`；不存MCP会话。
-- [ ] 按frontend-app-builder、shadcn、react-best-practices技能在当前Vite项目初始化上述组件规范，完成中文响应式骨架、连接表单、只读页面及服务状态；登录走专用入口，其他操作走共用registry。登录卡片、表格筛选、空态和弹窗复用已有组件，不复制全部APK外观或放演示数据。
+- [ ] 按frontend-app-builder、shadcn、react-best-practices技能在当前Vite项目初始化上述组件规范，完成中文响应式骨架、连接表单、只读页面及服务状态；登录走专用入口，其他操作走共用registry。过期时可用AppReply的running/data/freshness/jobId返回当前缓存并共享更新任务，网页先展示并注明时间/状态，MCP明确待更新；完整统计不能用半轮数据重算。不匹配当前数据修订的旧统计仅保留页面既有显示并标状态，不作为当前API统计结果返回。登录卡片、表格筛选、空态和弹窗复用已有组件，不复制全部APK外观或放演示数据。
 - [ ] 重跑协议两代initialize/discovery、tools/list/call、注解与错误测试及`pnpm test:e2e -- tests/e2e/connection.spec.ts tests/e2e/read-only.spec.ts`；桌面/360px手机宽度完成登录→同步→筛选→统计，键盘可提交与关闭弹窗，构建确实加载CSS，PASS。将真实Cloudflare出口/ChatGPT只读验证登记到任务27，不假定本地成功等于远程可用。
+- [ ] 浏览器补测上游延迟20秒时已确认缓存先显示“正在更新”，失败后仍可见；没有完整数据则显示任务/空态区别。查看任务进度不重启同步，MCP不把旧缓存描述为新校验结果。
 - [ ] 提交：`feat: expose shared read workflows in web and MCP`。
 
 ## M2：核心账务与资产
@@ -416,6 +427,7 @@ contract导出MutationCommand/StoredOperation/PreparedMutation/OperationUpdate/R
 - [ ] Run `pnpm test -- tests/workers/capabilities.test.ts`；预期FAIL于能力/验收范围约束缺失。
 - [ ] 实现`pnpm acceptance -- <case>`，在独立本地/预览环境复用生产实现并注入限定测试能力，生产不开放任意写入开关或原始请求接口。测试账户、账本和命名资源未明确时只准备好用例后询问；已有授权直接沿用。登录仍在网页输入，不从聊天收密码。
 - [ ] M1起逐域执行相应用例：真实签名/三线路/只读同步；普通写回执→回拉→官方客户端；长ID/币种/跨期/删除/差额/本金利息/储蓄/计划/图片；手机离线的计划执行；多端同/异字段修改、删改交叉、ID冲突、响应丢失。记录提交顺序、实际响应、查回及客户端结果，既定测试对象清理也逐项记录，不自动清空账本。
+- [ ] 记录缓存真实向量：手机修改后普通查询在源校验过期时按需获取、显式增量绕过60秒但不清游标；空预算/空计划重复读取请求数、写回执后新增请求数、无变化检查与统计重算数。注明60秒是检查策略，没有闲置轮询或跨设备即时推送保证。
 - [ ] 对未确认的标签窗口、旧报销升级、images疑点、random/resetCount入口等逐条关闭证据或保留具体不可用原因；修复后运行对应回归与真实用例，验收矩阵每个范围都有结果。实际接口/权限限制须报告，不用mock通过替代，也不无声删功能。
 - [ ] 提交脱敏证据/修复及能力更新：`test: verify Qianji workflows against real upstream results`。真实个人数据和凭证不提交。
 
@@ -447,6 +459,7 @@ contract导出MutationCommand/StoredOperation/PreparedMutation/OperationUpdate/R
 | 单人免应用鉴权、Workers Paid/SQLite DO、共用领域层 | 01、04–06、11、28 | 本地/生产绑定与访问、无额外登录层 |
 | 新版签名、身份头、编码、长ID和金额、稳定设备 | 02–03、06 | 独立向量、workerd与真实请求 |
 | 按需60秒、冷却5秒、分页/标签/删除/全量/闲置 | 07–08 | 故障顺序向量、真实10分钟闲置 |
+| 本地优先、源/派生分层、有效空集合、校验时间及慢读保护 | 08、10–11、27 | 空结果/非滑动/局部写/跨日/响应乱序及请求计数 |
 | UID写键、逐项状态、未知结果、ID映射、恢复 | 05、08、12、27–28 | 发送计数、故障注入和双端实验 |
 | 账单筛选/详情/日历/统计/预算计算 | 09–11、21、26 | APK向量及Web/MCP同条件同结果 |
 | 普通账单/转账还款/退款报销/组合显示 | 12–15 | 整组记录/资产/历史期间核对 |
@@ -477,6 +490,7 @@ contract导出MutationCommand/StoredOperation/PreparedMutation/OperationUpdate/R
 ## 参考材料
 
 - [APK逻辑汇总](../../research/2026-10-18-apk-logic-audit.md)、[最终边界复核](../../research/2026-10-18-apk-final-design-review.md)、[Cloudflare选型](../../research/2026-10-18-cloudflare-paid-final-review.md)。
+- [APK与当前方案缓存/更新比较](../../research/2026-10-18-apk-cache-update-comparison.md)：1–12小时分支证据、采用理由及完整缓存顺序向量。
 - [同步/登录](../../research/2026-10-18-apk-sync-auth-audit.md)、[冲突](../../research/2026-10-18-apk-conflict-analysis.md)、[账单/统计/借贷](../../research/2026-10-18-apk-bills-statistics-audit.md)、[资产/资料/图片](../../research/2026-10-18-apk-assets-catalogs-audit.md)、[计划类业务](../../research/2026-10-18-apk-scheduled-plans-audit.md)。
 - [Cloudflare Vite集成](https://developers.cloudflare.com/workers/vite-plugin/)、[Workers测试](https://developers.cloudflare.com/workers/testing/vitest-integration/)、[SQLite DO API](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/)。
 - [MCP SDK v2](https://github.com/modelcontextprotocol/typescript-sdk)、[无状态与兼容HTTP handler](https://ts.sdk.modelcontextprotocol.io/v2/api/%40modelcontextprotocol/server/server/createMcpHandler.html)、[Vite运行要求](https://vite.dev/guide/)。执行时复核实际锁定版本，不照抄会变化的在线main接口。
