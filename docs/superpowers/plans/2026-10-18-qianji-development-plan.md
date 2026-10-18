@@ -26,7 +26,7 @@
 - 只上传明确可发送的持久操作；结果不明只核查，逐项接受不重发，翻转动作按最新上游状态决定，不能承诺跨设备锁。
 - 不复制APK系统/个性化设置，不做数据导出、注册注销改密、第三方登录、会员购买、手机自动化或新增AI/OCR服务。
 - 前端使用CSS及组件库美化；用户已授权自行选型，采用Tailwind CSS当前4.3稳定线、shadcn/ui和Lucide，后续安装锁定确切版本，不使用预发布版本或运行时CSS CDN。
-- 本计划只规划开发；真实写入使用明确的测试对象，发布使用已授权的目标。沿用已有授权，不反复请求同一确认；缺账号、目标或其他必要信息时才询问。
+- 用户已确认按更新计划由主代理顺序实现、最后统一独立审查；真实写入使用明确的测试对象，发布使用已授权的目标。沿用已有授权，不反复请求同一确认；缺账号、目标或其他必要信息时才询问。
 
 ## Review Focus
 
@@ -99,7 +99,7 @@ M1不是最终范围裁剪。某写能力未真实验收时，保留交付目标
 
 锁定本轮核对的包线：SDK v2 `@modelcontextprotocol/server`及测试客户端包，Zod v4，Cloudflare的`@cloudflare/vitest-plugin`；不照搬旧的v1 MCP导入或旧vitest-pool配置。执行任务01以官方peerDependencies解决兼容并记录确切版本到lockfile；不能混用main源码与已安装版本API。MCP使用官方`createMcpHandler(factory,{legacy:'stateless'})`，保留2025与2026协议的无状态兼容，不自写协议栈。[SDK](https://github.com/modelcontextprotocol/typescript-sdk)、[HTTP handler](https://ts.sdk.modelcontextprotocol.io/v2/api/%40modelcontextprotocol/server/server/createMcpHandler.html)、[Cloudflare测试](https://developers.cloudflare.com/workers/testing/vitest-integration/)
 
-每个任务按失败测试→最小实现→通过→提交执行。仅对高影响业务、协议、恢复和交互行为写测试；样式/文案不写镜像测试。每步只改所属文件，后续任务增量注册用例和页面；提交前检查diff，实际暂存明确文件，不覆盖用户改动。以下测试断言是待实现标准，本次没有运行产品测试。
+每个任务按失败测试→最小实现→通过→提交执行。仅对高影响业务、协议、恢复和交互行为写测试；样式/文案不写镜像测试。每步只改所属文件，后续任务增量注册用例和页面；提交前检查diff，实际暂存明确文件，不覆盖用户改动。以下测试断言是实现标准；计划编写时未执行产品测试，执行结果通过任务勾选和台账记录。
 
 ### 前端样式和组件约定
 
@@ -116,12 +116,12 @@ Tailwind CSS 4.3通过`@tailwindcss/vite`编译；唯一全局入口`src/web/sty
 **Files:** Create 根目录工具链文件、`src/worker/{index,env}.ts`、`src/actor/QianjiState.ts`、`src/web/{main.tsx,styles.css}`、`index.html`、`tests/workers/smoke.test.ts`、`.gitignore`、`.dev.vars.example`、`docs/development.md`。
 **Interfaces:** Consumes 已批准主设计；Produces Worker.fetch、导出的`QianjiState.ping():string`、唯一`QIANJI_STATE`命名空间、`ASSETS`绑定及上述脚本。对象固定名`personal`；compatibility_date=`2026-10-18`，new_sqlite_classes=`QianjiState`。
 
-- [ ] 准备并锁定工具链/本地测试配置；`.dev.vars`、`.wrangler`、`.artifacts`、真实验收数据全部忽略；生成绑定类型，默认没有Cron/D1/R2或登录中间件。
-- [ ] 在smoke测试写断言：`expect((await SELF.fetch('https://test/health')).status).toBe(200)`；同名对象两次`ping()`返回同一持久实例标识，网页返回真实“尚未连接”空态。
-- [ ] Run `pnpm test -- tests/workers/smoke.test.ts`；预期先FAIL于缺少入口/导出，不能以测试框架加载错误代替有效红灯。
-- [ ] 实现最小Worker/SQLite DO和空网页，接入`tailwindcss`/`@tailwindcss/vite`及唯一CSS入口；DO仅有本地ping，不请求钱迹，不提前建设完整业务页面。
-- [ ] Run上述测试、`pnpm typecheck`、`pnpm build`、`pnpm check:deploy`；预期PASS且dry-run包含DO导出及实际生成的CSS静态资源，开发文档记录锁定版本。
-- [ ] 提交任务文件：`chore: bootstrap Workers SQLite application`。
+- [x] 准备并锁定工具链/本地测试配置；`.dev.vars`、`.wrangler`、`.artifacts`、真实验收数据全部忽略；生成绑定类型，默认没有Cron/D1/R2或登录中间件。
+- [x] 在smoke测试写断言：`expect((await SELF.fetch('https://test/health')).status).toBe(200)`；同名对象两次`ping()`返回同一持久实例标识，网页返回真实“尚未连接”空态。
+- [x] Run `pnpm test -- tests/workers/smoke.test.ts`；预期先FAIL于缺少入口/导出，不能以测试框架加载错误代替有效红灯。
+- [x] 实现最小Worker/SQLite DO和空网页，接入`tailwindcss`/`@tailwindcss/vite`及唯一CSS入口；DO仅有本地ping，不请求钱迹，不提前建设完整业务页面。
+- [x] Run上述测试、`pnpm typecheck`、`pnpm build`、`pnpm check:deploy`；预期PASS且dry-run包含DO导出及实际生成的CSS静态资源，开发文档记录锁定版本。
+- [x] 提交任务文件：`chore: bootstrap Workers SQLite application`。
 
 ### Task 02：无损数字、日期、ID与公开结果契约
 
@@ -485,7 +485,7 @@ cache.ts导出`CacheKey { domain:SyncDomain; queryKey:string }`、`CacheReadStam
 
 ### 执行方式建议
 
-推荐由主代理顺序实现，按上述接口和门槛推进，并在整个分支完成时做一次独立审查：协议、存储、恢复和账务跨任务依赖密集，顺序执行能减少接口衔接成本。另一选择是逐任务子代理实现并独立审查，检查更细但会增加上下文与审查开销。用户审阅本计划并选择执行方式后，分别使用executing-plans或subagent-driven-development；本轮不启动产品实现。
+推荐由主代理顺序实现，按上述接口和门槛推进，并在整个分支完成时做一次独立审查：协议、存储、恢复和账务跨任务依赖密集，顺序执行能减少接口衔接成本。另一选择是逐任务子代理实现并独立审查，检查更细但会增加上下文与审查开销。用户已确认更新计划并选择主代理顺序实现、最后统一独立审查；使用executing-plans，当前执行进度见逐任务勾选与台账。
 
 ## 参考材料
 

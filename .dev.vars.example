@@ -1,0 +1,3 @@
+# Generate a random credential-encryption key before connecting an account.
+# Never put a Qianji password or actual token in this file.
+QIANJI_CREDENTIAL_KEY=
