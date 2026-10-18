@@ -118,7 +118,7 @@ export class LedgerService {
     const name = (raw: ReturnType<typeof asBillObject>, id: Id) => typeof raw.name === 'string' ? raw.name : id;
     return { baseCurrency: this.dependencies.baseCurrency?.() ?? 'CNY', books: books.items.map((item) => { const raw = asBillObject(item.raw); return { id: item.id, name: name(raw, item.id), visible: numericText(raw.visible, '1') === '1' }; }),
       categories: categories.items.map((item) => { const raw = asBillObject(item.raw); return { id: item.id, name: name(raw, item.id), parentId: optionalWireId(raw.parentid) }; }),
-      tags: tags.items.map((item) => ({ id: item.id, name: name(asBillObject(item.raw), item.id) })),
+      tags: tags.items.map((item) => ({ id: item.id, name: name(asBillObject(item.raw), item.id), archived: numericText(asBillObject(item.raw).status, '1') === '2' })),
       complete: !books.nextCursor && !categories.nextCursor && !tags.nextCursor && booksComplete && !!repository.dataset(scope, 'ledger')?.complete && !!repository.dataset(scope, 'tags')?.complete };
   }
   async list(input: BillFilter): Promise<BillPage> {

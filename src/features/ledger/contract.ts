@@ -65,5 +65,5 @@ export interface LedgerOptions {
   baseCurrency?: string;
   books: { id: Id; name: string; visible: boolean }[];
   categories: { id: Id; name: string; parentId: Id | null }[];
-  tags: { id: Id; name: string }[]; complete: boolean;
+  tags: { id: Id; name: string; archived?: boolean }[]; complete: boolean;
 }

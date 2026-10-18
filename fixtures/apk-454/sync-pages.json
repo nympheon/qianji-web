@@ -9,5 +9,5 @@
     "{\"ec\":200,\"data\":{\"update\":[{\"id\":\"tag-A\",\"name\":\"工作\",\"groupid\":\"group-A\",\"status\":1}],\"delete\":[\"tag-old\"],\"hasmore\":true}}",
     "{\"ec\":200,\"data\":{\"update\":[],\"delete\":[],\"hasmore\":false}}"
   ],
-  "groups": "{\"ec\":200,\"data\":[{\"id\":\"group-A\",\"name\":\"用途\",\"tags\":[{\"id\":\"tag-A\",\"name\":\"工作\",\"groupid\":\"group-A\",\"status\":1}]},{\"id\":\"\",\"name\":\"未分组\",\"tags\":[]}]}"
+  "groups": "{\"ec\":200,\"data\":{\"list\":[{\"id\":\"group-A\",\"name\":\"用途\",\"tags\":[{\"id\":\"tag-A\",\"name\":\"工作\",\"groupid\":\"group-A\",\"status\":1}]},{\"id\":\"\",\"name\":\"未分组\",\"tags\":[]}]}}"
 }

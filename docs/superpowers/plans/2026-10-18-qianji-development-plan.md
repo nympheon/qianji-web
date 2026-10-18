@@ -353,11 +353,13 @@ cache.ts导出`CacheKey { domain:SyncDomain; queryKey:string }`、`CacheReadStam
 **Files:** Create `src/features/tags/{contract,service,use-cases}.ts`、`src/web/pages/TagsPage.tsx`、`tests/workers/tags.test.ts`；Modify标签资源与registry。
 **Interfaces:** Consumes tag/syncall/Coordinator；Produces `TagService.list/submitTag/submitGroup/reorderTags/reorderGroups/setArchived/deleteTag/deleteGroup`；setArchived输入明确目标，不直接把toggle开放为幂等设置。
 
-- [ ] 写失败断言：删组后含归档标签在内groupId=null且标签/账单保留；归档以返回Tag替换且不清账单标签；手机先归档而服务缓存未变时，再要求归档不会反向切换。
-- [ ] Run `pnpm test -- tests/workers/tags.test.ts`；预期FAIL于标签管理缺失。
-- [ ] 实现各原生动作、组与标签独立排序及颜色/名称实际校验；setArchived按最新上游状态一次调用并核查，权益/数量从当前账号证据取得，不照搬旧服务常量。
-- [ ] 重跑新旧同步接口共存、删除标签后的实际引用核查、结果不明不重发归档，PASS；页面选择器可识别历史归档引用。
-- [ ] 提交：`feat: manage tags groups and archive state`。
+- [x] 写失败断言：删组后含归档标签在内groupId=null且标签/账单保留；归档以返回Tag替换且不清账单标签；手机先归档而服务缓存未变时，再要求归档不会反向切换。
+- [x] Run `pnpm test -- tests/workers/tags.test.ts`；预期FAIL于标签管理缺失。
+- [x] 实现各原生动作、组与标签独立排序及颜色/名称实际校验；setArchived按最新上游状态一次调用并核查，权益/数量从当前账号证据取得，不照搬旧服务常量。
+- [x] 重跑新旧同步接口共存、删除标签后的实际引用核查、结果不明不重发归档，PASS；页面选择器可识别历史归档引用。
+- [x] 提交：`feat: manage tags groups and archive state`。
+
+实现阶段已验证；实际写入验收仍由 Task27 完成。
 
 ### Task 21：预算配置与执行进度页面
 

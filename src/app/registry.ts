@@ -12,6 +12,15 @@ const handlers: Record<ActionName, UseCase> = {
   'categories.reorder': useCase('categories.reorder', (ctx, { requestId, ...input }) => ctx.categories.reorder(input, { requestId })),
   'categories.delete': useCase('categories.delete', (ctx, { requestId, ...input }) => ctx.categories.remove(input, { requestId })),
   'categories.draft.get': useCase('categories.draft.get', (ctx, input) => ctx.categories.getDraft(input.key)), 'categories.draft.save': useCase('categories.draft.save', (ctx, input) => ctx.categories.saveDraft(input.key, input.draft)),
+  'tags.list': useCase('tags.list', (ctx, input) => ctx.tags.list(input)),
+  'tags.submitTag': useCase('tags.submitTag', (ctx, { requestId, ...input }) => ctx.tags.mutate('tags.submitTag', input, { requestId })),
+  'tags.submitGroup': useCase('tags.submitGroup', (ctx, { requestId, ...input }) => ctx.tags.mutate('tags.submitGroup', input, { requestId })),
+  'tags.reorderTags': useCase('tags.reorderTags', (ctx, { requestId, ...input }) => ctx.tags.mutate('tags.reorderTags', input, { requestId })),
+  'tags.reorderGroups': useCase('tags.reorderGroups', (ctx, { requestId, ...input }) => ctx.tags.mutate('tags.reorderGroups', input, { requestId })),
+  'tags.setArchived': useCase('tags.setArchived', (ctx, { requestId, ...input }) => ctx.tags.mutate('tags.setArchived', input, { requestId })),
+  'tags.deleteTag': useCase('tags.deleteTag', (ctx, { requestId, ...input }) => ctx.tags.mutate('tags.deleteTag', input, { requestId })),
+  'tags.deleteGroup': useCase('tags.deleteGroup', (ctx, { requestId, ...input }) => ctx.tags.mutate('tags.deleteGroup', input, { requestId })),
+  'tags.draft.get': useCase('tags.draft.get', (ctx, input) => ctx.tags.getDraft(input.key)), 'tags.draft.save': useCase('tags.draft.save', (ctx, input) => ctx.tags.saveDraft(input.key, input.draft)),
   'categories.list': useCase('categories.list', (ctx, input) => ctx.categories.list(input)), 'categories.checkDelete': useCase('categories.checkDelete', (ctx, input) => ctx.categories.checkDelete(input)),
   'books.list': useCase('books.list', (ctx, input) => ctx.books.list(input)), 'books.types': useCase('books.types', (ctx) => ctx.books.types()), 'books.members': useCase('books.members', (ctx, input) => ctx.books.members(input.id)), 'books.deleteCheck': useCase('books.deleteCheck', (ctx, input) => ctx.books.checkDelete(input.id)), 'books.accounting': useCase('books.accounting', (ctx) => ctx.books.accounting()),
   'books.submit': useCase('books.submit', (ctx, { requestId, ...input }) => ctx.books.submit(input, { requestId })), 'books.configure': useCase('books.configure', (ctx, { requestId, ...input }) => ctx.books.configure(input, { requestId })),
@@ -103,7 +112,7 @@ export class AppRegistry {
         return { status: ['queued', 'sending', 'verifying'].includes(operation.state) ? 'running' : operation.state === 'uncertain' ? 'uncertain' : operation.state === 'partial' ? 'partial' : operation.state === 'failed' ? 'error' : 'ready', data, freshness: null, operationId: operation.id, ...(operation.error ? { error: operation.error } : {}) };
       }
       const freshness = data && typeof data === 'object' && 'freshness' in data ? (data as { freshness: AppReply<unknown>['freshness'] }).freshness : null;
-      if ((action.startsWith('assets.') || action.startsWith('debt.') || action.startsWith('books.') || action.startsWith('categories.')) && data && typeof data === 'object' && 'problem' in data && data.problem && typeof data.problem === 'object' && 'code' in data.problem && 'message' in data.problem && typeof data.problem.code === 'string' && typeof data.problem.message === 'string') return { status: 'partial', data, freshness, error: { code: data.problem.code, message: data.problem.message } };
+      if ((action.startsWith('assets.') || action.startsWith('debt.') || action.startsWith('books.') || action.startsWith('categories.') || action.startsWith('tags.')) && data && typeof data === 'object' && 'problem' in data && data.problem && typeof data.problem === 'object' && 'code' in data.problem && 'message' in data.problem && typeof data.problem.code === 'string' && typeof data.problem.message === 'string') return { status: 'partial', data, freshness, error: { code: data.problem.code, message: data.problem.message } };
       const job = action.startsWith('ledger.') ? this.currentJob() : null;
       return { status: job ? 'running' : freshness && !freshness.complete ? 'partial' : 'ready', data, freshness, ...(job ? { jobId: job.id } : {}) };
     } catch (error) {

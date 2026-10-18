@@ -20,6 +20,13 @@ export async function seedActions() {
 }
 export const action = (name: string, input: unknown = {}) => exports.default.fetch('https://test/api/actions', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: name, input }) });
 describe('shared HTTP actions', () => {
+  it('shares typed tag actions and history metadata without enabling unverified writes', async () => {
+    await seedActions(); expect(await (await action('tags.list', { includeArchived: true })).json()).toMatchObject({ status: 'partial', data: { items: [], groups: [], freshness: { complete: false } } });
+    expect(await (await action('tags.setArchived', { id: 'tag-opaque', archived: true, requestId: 'archive' })).json()).toMatchObject({ status: 'unavailable', error: { code: 'WRITE_LIVE_UNVERIFIED' } });
+    const draft = { kind: 'tag', action: 'tags.submitTag', requestId: 'tag-draft', input: { mode: 'create', name: '', groupId: null, color: '3792FA' } }; expect(await (await action('tags.draft.save', { key: 'new', draft })).json()).toMatchObject({ status: 'ready', data: { draft, operationId: null } });
+    await runInDurableObject(env.QIANJI_STATE.getByName('personal'), (_actor, state) => { const ctx = createActorContext(state.storage), scope = ctx.connection.scope()!; ctx.cache.confirmResources(scope, 'tags', [{ id: 'archive-tag', kind: 'tag', raw: { id: 'archive-tag', name: '历史', status: 2 } }]); });
+    expect(await (await action('ledger.options')).json()).toMatchObject({ data: { tags: [{ id: 'archive-tag', archived: true }] } });
+  });
   it('registers typed category writes behind live acceptance and persists scoped empty drafts', async () => {
     await seedActions();
     const input = { mode: 'create', bookId: '10', type: 0, name: '测试分类', parentId: null, requestId: 'category-new' };

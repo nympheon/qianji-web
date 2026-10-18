@@ -14,8 +14,15 @@ const empty = z.strictObject({}), id = z.string().min(1).max(200);
 import { createDebtSchema, appendPrincipalSchema, editPrincipalSchema, debtPaymentSchema, debtListSchema, debtPreviewSchema, debtDraftSchema, type DebtListView, type DebtPreview, type DebtDraftView } from '../features/debt/contract';
 import { bookListSchema, bookIdSchema, bookSubmitSchema, bookConfigureSchema, bookVisibleSchema, bookDeleteSchema, bookQuitSchema, bookReorderSchema, baseCurrencyInputSchema, bookDraftSchema, type BookListView, type BookTypesView, type BookMembersView, type BookDeleteCheckView, type BookDraftView, type AccountingConfigView } from '../features/books/contract';
 import { categoryListSchema, categoryCheckSchema, categorySubmitSchema, categoryLevelSchema, categoryMoveSchema, categoryReorderSchema, categoryDeleteSchema, categoryDraftSchema, type CategoryDraftView, type CategoryListView, type CategoryDeleteCheckView } from '../features/categories/contract';
+import { tagListSchema, tagWriteSchemas, tagDraftSchema, type TagDraftView, type TagListView } from '../features/tags/contract';
 const route = z.strictObject({ route: z.enum(['main', 'backup', 'overseas']) });
 export const actionSchemas = {
+  'tags.list': tagListSchema,
+  'tags.submitTag': z.discriminatedUnion('mode', [tagWriteSchemas['tags.submitTag'].options[0].extend({ requestId: id }), tagWriteSchemas['tags.submitTag'].options[1].extend({ requestId: id })]),
+  'tags.submitGroup': z.discriminatedUnion('mode', [tagWriteSchemas['tags.submitGroup'].options[0].extend({ requestId: id }), tagWriteSchemas['tags.submitGroup'].options[1].extend({ requestId: id })]),
+  'tags.reorderTags': tagWriteSchemas['tags.reorderTags'].safeExtend({ requestId: id }), 'tags.reorderGroups': tagWriteSchemas['tags.reorderGroups'].safeExtend({ requestId: id }),
+  'tags.setArchived': tagWriteSchemas['tags.setArchived'].extend({ requestId: id }), 'tags.deleteTag': tagWriteSchemas['tags.deleteTag'].extend({ requestId: id }), 'tags.deleteGroup': tagWriteSchemas['tags.deleteGroup'].extend({ requestId: id }),
+  'tags.draft.get': z.strictObject({ key: z.string().min(1).max(300) }), 'tags.draft.save': z.strictObject({ key: z.string().min(1).max(300), draft: tagDraftSchema }),
   'categories.submit': z.discriminatedUnion('mode', [categorySubmitSchema.options[0].extend({ requestId: id }), categorySubmitSchema.options[1].safeExtend({ requestId: id })]),
   'categories.changeLevel': categoryLevelSchema.extend({ requestId: id }), 'categories.move': categoryMoveSchema.extend({ requestId: id }), 'categories.reorder': categoryReorderSchema.safeExtend({ requestId: id }), 'categories.delete': categoryDeleteSchema.safeExtend({ requestId: id }),
   'categories.draft.get': z.strictObject({ key: z.string().min(1).max(300) }), 'categories.draft.save': z.strictObject({ key: z.string().min(1).max(300), draft: categoryDraftSchema }),
@@ -53,6 +60,7 @@ export const actionSchemas = {
 export type ActionName = keyof typeof actionSchemas;
 export type ActionInput<A extends ActionName> = z.infer<typeof actionSchemas[A]>;
 export interface ActionOutputs {
+  'tags.list': TagListView; 'tags.submitTag': OperationView; 'tags.submitGroup': OperationView; 'tags.reorderTags': OperationView; 'tags.reorderGroups': OperationView; 'tags.setArchived': OperationView; 'tags.deleteTag': OperationView; 'tags.deleteGroup': OperationView; 'tags.draft.get': TagDraftView | null; 'tags.draft.save': TagDraftView;
   'categories.submit': OperationView; 'categories.changeLevel': OperationView; 'categories.move': OperationView; 'categories.reorder': OperationView; 'categories.delete': OperationView; 'categories.draft.get': CategoryDraftView | null; 'categories.draft.save': CategoryDraftView;
   'categories.list': CategoryListView; 'categories.checkDelete': CategoryDeleteCheckView;
   'books.list': BookListView; 'books.types': BookTypesView; 'books.members': BookMembersView; 'books.deleteCheck': BookDeleteCheckView; 'books.accounting': AccountingConfigView;
@@ -86,6 +94,15 @@ export const actionDefinitions: Record<ActionName, ActionDefinition> = {
   'categories.delete': { ...write, destructive: true, title: '删除分类并处理本人账单', description: '先检查子项及官方本人count/其他成员other。明确保留账单、删除本人账单或迁移至指定分类；跨账本迁移必须显式newBookId。仅调用deletev2，不额外上传逐笔修改；分类整数回执与本人账单同步分别核验。复用requestId。' },
   'categories.draft.get': { ...read, evidence: 'local', title: '读取分类草稿', description: '读取本账号结构化分类草稿及原操作，不请求钱迹。' },
   'categories.draft.save': { ...read, readOnly: false, evidence: 'local', title: '保存分类草稿', description: '保存本地分类管理输入，未知原操作未核清时禁止更换请求键重复提交。' },
+  'tags.list': { ...read, title: '查询标签和分组', description: '按原生tag/list的status=-1、lasttime=0读取完整目录，保留归档历史、字符串ID和官方分组；默认不返回归档标签，可显式includeArchived。空目录同样缓存60秒，闲置不请求。' },
+  'tags.submitTag': { ...write, title: '新增或编辑标签', description: 'v为name/groupid/color的JSON，颜色为原生六位或八位无井号十六进制。按版本编辑，官方返回Tag为准；新建响应丢失不按同名认领。复用requestId。' },
+  'tags.submitGroup': { ...write, title: '新增或编辑标签组', description: 'v为纯名称文本，原生组名最长10字，组ID为不透明字符串；未知新建仅核查原操作。复用requestId。' },
+  'tags.reorderTags': { ...write, title: '排序同组标签', description: '同组真实字符串ID数组，不跨组移动、不用数字强制转换；成功后只读核对官方次序。复用requestId。' },
+  'tags.reorderGroups': { ...write, title: '排序标签组', description: '原生reordergroup使用字符串ID数组，完成后只读核对，不重复发送未知操作。复用requestId。' },
+  'tags.setArchived': { ...write, title: '归档或恢复标签', description: 'archived是明确目标；先强制读取最新Tag，已达到则不调用切换。否则仅调用一次archivetag并使用官方返回Tag，不清空账单标签。复用requestId。' },
+  'tags.deleteTag': { ...write, destructive: true, title: '删除标签', description: '按最新版本删除标签，关联账单引用另外等待只读同步核查。不会伪造逐笔修改，不把归档当删除。复用requestId。' },
+  'tags.deleteGroup': { ...write, destructive: true, title: '删除标签组', description: '只删除组并把包括归档在内的标签移至未分组；保留标签和账单。未知结果只读核查，复用requestId。' },
+  'tags.draft.get': { ...read, evidence: 'local', title: '读取标签草稿', description: '读取结构化本地草稿及原操作，不请求钱迹。' }, 'tags.draft.save': { ...read, evidence: 'local', readOnly: false, title: '保存标签草稿', description: '未知原操作未核清时保留原请求键，防止重复提交。' },
   'categories.list': { ...read, title: '查询分类层级', description: '按账本及收支类型读取原生listv2，将sublist规范化为同一分类实体和两级关系，保留官方editable、ID及编辑版本。60秒按需来源缓存，失败保留旧资料并标记。' },
   'categories.checkDelete': { ...read, title: '检查分类删除影响', description: '先读取完整分类树；有子项的父分类先处理子项。官方count/other分别展示本人及其他成员引用数，不用本地计数猜测他人账单不存在。此动作不修改数据。' },
   'books.list': { ...read, title: '查询账本', description: '按原生t=-1读取当前账号全部类型账本，可显式包含隐藏项；保留所有者/成员身份、默认账本及各自过期状态。来源按需60秒缓存，闲置不请求。' },
