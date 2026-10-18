@@ -15,6 +15,7 @@ import type { Problem } from '../../shared/reply';
 export interface RebuildDependencies {
   repository: Repository; cache: ResourceCache; clock: Clock; client: QianjiClient;
   coordinator: Coordinator; sync: SyncService; connection: ConnectionService;
+  background?: (task: Promise<unknown>) => void;
 }
 export class RebuildService {
   readonly #inflight = new Map<Id, Promise<void>>();
@@ -48,7 +49,8 @@ export class RebuildService {
     });
     const row = this.row(scope, id)!;
     if (!selected.every((domain) => (JSON.parse(row.domains) as string[]).includes(domain))) throw new DomainError('REBUILD_IN_PROGRESS', '另一范围正在重建，请等待当前任务完成');
-    await this.resume(id);
+    const pending = this.resume(id);
+    if (this.dependencies.background) this.dependencies.background(pending); else await pending;
     return this.getJob(scope, id)!;
   }
   getJob(scope: ActorScope, id: Id): JobView | null {

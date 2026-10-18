@@ -55,7 +55,7 @@ export class QianjiClient {
     try {
       const response = await (this.options.fetch ?? fetch)(signed.url, {
         method: signed.method, headers: signed.headers, body: signed.body,
-        redirect: 'error', signal: controller.signal,
+        redirect: 'manual', signal: controller.signal,
       });
       if (!response.ok) {
         throw new ProtocolError('QIANJI_HTTP_ERROR', '钱迹返回HTTP错误', 'http', 'unknown', { httpStatus: response.status });

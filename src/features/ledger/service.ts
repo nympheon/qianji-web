@@ -2,13 +2,13 @@ import type { ActorScope, Clock, Freshness, Id } from '../../shared/model';
 import type { Repository } from '../../storage/database';
 import type { ConnectionService } from '../connection/service';
 import type { FreshnessService } from '../sync/freshness';
-import type { BillDetail, BillFilter, BillPage, BillSummary, CalendarInput, CalendarView, StatisticsInput, StatisticsView } from './contract';
+import type { BillDetail, BillFilter, BillPage, BillSummary, CalendarInput, CalendarView, StatisticsInput, StatisticsView, LedgerOptions } from './contract';
 import { billFilterSchema, statisticsInputSchema } from './contract';
 import { DomainError } from '../../shared/errors';
 import { billRows, businessDay, createQueryPlan, parseLedgerCursor, scanBillPage, type QueryPlan } from './query';
 import { summarizeBill } from './model';
 import { businessRange } from '../../shared/dates';
-import { asBillObject, optionalWireId } from '../../shared/bill-wire';
+import { asBillObject, numericText, optionalWireId } from '../../shared/bill-wire';
 import { parseWire } from '../../shared/wire-json';
 import { aggregate, toStatItem } from './statistics';
 import { statisticsDimensions } from './statistics-view';
@@ -81,6 +81,17 @@ export class LedgerService {
     const scope = this.dependencies.connection.scope();
     if (!scope) throw new DomainError('CONNECTION_REQUIRED', '请先连接钱迹');
     return scope;
+  }
+  options(): LedgerOptions {
+    const scope = this.scope(), repository = this.dependencies.repository;
+    const books = repository.readResources(scope, 'book', { domain: 'books', limit: 200 });
+    const categories = repository.readResources(scope, 'category', { domain: 'ledger', limit: 200 });
+    const tags = repository.readResources(scope, 'tag', { domain: 'tags', limit: 200 });
+    const name = (raw: ReturnType<typeof asBillObject>, id: Id) => typeof raw.name === 'string' ? raw.name : id;
+    return { books: books.items.map((item) => { const raw = asBillObject(item.raw); return { id: item.id, name: name(raw, item.id), visible: numericText(raw.visible, '1') === '1' }; }),
+      categories: categories.items.map((item) => { const raw = asBillObject(item.raw); return { id: item.id, name: name(raw, item.id), parentId: optionalWireId(raw.parentid) }; }),
+      tags: tags.items.map((item) => ({ id: item.id, name: name(asBillObject(item.raw), item.id) })),
+      complete: !books.nextCursor && !categories.nextCursor && !tags.nextCursor && !!repository.dataset(scope, 'books')?.complete && !!repository.dataset(scope, 'ledger')?.complete && !!repository.dataset(scope, 'tags')?.complete };
   }
   async list(input: BillFilter): Promise<BillPage> {
     const parsed = billFilterSchema.safeParse(input);

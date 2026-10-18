@@ -237,13 +237,13 @@ cache.ts导出`CacheKey { domain:SyncDomain; queryKey:string }`、`CacheReadStam
 **Files:** Create `src/app/{use-case,registry,capabilities}.ts`、`src/contracts/{actions,capabilities}.ts`、`src/worker/{http,mcp}.ts`、`src/web/{App.tsx,api.ts}`、`components.json`、`src/web/lib/utils.ts`、按需`src/web/components/ui/`、`src/web/components/{Filters,DataStatus,TaskStatus}.tsx`、`src/web/pages/{Connection,Overview,Bills,Calendar,Statistics,Service}Page.tsx`、`tests/{http/actions,mcp/transport}.test.ts`、`tests/e2e/{connection,read-only}.spec.ts`；Modify `main.tsx/styles.css`、Vite/tsconfig别名、工具依赖和`docs/development.md`。
 **Interfaces:** Consumes任务06–10；Produces上述共用调用契约，注册`connection.status/check/refresh/logout/selectRoute/testRoute`、`sync.start/status`、`ledger.list/detail/calendar/statistics`、`operations.get/reconcile`、`capabilities.list`；HTTP与MCP返回相同AppReply。`listCapabilities():CapabilityView[]`从已核对的动作元数据及运行连接/权益取得状态，View含动作、读写类型、协议/证据阶段、enabled/reason；不因mock成功自动启用。
 
-- [ ] 写失败断言：HTTP与MCP同筛选集合/金额/新鲜度一致；无账号返回连接页面地址；缺失能力给原因；超过10秒只返回running/jobId而不重复启动任务；MCP不暴露密码、SQL或任意上游请求工具；动态业务响应为no-store，浏览器不另开独立刷新轮询。
-- [ ] Run `pnpm test -- tests/http/actions.test.ts tests/mcp/transport.test.ts`；预期FAIL于注册和映射缺失。
-- [ ] 用SDK v2 per-request factory及`legacy:'stateless'`实现`handleMcp(request,env,ctx):Promise<Response>`；不存MCP会话。
-- [ ] 按frontend-app-builder、shadcn、react-best-practices技能在当前Vite项目初始化上述组件规范，完成中文响应式骨架、连接表单、只读页面及服务状态；登录走专用入口，其他操作走共用registry。过期时可用AppReply的running/data/freshness/jobId返回当前缓存并共享更新任务，网页先展示并注明时间/状态，MCP明确待更新；完整统计不能用半轮数据重算。不匹配当前数据修订的旧统计仅保留页面既有显示并标状态，不作为当前API统计结果返回。登录卡片、表格筛选、空态和弹窗复用已有组件，不复制全部APK外观或放演示数据。
-- [ ] 重跑协议两代initialize/discovery、tools/list/call、注解与错误测试及`pnpm test:e2e -- tests/e2e/connection.spec.ts tests/e2e/read-only.spec.ts`；桌面/360px手机宽度完成登录→同步→筛选→统计，键盘可提交与关闭弹窗，构建确实加载CSS，PASS。将真实Cloudflare出口/ChatGPT只读验证登记到任务27，不假定本地成功等于远程可用。
-- [ ] 浏览器补测上游延迟20秒时已确认缓存先显示“正在更新”，失败后仍可见；没有完整数据则显示任务/空态区别。查看任务进度不重启同步，MCP不把旧缓存描述为新校验结果。
-- [ ] 提交：`feat: expose shared read workflows in web and MCP`。
+- [x] 写失败断言：HTTP与MCP同筛选集合/金额/新鲜度一致；无账号返回连接页面地址；缺失能力给原因；超过10秒只返回running/jobId而不重复启动任务；MCP不暴露密码、SQL或任意上游请求工具；动态业务响应为no-store，浏览器不另开独立刷新轮询。
+- [x] Run `pnpm test -- tests/http/actions.test.ts tests/mcp/transport.test.ts`；预期FAIL于注册和映射缺失。
+- [x] 用SDK v2 per-request factory及`legacy:'stateless'`实现`handleMcp(request,env,ctx):Promise<Response>`；不存MCP会话。
+- [x] 按frontend-app-builder、shadcn、react-best-practices技能在当前Vite项目初始化上述组件规范，完成中文响应式骨架、连接表单、只读页面及服务状态；登录走专用入口，其他操作走共用registry。过期时可用AppReply的running/data/freshness/jobId返回当前缓存并共享更新任务，网页先展示并注明时间/状态，MCP明确待更新；完整统计不能用半轮数据重算。不匹配当前数据修订的旧统计仅保留页面既有显示并标状态，不作为当前API统计结果返回。登录卡片、表格筛选、空态和弹窗复用已有组件，不复制全部APK外观或放演示数据。
+- [x] 重跑协议两代initialize/discovery、tools/list/call、注解与错误测试及`pnpm test:e2e -- tests/e2e/connection.spec.ts tests/e2e/read-only.spec.ts`；桌面/360px手机宽度完成登录→同步→筛选→统计，键盘可提交与关闭弹窗，构建确实加载CSS，PASS。将真实Cloudflare出口/ChatGPT只读验证登记到任务27，不假定本地成功等于远程可用。
+- [x] 浏览器补测上游延迟20秒时已确认缓存先显示“正在更新”，失败后仍可见；没有完整数据则显示任务/空态区别。查看任务进度不重启同步，MCP不把旧缓存描述为新校验结果。
+- [x] 提交：`feat: expose shared read workflows in web and MCP`。
 
 ## M2：核心账务与资产
 

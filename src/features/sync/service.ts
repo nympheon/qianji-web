@@ -16,6 +16,7 @@ export interface SyncDependencies {
   repository: Repository; client: QianjiClient; coordinator: Coordinator;
   connection: ConnectionService; clock: Clock; delay?: (milliseconds: number) => Promise<void>;
   rebuild?: (scope: ActorScope, domains: SyncInput['domain'][]) => Promise<JobView>;
+  background?: (task: Promise<unknown>) => void;
 }
 type SyncRow = { id: string; uid: string; connection_epoch: string; domain: string; mode: string;
   state: string; pages: number; changed_records: number; checkpoint: string; error: string | null };
@@ -79,7 +80,8 @@ export class SyncService {
       coordinator.jobs.put(id, scope, 'sync', { jobId: id });
       return id;
     });
-    await this.resume(id);
+    const pending = this.resume(id);
+    if (this.dependencies.background) this.dependencies.background(pending); else await pending;
     return this.getJob(scope, id)!;
   }
   getJob(scope: ActorScope, id: Id): JobView | null { const row = this.row(scope, id); return row ? view(row) : null; }

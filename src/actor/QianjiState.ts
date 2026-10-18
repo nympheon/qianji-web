@@ -2,6 +2,7 @@ import { DurableObject } from 'cloudflare:workers';
 import type { Env } from '../worker/env';
 import { createActorContext } from './context';
 import type { ConnectionView, PasswordLoginInput } from '../features/connection/contract';
+import { AppRegistry } from '../app/registry';
 
 export class QianjiState extends DurableObject<Env> {
   readonly #instanceId: string;
@@ -9,7 +10,7 @@ export class QianjiState extends DurableObject<Env> {
 
   constructor(state: DurableObjectState, env: Env) {
     super(state, env);
-    this.#context = createActorContext(state.storage, env);
+    this.#context = createActorContext(state.storage, env, { waitUntil: (task) => state.waitUntil(task) });
     const { repository } = this.#context;
     this.#instanceId = repository.sql.exec<{ value: string }>(
       'SELECT value FROM instance_meta WHERE key = ?', 'instance_id',
@@ -27,5 +28,8 @@ export class QianjiState extends DurableObject<Env> {
 
   async login(input: PasswordLoginInput): Promise<ConnectionView> {
     return this.#context.connection.login(input);
+  }
+  async call(action: string, input: unknown, meta: unknown = {}): Promise<string> {
+    return JSON.stringify(await new AppRegistry(this.#context).invoke(action, input, meta));
   }
 }

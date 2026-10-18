@@ -1,12 +1,12 @@
 # 本地开发
 
-当前已完成协议、SQLite副本、持久操作队列、连接、增量同步与缓存/重建基础，尚未接入真实钱迹账号。空页面不会展示演示账单，健康检查只表示本服务运行。当前缓存与任务恢复规则见[数据新鲜度与恢复](cache-policy.md)。
+当前已完成协议、SQLite副本、持久操作队列、连接、增量同步、缓存/重建、账单查询及统计，并接入中文只读网页和MCP。本机已通过真实账号登录、首次完整同步及HTTP/MCP同筛选统计一致性检查；Cloudflare出口、ChatGPT连接及写入仍待验收。页面只展示实际副本，健康检查只表示本服务运行。当前缓存与任务恢复规则见[数据新鲜度与恢复](cache-policy.md)。
 
 ## 工具链
 
 使用Node 24及pnpm 11.25.0，所有直接依赖锁定确切版本并提交`pnpm-lock.yaml`。本机已有pnpm位于`C:/Users/USERNAME/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/fallback/pnpm.cmd`；可直接调用，无需修改全局PATH。
 
-2026-10-18核对并锁定：React 19.3.1、Vite 8.3.4、TypeScript 7.0.2、Tailwind CSS 4.3.3、Wrangler 4.151.1、Cloudflare Vite plugin 1.64.0、Cloudflare Vitest plugin 1.4.4、Vitest 5.0.5。pnpm只允许esbuild与workerd所需安装脚本，不放开所有依赖脚本。shadcn在任务11加入。
+2026-10-18核对并锁定：React 19.3.1、Vite 8.3.4、TypeScript 7.0.2、Tailwind CSS 4.3.3、Wrangler 4.151.1、Cloudflare Vite plugin 1.64.0、Cloudflare Vitest plugin 1.4.4、Vitest 5.0.5、MCP server SDK 2.3.1、shadcn 4.22.0（radix-nova）、Radix UI 1.8.1、Lucide React 1.59.0。pnpm只允许esbuild与workerd所需安装脚本，不放开所有依赖脚本。`pnpm-workspace.yaml`固定项目内的依赖store，不修改全局配置。
 
 ## 命令
 
@@ -17,12 +17,24 @@
 - `pnpm build`：构建网页静态资源和Worker；Tailwind由Vite编译，不依赖CDN。
 - `pnpm check:deploy`：检查构建生成的Worker配置，只dry-run。
 - `pnpm verify`：类型、全部本地单元/Worker测试、构建与dry-run。
+- `pnpm exec playwright install chromium`：首次准备浏览器测试环境。
+- `pnpm test:e2e`：1440×960桌面和360×800手机流程。浏览器中的网络响应为明确隔离的测试资料，不是生产上游验收。
 
 生成文件、`.dev.vars`、本地数据库、依赖仓库、执行台账和真实验收数据已忽略。不要将密码、密码摘要、token或个人账单原文提交。`.dev.vars.example`仅说明后续凭证加密Secret，当前没有真实值。
 
 ## 运行结构
 
 一个固定名`personal`的SQLite Durable Object，绑定`QIANJI_STATE`；网页通过`ASSETS`发布。业务HTTP/MCP入口交给Worker，不使用页面fallback。不使用Cron、D1、后台保活或应用访问鉴权。
+
+## 网页与MCP
+
+本地默认打开`http://127.0.0.1:5173/connection`，MCP为同源`/mcp`。网页的`/api/actions`与MCP共用动作注册表及`AppReply`，所有动态响应`no-store`。登录仅使用独立`POST /api/connection/login`，MCP没有密码输入、SQL或任意上游请求工具。金额和ID通过文本返回。
+
+按照[MCP SDK官方Web运行时文档](https://ts.sdk.modelcontextprotocol.io/v2/serving/web-standard)使用每请求工厂；`legacy: 'stateless'`同时服务2025握手与2026-07-28发现协议，没有MCP会话。现代手写客户端需要[MCP标准协议头](https://github.com/modelcontextprotocol/typescript-sdk/blob/main/docs/migration/support-2026-07-28.md#mcp-param--and-standard-headers-sep-2243)与每请求元数据一致；正式SDK客户端会设置这些头。
+
+生产Actor将有限同步工作交给`waitUntil`并保留alarm检查点，读取立即返回已确认缓存及同一个持久`jobId`。完整源未就绪时，统计API返回`data:null`；网页可以保留当前视图的上次计算结果并标注。浏览器只在已有任务运行时限次读取`sync.status`，完成/失败后停止，切入后台暂停；该查询不会重启同步或请求钱迹。无任务时不轮询源。登录表单在请求结束后清空密码，页面和表单不保存密码到浏览器存储。
+
+Tailwind本地编译；shadcn组件、语义颜色与Lucide图标统一复用。页面按路由拆包。当前界面包括连接、总览、账单筛选/详情、自然月日历、历史币种统计和服务管理。资产名称与写入表单随后续领域任务接入，空缺处不伪造资产信息。统计存在5000候选行与1000分组的边界，达到边界会明确返回不完整，后续性能任务处理大数据计算。
 
 ## 持久操作与恢复
 

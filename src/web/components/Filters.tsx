@@ -1,0 +1,29 @@
+import { useState } from 'react';
+import { ChevronLeftIcon, ChevronRightIcon, FilterIcon, SearchIcon } from 'lucide-react';
+import type { BillFilter, LedgerOptions } from '../../features/ledger/contract';
+import { Button } from './ui/button';
+import { Input } from './ui/input';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
+import { Field, FieldGroup, FieldLabel } from './ui/field';
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from './ui/input-group';
+
+export function currentMonth(): string { const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit' }).formatToParts(); const values = Object.fromEntries(parts.map((part) => [part.type, part.value])); return `${values.year}-${values.month}`; }
+export const monthFilter = (value: string): BillFilter['date'] => ({ kind: 'month', year: Number(value.slice(0, 4)), month: Number(value.slice(5, 7)) });
+export function Filters({ filter, options, onChange }: { filter: BillFilter; options: LedgerOptions | null; onChange: (next: BillFilter) => void }) {
+  const [open, setOpen] = useState(false), [draft, setDraft] = useState(filter);
+  const month = filter.date?.kind === 'month' ? `${filter.date.year}-${String(filter.date.month).padStart(2, '0')}` : currentMonth();
+  const changeMonth = (amount: number) => { const date = new Date(`${month}-01T12:00:00Z`); date.setUTCMonth(date.getUTCMonth() + amount); onChange({ ...filter, date: monthFilter(date.toISOString().slice(0, 7)), cursor: undefined }); };
+  return <div className="filter-bar">
+    <div className="month-picker"><Button variant="ghost" size="icon" aria-label="上个月" onClick={() => changeMonth(-1)}><ChevronLeftIcon /></Button><Input aria-label="月份" type="month" value={month} onChange={(event) => { if (event.target.value) onChange({ ...filter, date: monthFilter(event.target.value), cursor: undefined }); }} /><Button variant="ghost" size="icon" aria-label="下个月" onClick={() => changeMonth(1)}><ChevronRightIcon /></Button></div>
+    <Select value={filter.bookIds?.[0] ?? 'all'} onValueChange={(value) => onChange({ ...filter, bookIds: value === 'all' ? undefined : [value], cursor: undefined })}><SelectTrigger aria-label="账本"><SelectValue placeholder="全部账本" /></SelectTrigger><SelectContent><SelectGroup><SelectItem value="all">全部账本</SelectItem>{options?.books.filter((book) => book.visible || filter.includeHiddenBooks).map((book) => <SelectItem key={book.id} value={book.id}>{book.name}</SelectItem>)}</SelectGroup></SelectContent></Select>
+    <form className="remark-search" role="search" onSubmit={(event) => { event.preventDefault(); const form = new FormData(event.currentTarget); onChange({ ...filter, remark: String(form.get('remark') ?? ''), cursor: undefined }); }}><InputGroup><InputGroupAddon><SearchIcon /></InputGroupAddon><InputGroupInput name="remark" aria-label="搜索备注" placeholder="搜索备注" defaultValue={filter.remark ?? ''} /><InputGroupAddon align="inline-end"><InputGroupButton type="submit">搜索</InputGroupButton></InputGroupAddon></InputGroup></form>
+    <Dialog open={open} onOpenChange={(next) => { if (next) setDraft(filter); setOpen(next); }}><DialogTrigger asChild><Button variant="outline"><FilterIcon data-icon="inline-start" />筛选</Button></DialogTrigger><DialogContent><DialogHeader><DialogTitle>筛选账单</DialogTitle><DialogDescription>选择分类、类型或金额范围。</DialogDescription></DialogHeader>
+      <form onSubmit={(event) => { event.preventDefault(); onChange({ ...draft, cursor: undefined }); setOpen(false); }}><FieldGroup>
+        <Field><FieldLabel htmlFor="category-filter">分类</FieldLabel><Select value={draft.categoryIds?.[0] ?? 'all'} onValueChange={(value) => setDraft({ ...draft, categoryIds: value === 'all' ? undefined : [value] })}><SelectTrigger id="category-filter"><SelectValue /></SelectTrigger><SelectContent><SelectGroup><SelectItem value="all">全部分类</SelectItem>{options?.categories.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectGroup></SelectContent></Select></Field>
+        <Field><FieldLabel htmlFor="type-filter">账单类型</FieldLabel><Select value={draft.types?.[0] === undefined ? 'all' : String(draft.types[0])} onValueChange={(value) => setDraft({ ...draft, types: value === 'all' ? undefined : [Number(value)] })}><SelectTrigger id="type-filter"><SelectValue /></SelectTrigger><SelectContent><SelectGroup><SelectItem value="all">全部类型</SelectItem>{([[0, '支出'], [1, '收入'], [2, '转账'], [3, '信用卡还款'], [5, '待报销'], [20, '退款'], [21, '报销到账'], [10, '利息支出'], [11, '利息收入']] as const).map(([value, name]) => <SelectItem key={value} value={String(value)}>{name}</SelectItem>)}</SelectGroup></SelectContent></Select></Field>
+        <div className="grid grid-cols-2 gap-4"><Field><FieldLabel htmlFor="amount-min">最低金额</FieldLabel><Input id="amount-min" inputMode="decimal" placeholder="不限" value={draft.amount?.min ?? ''} onChange={(event) => setDraft({ ...draft, amount: { ...draft.amount, min: event.target.value || undefined } })} /></Field><Field><FieldLabel htmlFor="amount-max">最高金额</FieldLabel><Input id="amount-max" inputMode="decimal" placeholder="不限" value={draft.amount?.max ?? ''} onChange={(event) => setDraft({ ...draft, amount: { ...draft.amount, max: event.target.value || undefined } })} /></Field></div>
+      </FieldGroup><DialogFooter className="mt-6"><Button type="button" variant="outline" onClick={() => { setDraft({ date: filter.date }); }}>重置筛选</Button><Button type="submit">应用筛选</Button></DialogFooter></form>
+    </DialogContent></Dialog>
+  </div>;
+}

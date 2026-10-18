@@ -3,3 +3,4 @@ allowBuilds:
   workerd: true
 updateNotifier: false
 saveExact: true
+storeDir: .pnpm-store

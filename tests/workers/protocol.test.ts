@@ -49,6 +49,15 @@ describe('APK native signing contract', () => {
 });
 
 describe('fixed upstream transport', () => {
+  it('constructs a native workerd Request and rejects a redirect without forwarding identity to its target', async () => {
+    const requests: Request[] = [];
+    const success = new QianjiClient({ ...context, fetch: async (url, init) => { requests.push(new Request(url, init)); return new Response('{"ec":200,"data":{}}'); } });
+    await expect(success.request('client.init', {}, scope)).resolves.toMatchObject({ ec: '200' });
+    expect(requests[0]!.redirect).toBe('manual');
+    const redirect = new QianjiClient({ ...context, fetch: async (url, init) => { requests.push(new Request(url, init)); return new Response(null, { status: 302, headers: { location: 'https://untrusted.example.test/' } }); } });
+    await expect(redirect.request('client.init', {}, scope)).rejects.toMatchObject({ code: 'QIANJI_HTTP_ERROR', httpStatus: 302 });
+    expect(requests).toHaveLength(2); expect(requests.every((request) => new URL(request.url).host === 'api.qianjiapp.com')).toBe(true);
+  });
   it('preserves lossless response data and sends one scoped request', async () => {
     const requests: { url: string; init: RequestInit }[] = [];
     const client = new QianjiClient({ ...context, fetch: async (url, init) => {
@@ -59,7 +68,7 @@ describe('fixed upstream transport', () => {
     expect(stringifyWire(reply.data)).toBe('{"id":1792000000123100000}');
     expect(requests).toHaveLength(1);
     expect(new URLSearchParams(requests[0]!.init.body as string).get('lasttimes')).toBe('{"1792000000123100000":"0"}');
-    expect(requests[0]!.init.redirect).toBe('error');
+    expect(new Request(requests[0]!.url, requests[0]!.init).redirect).toBe('manual');
   });
 
   it('times out after 20 seconds without retrying the upstream operation', async () => {

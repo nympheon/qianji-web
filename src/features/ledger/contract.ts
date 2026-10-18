@@ -60,3 +60,8 @@ export interface StatisticsView {
   comparison: { range: TimeRange | null; totals: StatSummary } | null;
   freshness: Freshness; incompleteReasons: string[];
 }
+export interface LedgerOptions {
+  books: { id: Id; name: string; visible: boolean }[];
+  categories: { id: Id; name: string; parentId: Id | null }[];
+  tags: { id: Id; name: string }[]; complete: boolean;
+}

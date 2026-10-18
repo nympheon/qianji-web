@@ -11,7 +11,7 @@ import { FreshnessService } from '../features/sync/freshness';
 import { ResourceCache } from '../storage/cache';
 import { LedgerService } from '../features/ledger/service';
 
-export function createActorContext(storage: DurableObjectStorage, secrets: { QIANJI_CREDENTIAL_KEY?: string } = {}) {
+export function createActorContext(storage: DurableObjectStorage, secrets: { QIANJI_CREDENTIAL_KEY?: string } = {}, execution?: { waitUntil(task: Promise<unknown>): void }) {
   const repository = new Repository(storage);
   const clock: Clock = { nowMs: () => Date.now(), nowIso: () => new Date().toISOString() };
   const client = new QianjiClient({
@@ -26,8 +26,9 @@ export function createActorContext(storage: DurableObjectStorage, secrets: { QIA
   const vault = new CredentialVault(secrets.QIANJI_CREDENTIAL_KEY, instanceId);
   const connection = new ConnectionService({ repository, client, coordinator, clock, vault });
   const cache = new ResourceCache(repository, clock);
-  const sync = new SyncService({ repository, client, coordinator, clock, connection, rebuild: (scope, domains) => rebuild.rebuild(scope, domains) });
-  const rebuild = new RebuildService({ repository, cache, client, coordinator, clock, connection, sync });
+  const background = execution ? { background: (task: Promise<unknown>) => execution.waitUntil(task) } : {};
+  const sync = new SyncService({ repository, client, coordinator, clock, connection, rebuild: (scope, domains) => rebuild.rebuild(scope, domains), ...background });
+  const rebuild = new RebuildService({ repository, cache, client, coordinator, clock, connection, sync, ...background });
   const freshness = new FreshnessService({ repository, clock, sync });
   const ledger = new LedgerService({ repository, connection, freshness, clock });
   return { repository, clock, client, coordinator, connection, sync, cache, rebuild, freshness, ledger };
