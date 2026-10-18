@@ -1,0 +1,42 @@
+import { expect, test } from '@playwright/test';
+import { join } from 'node:path';
+import { freshness, mockReadApp, ready } from './read-fixtures';
+const task = { id: '100', packId: '900', name: '测试分期', type: 1, assetId: '20', bookId: '10', categoryId: '50', totalMoney: '100', totalFee: '3', averageMoney: '33.33', averageFee: '1', totalCount: 3, count: 0, startTimeSec: 1769788800, firstDate: '2026-01-31', status: 1, inCount: true, feeInCount: false, prepaidAtSec: 0, remainder: 'first', feePlacement: 'ave', images: [], tagIds: [], remark: '', editVersion: 'a'.repeat(64), prepayVersion: 'b'.repeat(64) };
+test('creates a native installment draft, previews its split and recovers the original unknown operation', async ({ page }, info) => {
+  await mockReadApp(page); let saved: unknown = null, writes = 0, received: unknown;
+  await page.route('**/api/actions', async (route) => {
+    const { action, input } = route.request().postDataJSON();
+    if (action === 'installments.list') return route.fulfill({ json: ready({ items: [task], freshness }, freshness) });
+    if (action === 'categories.list') return route.fulfill({ json: ready({ items: [{ id: '50', name: '餐饮', type: 0 }], freshness }) });
+    if (action === 'ledger.transfer.options') return route.fulfill({ json: ready({ assets: [{ id: '10', type: 1, name: '现金', currency: 'CNY' }, { id: '20', type: 2, name: '测试信用卡', currency: 'CNY' }], baseCurrency: 'CNY', books: [], complete: true, freshness }) });
+    if (action === 'capabilities.list') return route.fulfill({ json: ready(['installments.create', 'installments.configure', 'installments.prepay', 'installments.setBillBinding', 'installments.delete'].map((action) => ({ action, enabled: true }))) });
+    if (action === 'installments.draft.get') return route.fulfill({ json: ready(saved) });
+    if (action === 'installments.draft.save') { saved = { draft: input.draft, operationId: null }; return route.fulfill({ json: ready(saved) }); }
+    if (action === 'installments.preview') return route.fulfill({ json: ready({ rows: [{ period: 1, date: '2026-01-31', principal: '33.34', fee: '1', money: '34.34' }, { period: 2, date: '2026-03-03', principal: '33.33', fee: '1', money: '34.33' }], initialCount: 0, complete: false, warnings: [], totals: { principal: '100', fee: '3', money: '103' }, currency: 'CNY' }) });
+    if (action === 'installments.create') { writes++; received = input; saved = { ...(saved as object), operationId: 'install-original' }; return route.fulfill({ json: { status: 'uncertain', freshness: null, data: { id: 'install-original', state: 'uncertain', items: [], error: null } } }); }
+    if (action === 'operations.get') return route.fulfill({ json: { status: 'uncertain', freshness: null, data: { id: 'install-original', state: 'uncertain', items: [], error: null } } });
+    await route.fallback();
+  });
+  await page.goto('/installments'); await page.getByRole('button', { name: '新增分期', exact: true }).click();
+  await page.getByLabel('分期名称', { exact: true }).fill('电脑'); await page.getByLabel('本金总额', { exact: true }).fill('100'); await page.getByLabel('手续费总额', { exact: true }).fill('3'); await page.getByLabel('分期期数', { exact: true }).fill('3'); await page.getByLabel('首期日期', { exact: true }).fill('2026-01-31');
+  await page.getByRole('button', { name: '预览分期拆分', exact: true }).click(); await expect(page.getByText('2026-03-03', { exact: true })).toBeVisible();
+  if (process.env.QIANJI_VISUAL_DIR) await page.screenshot({ path: join(process.env.QIANJI_VISUAL_DIR, `${info.project.name}-installment-editor.png`), animations: 'disabled' });
+  await page.getByRole('button', { name: '保存分期', exact: true }).click(); await expect(page.getByText('结果待核查', { exact: true })).toBeVisible(); expect(received).toMatchObject({ name: '电脑', totalMoney: '100', totalFee: '3', totalCount: 3, assetId: '20', categoryId: '50', firstDate: '2026-01-31' });
+  await page.reload(); await page.getByRole('button', { name: '新增分期', exact: true }).click(); await expect(page.getByText('install-original', { exact: true })).toBeVisible(); await expect(page.getByRole('button', { name: '保存分期', exact: true })).toBeDisabled(); expect(writes).toBe(1); expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+test('limits existing edits to statistics flags and keeps prepay partial results separate', async ({ page }) => {
+  await mockReadApp(page); let received: unknown;
+  await page.route('**/api/actions', async (route) => {
+    const { action, input } = route.request().postDataJSON();
+    if (action === 'installments.list') return route.fulfill({ json: ready({ items: [task], freshness }, freshness) });
+    if (action === 'ledger.transfer.options') return route.fulfill({ json: ready({ assets: [{ id: '10', type: 1, name: '现金', currency: 'CNY' }, { id: '20', type: 2, name: '测试信用卡', currency: 'CNY' }], baseCurrency: 'CNY', books: [], complete: true, freshness }) });
+    if (action === 'capabilities.list') return route.fulfill({ json: ready(['installments.configure', 'installments.prepay'].map((action) => ({ action, enabled: true }))) });
+    if (action === 'installments.draft.save') return route.fulfill({ json: ready({ draft: input.draft, operationId: null }) });
+    if (action === 'installments.configure') { received = input; return route.fulfill({ json: ready({ id: 'configured', state: 'succeeded', items: [], error: null }) }); }
+    if (action === 'installments.prepay') { received = input; return route.fulfill({ json: { status: 'partial', freshness: null, data: { id: 'prepay-partial', state: 'partial', items: [{ id: 'plan', state: 'succeeded' }, { id: 'expense', state: 'succeeded' }, { id: 'repayment', state: 'uncertain' }], error: null } } }); }
+    if (action === 'operations.get') return route.fulfill({ json: { status: 'partial', freshness: null, data: { id: 'prepay-partial', state: 'partial', items: [{ id: 'plan', state: 'succeeded' }, { id: 'expense', state: 'succeeded' }, { id: 'repayment', state: 'uncertain' }], error: null } } });
+    await route.fallback();
+  });
+  await page.goto('/installments'); await page.getByRole('button', { name: '分期统计设置', exact: true }).click(); await expect(page.getByLabel('本金总额', { exact: true })).toHaveCount(0); await page.getByLabel('本金计入收支', { exact: true }).uncheck(); await page.getByLabel('手续费计入收支', { exact: true }).check(); await page.getByRole('button', { name: '保存统计设置', exact: true }).click(); await expect.poll(() => received).toMatchObject({ id: '100', expectedVersion: task.editVersion, inCount: false, feeInCount: true }); expect(Object.keys(received as object).sort()).toEqual(['expectedVersion', 'feeInCount', 'id', 'inCount', 'requestId']);
+  await page.getByRole('button', { name: 'Close', exact: true }).click(); await page.getByRole('button', { name: '提前还款', exact: true }).click(); await page.getByLabel('提前还款金额', { exact: true }).fill('100'); await page.getByRole('button', { name: '确认提前还款', exact: true }).click(); await expect.poll(() => received).toMatchObject({ id: '100', expectedVersion: task.prepayVersion, fromAssetId: '10', bookId: '10', money: '100' }); await page.getByText('2 / 3 项已确认 · 逐项结果', { exact: true }).click(); await expect(page.getByText('repayment', { exact: true })).toBeVisible(); await expect(page.getByRole('button', { name: '确认提前还款', exact: true })).toBeDisabled();
+});

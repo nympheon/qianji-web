@@ -405,11 +405,11 @@ cache.ts导出`CacheKey { domain:SyncDomain; queryKey:string }`、`CacheReadStam
 **Files:** Create `src/features/installments/{contract,service,use-cases,preview}.ts`、`src/web/pages/InstallmentsPage.tsx`、`tests/unit/installment-preview.test.ts`、`tests/workers/installments.test.ts`；Modify registry。
 **Interfaces:** Consumes任务13、22及PlanBindingInput；Produces `InstallmentService.list/create/preview/configure/prepay/setBillBinding/delete`，配置仅已确认incount/feeincount，提前还款使用独立PrepayInput。
 
-- [ ] 写失败断言：新增count按首期日/今天及totalCount计算，不固定0或自行补历史账；手续费ave/first/last及尾差first/last/rndf/rnd/intf/intl与独立APK向量匹配；已有对象不开放任意金额/期数编辑。
-- [ ] Run `pnpm test -- tests/unit/installment-preview.test.ts tests/workers/installments.test.ts`；预期FAIL于分期域缺失。
-- [ ] 实现官方提交/config/prepay和关联动作，预览与正式回执bills分开；提前还款的支出/还款结果各跟踪，不再次本地生成。先专项核对images疑似错误载荷，正确契约未确认不盲抄备注到images；明确消费/账单分期真实映射后注册可用变体。
-- [ ] 重跑首期今天/过去/未来、首末期与除不尽、目标packId/重复解绑、prepay部分或未知结果及附件分支，PASS；真实核对任务状态、两笔账单和资产。
-- [ ] 提交：`feat: implement installment configuration and prepayment`。
+- [x] 写失败断言：新增count按首期日/今天及totalCount计算，不固定0或自行补历史账；手续费ave/first/last及尾差first/last/rndf/rnd/intf/intl与独立APK向量匹配；已有对象不开放任意金额/期数编辑。
+- [x] Run `pnpm test -- tests/unit/installment-preview.test.ts tests/workers/installments.test.ts`；预期FAIL于分期域缺失。
+- [x] 实现官方提交/config/prepay和关联动作，预览与正式回执bills分开；提前还款的支出/还款结果各跟踪，不再次本地生成。先专项核对images疑似错误载荷，正确契约未确认不盲抄备注到images；新建入口仅证实type1，采用通用分期及明确统计选项，不虚构type2变体；提前还款图片待任务27专项核验。
+- [x] 重跑首期今天/过去/未来、首末期与除不尽、目标packId/重复解绑、prepay部分或未知结果及附件分支，PASS；真实核对任务状态、两笔账单和资产移交任务27；当前正式写能力未启用。
+- [x] 提交：`feat: implement installment configuration and prepayment`。
 
 ### Task 25：储蓄计划、存入、撤销与删除
 

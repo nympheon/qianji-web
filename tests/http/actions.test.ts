@@ -20,6 +20,14 @@ export async function seedActions() {
 }
 export const action = (name: string, input: unknown = {}) => exports.default.fetch('https://test/api/actions', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: name, input }) });
 describe('shared HTTP actions', () => {
+  it('shares native installment previews and durable drafts while requiring live write acceptance', async () => {
+    await seedActions();
+    expect(await (await action('installments.list')).json()).toMatchObject({ status: 'partial', data: { items: [] } });
+    expect(await (await action('installments.preview', { totalMoney: '100', totalFee: '3', totalCount: 3, firstDate: '2026-01-31', limit: 3 })).json()).toMatchObject({ status: 'ready', data: { rows: [{ date: '2026-01-31', principal: '33.34', fee: '1' }, { date: '2026-03-03' }, { date: '2026-03-31' }], currency: 'CNY' } });
+    const draft = { action: 'installments.create', requestId: 'installment-draft', input: { name: '', totalMoney: '', firstDate: '' } };
+    expect(await (await action('installments.draft.save', { key: 'new', draft })).json()).toMatchObject({ status: 'ready', data: { draft, operationId: null } });
+    expect(await (await action('installments.configure', { id: '100', expectedVersion: 'a'.repeat(64), inCount: false, feeInCount: false, requestId: 'configure' })).json()).toMatchObject({ status: 'unavailable', error: { code: 'WRITE_LIVE_UNVERIFIED' } });
+  });
   it('exposes recurring previews and typed drafts while protecting unverified native writes', async () => {
     await seedActions(); expect(await (await action('repeat.list')).json()).toMatchObject({ status: 'partial', data: { items: [] } });
     expect(await (await action('repeat.setPaused', { id: '100', paused: true, requestId: 'pause-target' })).json()).toMatchObject({ status: 'unavailable', error: { code: 'WRITE_LIVE_UNVERIFIED' } });

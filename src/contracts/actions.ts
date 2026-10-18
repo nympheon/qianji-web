@@ -18,9 +18,16 @@ import { tagListSchema, tagWriteSchemas, tagDraftSchema, type TagDraftView, type
 import { budgetQuerySchema, budgetChangesSchema, budgetDraftSchema, type BudgetDraftView, type BudgetView } from '../features/budget/contract';
 import { repeatQuerySchema, repeatPreviewSchema, repeatSubmitSchema, repeatPauseSchema, repeatDeleteSchema, repeatDraftSchema, type RepeatListView, type RepeatDraftView, type PreviewBill } from '../features/repeat/contract';
 import { planBindingSchema } from '../features/plans/contract';
+import { installmentQuerySchema, installmentPreviewSchema, installmentWriteSchemas, installmentDraftSchema, type InstallmentListView, type InstallmentPreview, type InstallmentDraftView } from '../features/installments/contract';
 import { uploadImageSchema, imageReferenceSchema, uploadDraftSchema, type UploadDraftView, type AttachmentOptions, type UploadedImage, type ImageView } from '../features/attachments/contract';
 const route = z.strictObject({ route: z.enum(['main', 'backup', 'overseas']) });
 export const actionSchemas = {
+  'installments.list': installmentQuerySchema, 'installments.preview': installmentPreviewSchema,
+  'installments.create': installmentWriteSchemas['installments.create'].extend({ requestId: id }),
+  'installments.configure': installmentWriteSchemas['installments.configure'].extend({ requestId: id }),
+  'installments.prepay': installmentWriteSchemas['installments.prepay'].extend({ requestId: id }),
+  'installments.setBillBinding': planBindingSchema.extend({ requestId: id }), 'installments.delete': installmentWriteSchemas['installments.delete'].extend({ requestId: id }),
+  'installments.draft.get': z.strictObject({ key: z.string().min(1).max(300) }), 'installments.draft.save': z.strictObject({ key: z.string().min(1).max(300), draft: installmentDraftSchema }),
   'repeat.list': repeatQuerySchema, 'repeat.preview': repeatPreviewSchema,
   'repeat.submit': z.discriminatedUnion('mode', [repeatSubmitSchema.options[0].extend({ requestId: id }), repeatSubmitSchema.options[1].extend({ requestId: id })]),
   'repeat.setPaused': repeatPauseSchema.extend({ requestId: id }), 'repeat.setBillBinding': planBindingSchema.extend({ requestId: id }), 'repeat.delete': repeatDeleteSchema.extend({ requestId: id }),
@@ -73,6 +80,7 @@ export const actionSchemas = {
 export type ActionName = keyof typeof actionSchemas;
 export type ActionInput<A extends ActionName> = z.infer<typeof actionSchemas[A]>;
 export interface ActionOutputs {
+  'installments.list': InstallmentListView; 'installments.preview': InstallmentPreview; 'installments.create': OperationView; 'installments.configure': OperationView; 'installments.prepay': OperationView; 'installments.setBillBinding': OperationView; 'installments.delete': OperationView; 'installments.draft.get': InstallmentDraftView | null; 'installments.draft.save': InstallmentDraftView;
   'repeat.list': RepeatListView; 'repeat.preview': PreviewBill[]; 'repeat.submit': OperationView; 'repeat.setPaused': OperationView; 'repeat.setBillBinding': OperationView; 'repeat.delete': OperationView; 'repeat.draft.get': RepeatDraftView | null; 'repeat.draft.save': RepeatDraftView;
   'attachments.draft.applied': UploadDraftView; 'attachments.draft.get': UploadDraftView | null; 'attachments.draft.save': UploadDraftView; 'attachments.options': AttachmentOptions; 'attachments.resolve': ImageView; 'attachments.result': UploadedImage | null; 'attachments.upload': OperationView;
   'budget.list': BudgetView; 'budget.submit': OperationView; 'budget.draft.get': BudgetDraftView | null; 'budget.draft.save': BudgetDraftView;
@@ -103,6 +111,15 @@ const connection = { ...read, kind: 'connection', requiresAccount: false } as co
 const write = { ...read, kind: 'write', readOnly: false, unavailable: { code: 'WRITE_LIVE_UNVERIFIED', reason: '账单写入已完成契约与模拟测试，待专用测试账本真实验收后启用' } } as const;
 const assetWrite = { ...write, unavailable: { code: 'WRITE_LIVE_UNVERIFIED', reason: '资产写入待命名测试资产真实验收后启用' } } as const;
 export const actionDefinitions: Record<ActionName, ActionDefinition> = {
+  'installments.list': { ...read, title: '查询分期', description: '按原生创建时间0、状态1、总金额2、剩余金额3及ascending排序，完整目录按资产和状态筛选；60秒来源缓存，闲置不请求。' },
+  'installments.preview': { ...read, title: '预览分期拆分', description: '按原生六种尾差及手续费分配预览，包含原生月末顺延和初始执行次数。纯预览不会生成或补写账单，实际以钱迹回执为准。金额币种来自所选信用卡，否则为本位币。' },
+  'installments.create': { ...write, title: '新增分期', description: '在信用卡和所选账本支出分类下创建原生type1分期。六种尾差、三种费用分配及本金/费用计入统计选项；官方生成账单，网页不上传预览。复用requestId。' },
+  'installments.configure': { ...write, title: '分期统计设置', description: '现有分期只修改incount、feeincount两个统计配置，不修改金额或期数。按配置版本防冲突；未知结果只读核对，不重发。' },
+  'installments.prepay': { ...write, title: '分期提前还款', description: '明确还款资产、当前账本、时间、金额与费用，外币提供支出和还款各自历史币种金额；任务、支出和还款分别核验。部分成功或未知沿原operationId查询，不整笔重试。图片字段待专项核验。' },
+  'installments.setBillBinding': { ...write, title: '关联分期已有账单', description: '只切换指定已有支出账单和本分期packId的关联，不生成账单。移出本分期时若已属于其他任务直接无操作成功；未知先只读同步核对。' },
+  'installments.delete': { ...write, destructive: true, title: '删除分期', description: '仅删除分期管理对象，保留已有账单。未知结果通过完整目录核对，不重新发送。复用requestId。' },
+  'installments.draft.get': { ...read, evidence: 'local', title: '读取分期草稿', description: '读取当前账号分期草稿和原操作ID，不请求钱迹。' },
+  'installments.draft.save': { ...read, readOnly: false, evidence: 'local', title: '保存分期草稿', description: '保存结构化分期输入；未核清原操作时禁止换请求键重复提交。' },
   'categories.submit': { ...write, title: '新增或编辑分类', description: '按账本及收支类型、编辑版本保存名称和图标，原生v是纯名称文本。新建使用官方返回ID；未知创建不按同名猜测，复用requestId。' },
   'categories.changeLevel': { ...write, title: '升级或降级分类', description: '明确parentId，null升为一级，同账本同收支一级父分类降为二级。有子项先处理子项；不自动递归迁移。复用requestId。' },
   'categories.move': { ...write, title: '移动二级分类', description: '按版本把现有二级分类移动到同账本、同收支类型的一级分类，保留真实分类ID与账单引用。复用requestId。' },

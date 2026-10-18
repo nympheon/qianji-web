@@ -6,6 +6,13 @@ import { useCase, type UseCase, type UseCaseContext } from './use-case';
 
 function scope(context: UseCaseContext) { const scope = context.connection.scope(); if (!scope) throw new DomainError('CONNECTION_REQUIRED', '请先连接钱迹'); return scope; }
 const handlers: Record<ActionName, UseCase> = {
+  'installments.list': useCase('installments.list', (ctx, input) => ctx.installments.list(input)), 'installments.preview': useCase('installments.preview', (ctx, input) => ctx.installments.preview(input)),
+  'installments.create': useCase('installments.create', (ctx, { requestId, ...input }) => ctx.installments.mutate('installments.create', input, { requestId })),
+  'installments.configure': useCase('installments.configure', (ctx, { requestId, ...input }) => ctx.installments.mutate('installments.configure', input, { requestId })),
+  'installments.prepay': useCase('installments.prepay', (ctx, { requestId, ...input }) => ctx.installments.mutate('installments.prepay', input, { requestId })),
+  'installments.setBillBinding': useCase('installments.setBillBinding', (ctx, { requestId, ...input }) => ctx.installments.mutate('installments.setBillBinding', input, { requestId })),
+  'installments.delete': useCase('installments.delete', (ctx, { requestId, ...input }) => ctx.installments.mutate('installments.delete', input, { requestId })),
+  'installments.draft.get': useCase('installments.draft.get', (ctx, input) => ctx.installments.getDraft(input.key)), 'installments.draft.save': useCase('installments.draft.save', (ctx, input) => ctx.installments.saveDraft(input.key, input.draft)),
   'repeat.list': useCase('repeat.list', (ctx, input) => ctx.repeat.list(input)), 'repeat.preview': useCase('repeat.preview', (ctx, input) => ctx.repeat.preview(input)),
   'repeat.submit': useCase('repeat.submit', (ctx, { requestId, ...input }) => ctx.repeat.mutate('repeat.submit', input, { requestId })),
   'repeat.setPaused': useCase('repeat.setPaused', (ctx, { requestId, ...input }) => ctx.repeat.mutate('repeat.setPaused', input, { requestId })),

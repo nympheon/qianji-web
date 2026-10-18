@@ -1,0 +1,474 @@
+{
+  "source": "4.5.4 Smali-audited independent Java BigDecimal/Calendar oracle",
+  "distribution": [
+    {
+      "total": "100",
+      "count": 3,
+      "mode": "first",
+      "average": "33.33",
+      "residual": "33.34"
+    },
+    {
+      "total": "100",
+      "count": 3,
+      "mode": "last",
+      "average": "33.33",
+      "residual": "33.34"
+    },
+    {
+      "total": "100",
+      "count": 3,
+      "mode": "rndf",
+      "average": "33.33",
+      "residual": "33.34"
+    },
+    {
+      "total": "100",
+      "count": 3,
+      "mode": "rnd",
+      "average": "33.33",
+      "residual": "33.34"
+    },
+    {
+      "total": "100",
+      "count": 3,
+      "mode": "intf",
+      "average": "33",
+      "residual": "34"
+    },
+    {
+      "total": "100",
+      "count": 3,
+      "mode": "intl",
+      "average": "33",
+      "residual": "34"
+    },
+    {
+      "total": "100",
+      "count": 4,
+      "mode": "first",
+      "average": "25",
+      "residual": "25"
+    },
+    {
+      "total": "100",
+      "count": 4,
+      "mode": "last",
+      "average": "25",
+      "residual": "25"
+    },
+    {
+      "total": "100",
+      "count": 4,
+      "mode": "rndf",
+      "average": "25",
+      "residual": "25"
+    },
+    {
+      "total": "100",
+      "count": 4,
+      "mode": "rnd",
+      "average": "25",
+      "residual": "25"
+    },
+    {
+      "total": "100",
+      "count": 4,
+      "mode": "intf",
+      "average": "25",
+      "residual": "25"
+    },
+    {
+      "total": "100",
+      "count": 4,
+      "mode": "intl",
+      "average": "25",
+      "residual": "25"
+    },
+    {
+      "total": "100",
+      "count": 6,
+      "mode": "first",
+      "average": "16.66",
+      "residual": "16.7"
+    },
+    {
+      "total": "100",
+      "count": 6,
+      "mode": "last",
+      "average": "16.66",
+      "residual": "16.7"
+    },
+    {
+      "total": "100",
+      "count": 6,
+      "mode": "rndf",
+      "average": "16.67",
+      "residual": "16.65"
+    },
+    {
+      "total": "100",
+      "count": 6,
+      "mode": "rnd",
+      "average": "16.67",
+      "residual": "16.65"
+    },
+    {
+      "total": "100",
+      "count": 6,
+      "mode": "intf",
+      "average": "16",
+      "residual": "20"
+    },
+    {
+      "total": "100",
+      "count": 6,
+      "mode": "intl",
+      "average": "16",
+      "residual": "20"
+    },
+    {
+      "total": "100",
+      "count": 8,
+      "mode": "first",
+      "average": "12.5",
+      "residual": "12.5"
+    },
+    {
+      "total": "100",
+      "count": 8,
+      "mode": "last",
+      "average": "12.5",
+      "residual": "12.5"
+    },
+    {
+      "total": "100",
+      "count": 8,
+      "mode": "rndf",
+      "average": "12.5",
+      "residual": "12.5"
+    },
+    {
+      "total": "100",
+      "count": 8,
+      "mode": "rnd",
+      "average": "12.5",
+      "residual": "12.5"
+    },
+    {
+      "total": "100",
+      "count": 8,
+      "mode": "intf",
+      "average": "12.5",
+      "residual": "12.5"
+    },
+    {
+      "total": "100",
+      "count": 8,
+      "mode": "intl",
+      "average": "12.5",
+      "residual": "12.5"
+    },
+    {
+      "total": "100",
+      "count": 40,
+      "mode": "first",
+      "average": "2.5",
+      "residual": "2.5"
+    },
+    {
+      "total": "100",
+      "count": 40,
+      "mode": "last",
+      "average": "2.5",
+      "residual": "2.5"
+    },
+    {
+      "total": "100",
+      "count": 40,
+      "mode": "rndf",
+      "average": "2.5",
+      "residual": "2.5"
+    },
+    {
+      "total": "100",
+      "count": 40,
+      "mode": "rnd",
+      "average": "2.5",
+      "residual": "2.5"
+    },
+    {
+      "total": "100",
+      "count": 40,
+      "mode": "intf",
+      "average": "2.5",
+      "residual": "2.5"
+    },
+    {
+      "total": "100",
+      "count": 40,
+      "mode": "intl",
+      "average": "2.5",
+      "residual": "2.5"
+    },
+    {
+      "total": "1",
+      "count": 3,
+      "mode": "first",
+      "average": "0.33",
+      "residual": "0.34"
+    },
+    {
+      "total": "1",
+      "count": 3,
+      "mode": "last",
+      "average": "0.33",
+      "residual": "0.34"
+    },
+    {
+      "total": "1",
+      "count": 3,
+      "mode": "rndf",
+      "average": "0.33",
+      "residual": "0.34"
+    },
+    {
+      "total": "1",
+      "count": 3,
+      "mode": "rnd",
+      "average": "0.33",
+      "residual": "0.34"
+    },
+    {
+      "total": "1",
+      "count": 3,
+      "mode": "intf",
+      "average": "0",
+      "residual": "1"
+    },
+    {
+      "total": "1",
+      "count": 3,
+      "mode": "intl",
+      "average": "0",
+      "residual": "1"
+    },
+    {
+      "total": "1",
+      "count": 4,
+      "mode": "first",
+      "average": "0.25",
+      "residual": "0.25"
+    },
+    {
+      "total": "1",
+      "count": 4,
+      "mode": "last",
+      "average": "0.25",
+      "residual": "0.25"
+    },
+    {
+      "total": "1",
+      "count": 4,
+      "mode": "rndf",
+      "average": "0.25",
+      "residual": "0.25"
+    },
+    {
+      "total": "1",
+      "count": 4,
+      "mode": "rnd",
+      "average": "0.25",
+      "residual": "0.25"
+    },
+    {
+      "total": "1",
+      "count": 4,
+      "mode": "intf",
+      "average": "0.25",
+      "residual": "0.25"
+    },
+    {
+      "total": "1",
+      "count": 4,
+      "mode": "intl",
+      "average": "0.25",
+      "residual": "0.25"
+    },
+    {
+      "total": "1",
+      "count": 6,
+      "mode": "first",
+      "average": "0.16",
+      "residual": "0.2"
+    },
+    {
+      "total": "1",
+      "count": 6,
+      "mode": "last",
+      "average": "0.16",
+      "residual": "0.2"
+    },
+    {
+      "total": "1",
+      "count": 6,
+      "mode": "rndf",
+      "average": "0.17",
+      "residual": "0.15"
+    },
+    {
+      "total": "1",
+      "count": 6,
+      "mode": "rnd",
+      "average": "0.17",
+      "residual": "0.15"
+    },
+    {
+      "total": "1",
+      "count": 6,
+      "mode": "intf",
+      "average": "0",
+      "residual": "1"
+    },
+    {
+      "total": "1",
+      "count": 6,
+      "mode": "intl",
+      "average": "0",
+      "residual": "1"
+    },
+    {
+      "total": "1",
+      "count": 8,
+      "mode": "first",
+      "average": "0.12",
+      "residual": "0.16"
+    },
+    {
+      "total": "1",
+      "count": 8,
+      "mode": "last",
+      "average": "0.12",
+      "residual": "0.16"
+    },
+    {
+      "total": "1",
+      "count": 8,
+      "mode": "rndf",
+      "average": "0.13",
+      "residual": "0.09"
+    },
+    {
+      "total": "1",
+      "count": 8,
+      "mode": "rnd",
+      "average": "0.13",
+      "residual": "0.09"
+    },
+    {
+      "total": "1",
+      "count": 8,
+      "mode": "intf",
+      "average": "0",
+      "residual": "1"
+    },
+    {
+      "total": "1",
+      "count": 8,
+      "mode": "intl",
+      "average": "0",
+      "residual": "1"
+    },
+    {
+      "total": "1",
+      "count": 40,
+      "mode": "first",
+      "average": "0.02",
+      "residual": "0.22"
+    },
+    {
+      "total": "1",
+      "count": 40,
+      "mode": "last",
+      "average": "0.02",
+      "residual": "0.22"
+    },
+    {
+      "total": "1",
+      "count": 40,
+      "mode": "rndf",
+      "average": "0.03",
+      "residual": "-0.17"
+    },
+    {
+      "total": "1",
+      "count": 40,
+      "mode": "rnd",
+      "average": "0.03",
+      "residual": "-0.17"
+    },
+    {
+      "total": "1",
+      "count": 40,
+      "mode": "intf",
+      "average": "0",
+      "residual": "1"
+    },
+    {
+      "total": "1",
+      "count": 40,
+      "mode": "intl",
+      "average": "0",
+      "residual": "1"
+    }
+  ],
+  "counts": [
+    {
+      "first": "2026-03-31",
+      "today": "2026-03-31",
+      "totalCount": 12,
+      "count": 0
+    },
+    {
+      "first": "2026-04-01",
+      "today": "2026-03-31",
+      "totalCount": 12,
+      "count": 0
+    },
+    {
+      "first": "2026-03-31",
+      "today": "2026-05-31",
+      "totalCount": 12,
+      "count": 3
+    },
+    {
+      "first": "2026-01-31",
+      "today": "2026-02-28",
+      "totalCount": 12,
+      "count": 1
+    },
+    {
+      "first": "2026-01-01",
+      "today": "2026-05-31",
+      "totalCount": 2,
+      "count": 2
+    },
+    {
+      "first": "2026-01-01",
+      "today": "2026-05-31",
+      "totalCount": 0,
+      "count": 5
+    }
+  ],
+  "dates": {
+    "first": "2026-01-31",
+    "items": [
+      "2026-01-31",
+      "2026-03-03",
+      "2026-03-31",
+      "2026-05-01",
+      "2026-05-31",
+      "2026-07-01"
+    ]
+  }
+}
