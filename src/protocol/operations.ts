@@ -65,6 +65,7 @@ export const OPERATIONS = {
   'tag.archive': op('tag', 'archivetag', 'normal', true, 'native-object'),
   'tag.delete': op('tag', 'deletetag', 'normal', true, 'optional'), 'tagGroup.delete': op('tag', 'deletegroup', 'normal', true, 'optional'),
   'tag.reorder': op('tag', 'reordertag', 'normal', true, 'optional'), 'tagGroup.reorder': op('tag', 'reordergroup', 'normal', true, 'optional'),
+  'budget.list': op('budget', 'list', 'normal', true, 'object', true), 'budget.submit': op('budget', 'submitv2', 'normal'),
   'tag.syncall': op('tag', 'syncall', 'sync-string'),
   'tag.pull': op('tag', 'syncall', 'sync-string', true, 'object', true),
   'tag.list': op('tag', 'list', 'sync-string', true, 'native-list', true),

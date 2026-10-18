@@ -12,6 +12,8 @@ const handlers: Record<ActionName, UseCase> = {
   'categories.reorder': useCase('categories.reorder', (ctx, { requestId, ...input }) => ctx.categories.reorder(input, { requestId })),
   'categories.delete': useCase('categories.delete', (ctx, { requestId, ...input }) => ctx.categories.remove(input, { requestId })),
   'categories.draft.get': useCase('categories.draft.get', (ctx, input) => ctx.categories.getDraft(input.key)), 'categories.draft.save': useCase('categories.draft.save', (ctx, input) => ctx.categories.saveDraft(input.key, input.draft)),
+  'budget.list': useCase('budget.list', (ctx, input) => ctx.budget.list(input)), 'budget.submit': useCase('budget.submit', (ctx, { requestId, ...input }) => ctx.budget.submit(input, { requestId })),
+  'budget.draft.get': useCase('budget.draft.get', (ctx, input) => ctx.budget.getDraft(input.key)), 'budget.draft.save': useCase('budget.draft.save', (ctx, input) => ctx.budget.saveDraft(input.key, input.draft)),
   'tags.list': useCase('tags.list', (ctx, input) => ctx.tags.list(input)),
   'tags.submitTag': useCase('tags.submitTag', (ctx, { requestId, ...input }) => ctx.tags.mutate('tags.submitTag', input, { requestId })),
   'tags.submitGroup': useCase('tags.submitGroup', (ctx, { requestId, ...input }) => ctx.tags.mutate('tags.submitGroup', input, { requestId })),
@@ -112,8 +114,8 @@ export class AppRegistry {
         return { status: ['queued', 'sending', 'verifying'].includes(operation.state) ? 'running' : operation.state === 'uncertain' ? 'uncertain' : operation.state === 'partial' ? 'partial' : operation.state === 'failed' ? 'error' : 'ready', data, freshness: null, operationId: operation.id, ...(operation.error ? { error: operation.error } : {}) };
       }
       const freshness = data && typeof data === 'object' && 'freshness' in data ? (data as { freshness: AppReply<unknown>['freshness'] }).freshness : null;
-      if ((action.startsWith('assets.') || action.startsWith('debt.') || action.startsWith('books.') || action.startsWith('categories.') || action.startsWith('tags.')) && data && typeof data === 'object' && 'problem' in data && data.problem && typeof data.problem === 'object' && 'code' in data.problem && 'message' in data.problem && typeof data.problem.code === 'string' && typeof data.problem.message === 'string') return { status: 'partial', data, freshness, error: { code: data.problem.code, message: data.problem.message } };
-      const job = action.startsWith('ledger.') ? this.currentJob() : null;
+      if ((action.startsWith('assets.') || action.startsWith('debt.') || action.startsWith('books.') || action.startsWith('categories.') || action.startsWith('tags.') || action.startsWith('budget.')) && data && typeof data === 'object' && 'problem' in data && data.problem && typeof data.problem === 'object' && 'code' in data.problem && 'message' in data.problem && typeof data.problem.code === 'string' && typeof data.problem.message === 'string') return { status: 'partial', data, freshness, error: { code: data.problem.code, message: data.problem.message } };
+      const job = (action.startsWith('ledger.') || action === 'budget.list') ? this.currentJob() : null;
       return { status: job ? 'running' : freshness && !freshness.complete ? 'partial' : 'ready', data, freshness, ...(job ? { jobId: job.id } : {}) };
     } catch (error) {
       return { status: 'error', data: null, freshness: null, error: error instanceof DomainError ? { code: error.code, message: error.detail } : { code: 'ACTION_FAILED', message: '操作未能完成，请查看连接状态或稍后重试' } };

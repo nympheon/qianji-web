@@ -81,7 +81,13 @@ export class LedgerService {
     const reasons = [...new Set([...result.incompleteReasons, ...(!source.freshness.complete ? ['SOURCE_INCOMPLETE'] : [])])];
     return { ...result, incompleteReasons: reasons, freshness: { ...source.freshness, revision: plan.revision, complete: source.freshness.complete && reasons.length === 0, stale: source.freshness.stale || reasons.length > 0 } };
   }
-  private collectStatistics(scope: ActorScope, plan: QueryPlan, currency: Id, baseCurrency: Id, freshness: Freshness) {
+  async budgetSource(filter: BillFilter) {
+    filter = billFilterSchema.parse(filter); const scope = this.scope(), { repository, clock } = this.dependencies, source = await this.dependencies.freshness.ensureFresh(scope, ['ledger'], 'normal'), plan = createQueryPlan(repository, scope, { ...filter, order: 'asc', limit: 200, groupReimbursements: false }, clock);
+    if (!plan.range) throw new DomainError('BUDGET_RANGE_REQUIRED', '预算计算需要明确日期范围'); const currency = this.dependencies.baseCurrency?.() ?? 'CNY', collected = this.collectStatistics(scope, plan, currency, currency, source.freshness, 'budget');
+    const categories = plan.datasetId ? repository.sql.exec<{ id: string; raw: string }>("SELECT id,raw FROM resources WHERE uid=? AND domain='ledger' AND dataset_id=? AND kind='category'", scope.uid, plan.datasetId).toArray().map((row) => ({ id: row.id, parentId: optionalWireId(asBillObject(parseWire(row.raw)).parentid) })) : [];
+    return { bills: collected.details, range: plan.range, categories, incompleteReasons: collected.incompleteReasons, freshness: { ...source.freshness, revision: plan.revision, complete: source.freshness.complete && collected.incompleteReasons.length === 0 } };
+  }
+  private collectStatistics(scope: ActorScope, plan: QueryPlan, currency: Id, baseCurrency: Id, freshness: Freshness, mode: 'statistics' | 'budget' = 'statistics') {
     const bills: BillSummary[] = [], reasons = new Set<string>();
     let cursor = null, scanned = 0;
     do {
@@ -97,11 +103,12 @@ export class LedgerService {
       const record = this.dependencies.repository.readBill(scope, id), bill = record ? summarizeBill(record) : null;
       memo.set(id, bill); return bill;
     };
-    const items = bills.map((bill) => {
-      const detail = hydrateBill(bill, read, freshness), item = toStatItem(detail, 'statistics', currency, baseCurrency);
+    const details = bills.map((bill) => hydrateBill(bill, read, freshness));
+    const items = details.map((detail) => {
+      const item = toStatItem(detail, mode, currency, baseCurrency);
       item.incompleteReasons.forEach((reason) => reasons.add(reason)); return item;
     });
-    return { bills, items, incompleteReasons: [...reasons] };
+    return { bills, details, items, incompleteReasons: [...reasons] };
   }
   private scope() {
     const scope = this.dependencies.connection.scope();

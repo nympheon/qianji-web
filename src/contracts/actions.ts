@@ -15,8 +15,11 @@ import { createDebtSchema, appendPrincipalSchema, editPrincipalSchema, debtPayme
 import { bookListSchema, bookIdSchema, bookSubmitSchema, bookConfigureSchema, bookVisibleSchema, bookDeleteSchema, bookQuitSchema, bookReorderSchema, baseCurrencyInputSchema, bookDraftSchema, type BookListView, type BookTypesView, type BookMembersView, type BookDeleteCheckView, type BookDraftView, type AccountingConfigView } from '../features/books/contract';
 import { categoryListSchema, categoryCheckSchema, categorySubmitSchema, categoryLevelSchema, categoryMoveSchema, categoryReorderSchema, categoryDeleteSchema, categoryDraftSchema, type CategoryDraftView, type CategoryListView, type CategoryDeleteCheckView } from '../features/categories/contract';
 import { tagListSchema, tagWriteSchemas, tagDraftSchema, type TagDraftView, type TagListView } from '../features/tags/contract';
+import { budgetQuerySchema, budgetChangesSchema, budgetDraftSchema, type BudgetDraftView, type BudgetView } from '../features/budget/contract';
 const route = z.strictObject({ route: z.enum(['main', 'backup', 'overseas']) });
 export const actionSchemas = {
+  'budget.list': budgetQuerySchema, 'budget.submit': budgetChangesSchema.safeExtend({ requestId: id }),
+  'budget.draft.get': z.strictObject({ key: z.string().min(1).max(300) }), 'budget.draft.save': z.strictObject({ key: z.string().min(1).max(300), draft: budgetDraftSchema }),
   'tags.list': tagListSchema,
   'tags.submitTag': z.discriminatedUnion('mode', [tagWriteSchemas['tags.submitTag'].options[0].extend({ requestId: id }), tagWriteSchemas['tags.submitTag'].options[1].extend({ requestId: id })]),
   'tags.submitGroup': z.discriminatedUnion('mode', [tagWriteSchemas['tags.submitGroup'].options[0].extend({ requestId: id }), tagWriteSchemas['tags.submitGroup'].options[1].extend({ requestId: id })]),
@@ -60,6 +63,7 @@ export const actionSchemas = {
 export type ActionName = keyof typeof actionSchemas;
 export type ActionInput<A extends ActionName> = z.infer<typeof actionSchemas[A]>;
 export interface ActionOutputs {
+  'budget.list': BudgetView; 'budget.submit': OperationView; 'budget.draft.get': BudgetDraftView | null; 'budget.draft.save': BudgetDraftView;
   'tags.list': TagListView; 'tags.submitTag': OperationView; 'tags.submitGroup': OperationView; 'tags.reorderTags': OperationView; 'tags.reorderGroups': OperationView; 'tags.setArchived': OperationView; 'tags.deleteTag': OperationView; 'tags.deleteGroup': OperationView; 'tags.draft.get': TagDraftView | null; 'tags.draft.save': TagDraftView;
   'categories.submit': OperationView; 'categories.changeLevel': OperationView; 'categories.move': OperationView; 'categories.reorder': OperationView; 'categories.delete': OperationView; 'categories.draft.get': CategoryDraftView | null; 'categories.draft.save': CategoryDraftView;
   'categories.list': CategoryListView; 'categories.checkDelete': CategoryDeleteCheckView;
@@ -94,6 +98,9 @@ export const actionDefinitions: Record<ActionName, ActionDefinition> = {
   'categories.delete': { ...write, destructive: true, title: '删除分类并处理本人账单', description: '先检查子项及官方本人count/其他成员other。明确保留账单、删除本人账单或迁移至指定分类；跨账本迁移必须显式newBookId。仅调用deletev2，不额外上传逐笔修改；分类整数回执与本人账单同步分别核验。复用requestId。' },
   'categories.draft.get': { ...read, evidence: 'local', title: '读取分类草稿', description: '读取本账号结构化分类草稿及原操作，不请求钱迹。' },
   'categories.draft.save': { ...read, readOnly: false, evidence: 'local', title: '保存分类草稿', description: '保存本地分类管理输入，未知原操作未核清时禁止更换请求键重复提交。' },
+  'budget.list': { ...read, title: '查询预算与执行进度', description: '按账本、月/年日期、原生range及其时区分别缓存官方配置和daystats；执行计算复用APK预算口径，父子分类可重叠，总额独立，不叠加父子进度。标明副本完整性及历史退款依赖。闲置不请求。' },
+  'budget.submit': { ...write, title: '设置总预算或分类预算', description: '按配置版本提交原生submitv2/changelist，金额0沿用原生取消预算语义；保留未知字段，应用官方返回预算集合而非复制输入。只支持已核对月度/年度及自定义月界，不推断独立季度预算或结转任务。复用requestId，未知结果只读核查。' },
+  'budget.draft.get': { ...read, evidence: 'local', title: '读取预算草稿', description: '读取结构化本地预算输入与原操作，不请求钱迹。' }, 'budget.draft.save': { ...read, evidence: 'local', readOnly: false, title: '保存预算草稿', description: '保存原日期、账本与请求键，未知操作未核清时禁止覆盖重建。' },
   'tags.list': { ...read, title: '查询标签和分组', description: '按原生tag/list的status=-1、lasttime=0读取完整目录，保留归档历史、字符串ID和官方分组；默认不返回归档标签，可显式includeArchived。空目录同样缓存60秒，闲置不请求。' },
   'tags.submitTag': { ...write, title: '新增或编辑标签', description: 'v为name/groupid/color的JSON，颜色为原生六位或八位无井号十六进制。按版本编辑，官方返回Tag为准；新建响应丢失不按同名认领。复用requestId。' },
   'tags.submitGroup': { ...write, title: '新增或编辑标签组', description: 'v为纯名称文本，原生组名最长10字，组ID为不透明字符串；未知新建仅核查原操作。复用requestId。' },

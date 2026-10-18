@@ -366,11 +366,13 @@ cache.ts导出`CacheKey { domain:SyncDomain; queryKey:string }`、`CacheReadStam
 **Files:** Create `src/features/budget/{service,use-cases}.ts`、`src/web/pages/BudgetPage.tsx`、`tests/workers/budget.test.ts`；Modify budget.contract/registry。
 **Interfaces:** Consumes任务10、18、19；Produces `BudgetService.list(input:BudgetQuery):Promise<BudgetView>`、`submit(input:BudgetChangesInput,meta):Promise<OperationView>`；配置请求包含bookId、DateFilter、原生range及changelist。
 
-- [ ] 写失败断言：不同range/日期不共用缓存；submit使用响应预算集合，不把输入当最终结果；父子used各100但总额100；排除预算与排除收支分别生效。
-- [ ] Run `pnpm test -- tests/workers/budget.test.ts`；预期FAIL于预算配置用例缺失。
-- [ ] 实现list/submitv2、总/分类月度与年度预算、日均可用及执行进度；本地执行计算复用任务10，响应daystats按真实模型处理。不自加预算结转/复制任务，也不凭BookConfig的季度range宣称独立季度预算写能力。
-- [ ] 重跑自定义月界、零/取消预算的已核对载荷、退款源历史期失效、submit返回值与查询一致，PASS；真实与官方页面对照。
-- [ ] 提交：`feat: manage budgets with native book periods`。
+- [x] 写失败断言：不同range/日期不共用缓存；submit使用响应预算集合，不把输入当最终结果；父子used各100但总额100；排除预算与排除收支分别生效。
+- [x] Run `pnpm test -- tests/workers/budget.test.ts`；预期FAIL于预算配置用例缺失。
+- [x] 实现list/submitv2、总/分类月度与年度预算、日均可用及执行进度；本地执行计算复用任务10，响应daystats按真实模型处理。不自加预算结转/复制任务，也不凭BookConfig的季度range宣称独立季度预算写能力。
+- [x] 重跑自定义月界、零/取消预算的已核对载荷、退款源历史期失效、submit返回值与查询一致，PASS；真实与官方页面对照。
+- [x] 提交：`feat: manage budgets with native book periods`。
+
+实现阶段已验证；真实写入及官方页面数值对照仍由 Task27 完成。
 
 ### Task 22：官方图片上传、关联与展示
 

@@ -20,6 +20,12 @@ export async function seedActions() {
 }
 export const action = (name: string, input: unknown = {}) => exports.default.fetch('https://test/api/actions', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: name, input }) });
 describe('shared HTTP actions', () => {
+  it('exposes budget progress and typed drafts while retaining the live write gate', async () => {
+    await seedActions(); const input = { bookId: '10', date: { kind: 'month', year: 2026, month: 10 }, range: '', zone: 'Asia/Shanghai' };
+    expect(await (await action('budget.list', input)).json()).toMatchObject({ status: 'partial', data: { configurations: [], query: input, incompleteReasons: expect.arrayContaining(['BUDGET_SOURCE_INCOMPLETE']) } });
+    expect(await (await action('budget.submit', { ...input, expectedVersion: 'a'.repeat(64), changes: [{ categoryId: null, limit: '1000' }], requestId: 'budget-new' })).json()).toMatchObject({ status: 'unavailable', error: { code: 'WRITE_LIVE_UNVERIFIED' } });
+    const draft = { kind: 'budget', requestId: 'budget-draft', input: { ...input, expectedVersion: 'a'.repeat(64), changes: [{ categoryId: null, limit: '' }] } }; expect(await (await action('budget.draft.save', { key: '10:month:2026:10', draft })).json()).toMatchObject({ status: 'ready', data: { draft, operationId: null } });
+  });
   it('shares typed tag actions and history metadata without enabling unverified writes', async () => {
     await seedActions(); expect(await (await action('tags.list', { includeArchived: true })).json()).toMatchObject({ status: 'partial', data: { items: [], groups: [], freshness: { complete: false } } });
     expect(await (await action('tags.setArchived', { id: 'tag-opaque', archived: true, requestId: 'archive' })).json()).toMatchObject({ status: 'unavailable', error: { code: 'WRITE_LIVE_UNVERIFIED' } });
