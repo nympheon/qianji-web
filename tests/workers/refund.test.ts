@@ -28,7 +28,7 @@ async function setup() {
     }
   });
   const updated = asBillObject(source()); updated.extra = { unknown: true, rfds: { [childId]: 30 } };
-  upstream.respond(async () => new Response(stringifyWire({ ec: 200, data: [updated, child()] })));
+  upstream.respond(async () => new Response(stringifyWire({ ec: 200, data: { list: [updated, child()] } })));
   const handler = createRefundMutationHandler();
   const run = <T>(fn: (coordinator: Coordinator) => Promise<T>) => app.repository((repository) => fn(new Coordinator({ repository, client: upstream.client, clock }, new Map([['ledger.refund', handler], ['ledger.edit', createLedgerMutationHandler()], ['ledger.delete', createLedgerDeletionHandler()]]))));
   const input = { billId: sourceId, expectedVersion: billVersion(original.raw), money: '30', timeSec: 1770000000, assetId: null };
@@ -62,7 +62,7 @@ describe('dedicated native refund', () => {
     delete asBillObject(asBillObject(raw.extra).rfds)['1024'];
     await s.app.repository((repo) => repo.applyPage(s.app.scope, 'ledger', { upserts: [projectBill(raw)], deletes: [], resources: [], pageState: null }));
     const over = asBillObject(child('200')); s.updated.extra = { rfds: { [childId]: 200 } };
-    s.upstream.respond(async () => new Response(stringifyWire({ ec: 200, data: [s.updated, over] })));
+    s.upstream.respond(async () => new Response(stringifyWire({ ec: 200, data: { list: [s.updated, over] } })));
     expect((await s.run((coordinator) => coordinator.submit(s.command({ expectedVersion: billVersion(raw), money: '200' })))).state).toBe('succeeded');
     raw.userid = 'other'; await s.app.repository((repo) => repo.applyPage(s.app.scope, 'ledger', { upserts: [projectBill(raw)], deletes: [], resources: [], pageState: null }));
     const other = await s.run((coordinator) => coordinator.submit(s.command({ expectedVersion: billVersion(raw) }))); expect(other.error?.code).toBe('REFUND_OTHER_USER');
@@ -73,7 +73,7 @@ describe('dedicated native refund', () => {
     await s.app.repository((repo) => repo.applyPage(s.app.scope, 'ledger', { upserts: [projectBill(s.updated), projectBill(previous)], deletes: [], resources: [], pageState: null }));
     const next = asBillObject(child('30', '20')); next.extra = { refundsid: parseWire(sourceId), curr: { ss: 'CNY', sv: 30, ts: 'CNY', tv: 30, bs: 'CNY', bv: 30 } };
     const updated = { ...s.updated, extra: { rfds: { [childId]: 30 } } };
-    s.upstream.respond(async () => new Response(stringifyWire({ ec: 200, data: [updated, next] })));
+    s.upstream.respond(async () => new Response(stringifyWire({ ec: 200, data: { list: [updated, next] } })));
     const result = await s.run((coordinator) => coordinator.submit(s.command({ expectedVersion: billVersion(s.updated), refundBillId: childId, refundExpectedVersion: billVersion(previous), assetId: '20', currency: { srcSymbol: 'CNY', srcValue: '30', targetSymbol: 'CNY', targetValue: '30', baseSymbol: 'CNY', baseValue: '30' } })));
     expect(result.state).toBe('succeeded');
     const wire = asBillObject(parseWire(new URLSearchParams(s.upstream.calls[0]!.body).get('v')!)); expect(numericText(wire.billid, '')).toBe(childId); expect(typeof wire.currency).toBe('string');
@@ -81,7 +81,7 @@ describe('dedicated native refund', () => {
     expect(result.items[0]?.assetEffects?.map((effect) => [effect.assetId, effect.delta])).toEqual([['10', '-20'], ['20', '30']]);
   });
   it('keeps malformed groups and lost replies unknown without replacing just the parent or creating ordinary income', async () => {
-    const s = await setup(); s.upstream.respond(async () => new Response(stringifyWire({ ec: 200, data: [s.updated] })));
+    const s = await setup(); s.upstream.respond(async () => new Response(stringifyWire({ ec: 200, data: { list: [s.updated] } })));
     const cmd = s.command(), result = await s.run((coordinator) => coordinator.submit(cmd)); expect(result.state).toBe('uncertain');
     await s.app.repository((repo) => { expect(repo.readBill(s.app.scope, childId)).toBeNull(); expect(repo.readBill(s.app.scope, sourceId)?.relations).toEqual([]); });
     await s.app.restart(); await s.run(async (coordinator) => { await coordinator.recover(); await coordinator.submit(cmd); }); expect(s.upstream.calls).toHaveLength(1);
@@ -206,7 +206,7 @@ describe('dedicated native refund', () => {
       repo.applyPage(s.app.scope, 'ledger', { upserts: [projectBill(rawSource), projectBill(old)], deletes: [], resources: [], pageState: null });
     });
     const next = asBillObject(child('36', '20')); next.extra = { refundsid: parseWire(sourceId), curr: { ss: 'USD', sv: 5, ts: 'CNY', tv: 36, bs: 'CNY', bv: 36 } };
-    s.upstream.respond(async () => new Response(stringifyWire({ ec: 200, data: [rawSource, next] })));
+    s.upstream.respond(async () => new Response(stringifyWire({ ec: 200, data: { list: [rawSource, next] } })));
     const edited = await s.run((coordinator) => coordinator.submit(s.command({ expectedVersion: billVersion(rawSource), refundBillId: childId, refundExpectedVersion: billVersion(old), money: '5', assetId: '20', currency: { srcSymbol: 'USD', srcValue: '5', targetSymbol: 'CNY', targetValue: '36', baseSymbol: 'CNY', baseValue: '36' } })));
     expect(edited.state).toBe('succeeded'); expect(edited.items[0]?.assetEffects?.map((effect) => [effect.assetId, effect.delta, effect.currency])).toEqual([['10', '-5', 'USD'], ['20', '36', 'CNY']]);
     s.upstream.respond(async () => new Response(`{"ec":200,"data":{"sync_result":{"bill":{"userid":"user-A","del_ids":[${sourceId},${childId}],"has_failed":false}}}}`));

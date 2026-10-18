@@ -86,7 +86,7 @@ function parseGroup(payload: Payload, reply: ProtocolReply) {
   if (asset) moneyText(asset.money);
   return { records, childIds, asset };
 }
-export function createReimbursementMutationHandler(dependencies: { baseCurrency?: () => string; reconcileSource?: (ctx: OperationContext) => Promise<boolean> } = {}): MutationHandler {
+export function createReimbursementMutationHandler(dependencies: { baseCurrency?: () => string; reconcileSource?: (ctx: OperationContext, assetIds: string[]) => Promise<boolean> } = {}): MutationHandler {
   return {
     prepare: async (command, ctx) => {
       const cancel = command.action === 'ledger.cancelReimbursement', input = cancel ? cancelReimbursementInputSchema.parse(restoreBillInput(command.input)) : reimburseInputSchema.parse(restoreBillInput(command.input));
@@ -146,7 +146,9 @@ export function createReimbursementMutationHandler(dependencies: { baseCurrency?
       return { items: [{ id: p.logicalId, state: 'succeeded', affectedIds }], affectedIds, idMap: Object.fromEntries(p.sources.map((source, index) => [`${p.logicalId}:${numericText(source.id, '')}`, group.childIds[index]!])) };
     },
     reconcile: async (operation, ctx) => {
-      if (!operation.prepared || !await dependencies.reconcileSource?.(ctx)) return { items: [] };
+      if (!operation.prepared) return { items: [] };
+      const assetIds = operation.prepared.affectedIds.filter((id) => id.startsWith('asset:')).map((id) => id.slice(6));
+      if (!await dependencies.reconcileSource?.(ctx, assetIds)) return { items: [] };
       const p = decode(operation.prepared), repository = ctx.repository, ledger = repository.dataset(p.scope, 'ledger');
       if (!ledger?.complete || !ledger.validatedAt || Date.parse(ledger.validatedAt) < Number(p.preparedAt)) return { items: [] };
       const sources = p.sources.map((source) => repository.readBill(p.scope, numericText(source.id, '')));
@@ -154,7 +156,11 @@ export function createReimbursementMutationHandler(dependencies: { baseCurrency?
       if (p.cancel) {
         const children = p.sources.flatMap((source) => bxLinks(source).map((link) => link.targetId));
         if (sources.some((source) => bxLinks(asBillObject(source!.raw)).length) || children.some((id) => repository.readBill(p.scope, id))) return { items: [] };
-        if (operation.prepared.affectedDomains?.includes('assets')) { const assets = repository.dataset(p.scope, 'assets'); if (!assets?.complete || !assets.validatedAt || Date.parse(assets.validatedAt) < Number(p.preparedAt) || repository.sql.exec("SELECT 1 FROM source_queries WHERE uid=? AND domain='assets' AND invalidated=1 LIMIT 1", p.scope.uid).toArray().length) return { items: [] }; }
+        if (operation.prepared.affectedDomains?.includes('assets')) {
+          const checked = assetIds.every((id) => { const query = repository.sql.exec<{ complete: number; invalidated: number; validated_ms: number | null }>("SELECT complete,invalidated,validated_ms FROM source_queries WHERE uid=? AND domain='assets' AND query_key=?", p.scope.uid, `asset:info:${id}`).toArray()[0]; return query && query.complete === 1 && query.invalidated === 0 && query.validated_ms !== null && query.validated_ms >= Number(p.preparedAt); });
+          const assets = repository.dataset(p.scope, 'assets');
+          if (!checked && (!assets?.complete || !assets.validatedAt || Date.parse(assets.validatedAt) < Number(p.preparedAt) || repository.sql.exec("SELECT 1 FROM source_queries WHERE uid=? AND domain='assets' AND invalidated=1 LIMIT 1", p.scope.uid).toArray().length)) return { items: [] };
+        }
         return { items: [{ id: p.logicalId, state: 'succeeded' }] };
       }
       const children = sources.flatMap((source, index) => { const prior = new Set(bxLinks(p.sources[index]!).map((link) => link.targetId)); return bxLinks(asBillObject(source!.raw)).filter((link) => !prior.has(link.targetId)).map((link) => repository.readBill(p.scope, link.targetId)); });

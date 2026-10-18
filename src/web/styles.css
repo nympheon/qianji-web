@@ -301,5 +301,16 @@ dt { color: var(--muted-foreground); } dd { overflow-wrap: anywhere; }
 .operation-items { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; font-size: 12px; }
 .operation-items li { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--border); padding-top: 12px; overflow-wrap: anywhere; }
 .reimbursement-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; align-items: start; }
+.asset-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; }
+.asset-card { display: flex; align-items: center; gap: 14px; padding: 24px; border-radius: 12px; background: white; text-align: left; border: 1px solid transparent; }
+.asset-card:hover { border-color: var(--border); }
+.asset-card strong { display: block; font-size: 15px; }
+.asset-card small { display: block; margin-top: 6px; color: var(--muted-foreground); font-size: 12px; }
+.asset-symbol { display: grid; width: 42px; height: 42px; flex-shrink: 0; place-items: center; border-radius: 10px; background: #fff3d9; color: #8b611b; }
+.asset-value { font-weight: 600; font-size: 18px; font-variant-numeric: tabular-nums; }
+.asset-totals { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 24px; }
+.asset-totals span { display: block; font-size: 12px; color: var(--muted-foreground); }
+.asset-totals strong { display: block; margin-top: 8px; font-size: 23px; font-weight: 600; font-variant-numeric: tabular-nums; }
+@media(max-width: 700px) { .asset-grid { grid-template-columns: minmax(0,1fr); } .asset-card { padding: 18px 14px; gap: 10px; } .asset-value { font-size: 16px; } .asset-totals { grid-template-columns: repeat(2,minmax(0,1fr)); } }
 @media (max-width: 900px) { .reimbursement-layout { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 400px) { .editor-grid { grid-template-columns: minmax(0, 1fr); gap: 12px; } }

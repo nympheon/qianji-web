@@ -45,4 +45,4 @@
 
 `bill/syncall`使用同步字符串构造器，v为`{"bills":{"changelist":[完整Bill],"dellist":[数字长ID]}}`的字符串。整笔上传去除category/fromact/targetact/paytype/bookname，其余未知extra保留。解析`data.sync_result.bill`的userid/new_ids/update_ids/del_ids/conf_ids/has_failed，逐项确定结果；只有明确新建ID冲突才换ID并保存映射，单轮至多5批、每批200。
 
-`bill/refund2`使用普通构造器，uid、did源ID、v退款对象JSON字符串；v.currency又是包含ss/sv/ts/tv/bs/bv/srcFee的JSON字符串，编辑带数字billid。非空备注、图片、标签才发送，既有值清空语义未验证时明确拒绝。data为完整Bill数组，先源后真实20子；整组验证后原子应用。详细静态证据见[账单审计](../../research/2026-10-18-apk-bills-statistics-audit.md)；合成载荷/回执断言见[ledger-write.test.ts](../../../tests/workers/ledger-write.test.ts)、[refund.test.ts](../../../tests/workers/refund.test.ts)。
+`bill/refund2`使用普通构造器，uid、did源ID、v退款对象JSON字符串；v.currency又是包含ss/sv/ts/tv/bs/bv/srcFee的JSON字符串，编辑带数字billid。非空备注、图片、标签才发送，既有值清空语义未验证时明确拒绝。**原始HTTP的data.list为完整Bill数组**，先源后真实20子；共享协议层按parser/b规范化为ProtocolReply.data数组，整组验证后原子应用。详细静态证据见[账单审计](../../research/2026-10-18-apk-bills-statistics-audit.md)；合成载荷/回执断言见[ledger-write.test.ts](../../../tests/workers/ledger-write.test.ts)、[refund.test.ts](../../../tests/workers/refund.test.ts)。

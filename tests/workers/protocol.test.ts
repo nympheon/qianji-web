@@ -49,6 +49,15 @@ describe('APK native signing contract', () => {
 });
 
 describe('fixed upstream transport', () => {
+  it.each(['asset.types', 'assetGroup.list', 'asset.trend', 'asset.delete', 'asset.loans', 'bill.refund'] as const)('uses APK parser/b data.list for %s and preserves long IDs', async (op) => {
+    const client = new QianjiClient({ ...context, fetch: async () => new Response('{"ec":200,"data":{"list":[{"id":1792000000123100001}],"hasmore":0}}') });
+    expect(stringifyWire((await client.request(op, {}, scope)).data)).toBe('[{"id":1792000000123100001}]');
+    const unwrapped = new QianjiClient({ ...context, fetch: async () => new Response('{"ec":200,"data":[]}') }); await expect(unwrapped.request(op, {}, scope)).rejects.toMatchObject({ code: 'QIANJI_RESPONSE_INVALID' });
+  });
+  it('uses APK parser/c single-v unwrapping only on native object operations', async () => {
+    const client = new QianjiClient({ ...context, fetch: async () => new Response('{"ec":200,"data":{"v":{"id":1792000000123100001}}}') });
+    expect(stringifyWire((await client.request('asset.info', {}, scope)).data)).toBe('{"id":1792000000123100001}'); expect(stringifyWire((await client.request('asset.submit', {}, scope)).data)).toBe('{"v":{"id":1792000000123100001}}');
+  });
   it('constructs a native workerd Request and rejects a redirect without forwarding identity to its target', async () => {
     const requests: Request[] = [];
     const success = new QianjiClient({ ...context, fetch: async (url, init) => { requests.push(new Request(url, init)); return new Response('{"ec":200,"data":{}}'); } });

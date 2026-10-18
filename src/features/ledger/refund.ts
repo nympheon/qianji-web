@@ -69,7 +69,7 @@ function refundEffects(previous: BillObject | null, next: BillObject, bases: Ass
 }
 function parseGroup(prepared: PreparedMutation, reply: ProtocolReply) {
   const payload = decode(prepared);
-  if (!Array.isArray(reply.data) || reply.data.length < 2 || reply.data.length > 200) return fail('REFUND_RECEIPT_INVALID', '退款回执缺少完整源与子记录');
+  if (!Array.isArray(reply.data) || reply.hasMore || reply.data.length < 2 || reply.data.length > 200) return fail('REFUND_RECEIPT_INVALID', '退款回执缺少完整源与子记录');
   const records = reply.data.map(projectBill), source = records[0]!, child = records[1]!, sourceId = numericText(payload.source.id, '');
   const sourceLinks = billLinks(asBillObject(source.raw)).filter((link) => link.kind === 'refund');
   if (source.id !== sourceId || child.type !== 20 || child.bookId !== source.bookId || !sourceLinks.some((link) => link.targetId === child.id)

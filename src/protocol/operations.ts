@@ -3,7 +3,7 @@ interface OperationDefinition {
   act: string;
   constructor: 'normal' | 'sync-string';
   requiresSession: boolean;
-  response: 'object' | 'array' | 'optional';
+  response: 'object' | 'array' | 'native-list' | 'native-object' | 'optional';
   timeoutMs: number;
   readOnly: boolean;
 }
@@ -20,9 +20,26 @@ export const OPERATIONS = {
   'client.init': op('client', 'init', 'normal', true, 'object', true),
   'syncv2.pull': op('syncv2', 'pull', 'sync-string', true, 'object', true),
   'bill.syncall': op('bill', 'syncall', 'sync-string'),
-  'bill.refund': op('bill', 'refund2', 'normal', true, 'array'),
+  'bill.refund': op('bill', 'refund2', 'normal', true, 'native-list'),
   'bill.reimburse': op('baoxiao', 'baoxiao', 'normal'),
   'bill.cancelReimbursement': op('baoxiao', 'cancelbaoxiao', 'normal', true, 'optional'),
+  'asset.list': op('asset', 'list', 'normal', true, 'object', true),
+  'asset.info': op('asset', 'info', 'normal', true, 'native-object', true),
+  'asset.submit': op('asset', 'submit', 'normal'),
+  'asset.finish': op('asset', 'finish', 'normal', true, 'optional'),
+  'asset.visible': op('asset', 'visible', 'normal', true, 'optional'),
+  'asset.reorder': op('asset', 'reorder', 'normal', true, 'optional'),
+  'asset.deleteCheck': op('asset', 'deletecheck', 'normal', true, 'native-object', true),
+  'asset.delete': op('asset', 'delete', 'normal', true, 'native-list'),
+  'asset.types': op('asset', 'typelist', 'normal', true, 'native-list', true),
+  'asset.loans': op('asset', 'listloan', 'normal', true, 'native-list', true),
+  'asset.trend': op('assetline', 'list', 'normal', true, 'native-list', true),
+  'assetGroup.list': op('asset_group', 'list', 'normal', true, 'native-list', true),
+  'assetGroup.submit': op('asset_group', 'submit', 'normal', true, 'native-object'),
+  'assetGroup.delete': op('asset_group', 'delete', 'normal', true, 'optional'),
+  'assetGroup.reorder': op('asset_group', 'reorder', 'normal', true, 'optional'),
+  'assetGroup.add': op('asset_group', 'addasset', 'normal', true, 'optional'),
+  'assetGroup.remove': op('asset_group', 'removeasset', 'normal', true, 'optional'),
   'tag.syncall': op('tag', 'syncall', 'sync-string'),
   'tag.pull': op('tag', 'syncall', 'sync-string', true, 'object', true),
   'tag.list': op('tag', 'list', 'sync-string', true, 'array', true),

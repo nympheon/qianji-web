@@ -20,6 +20,14 @@ export async function seedActions() {
 }
 export const action = (name: string, input: unknown = {}) => exports.default.fetch('https://test/api/actions', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: name, input }) });
 describe('shared HTTP actions', () => {
+  it('keeps asset writes unavailable and persists a typed empty asset draft', async () => {
+    await seedActions();
+    const input = { mode: 'create', fields: { type: 1, subtype: 11, name: '测试现金', money: '0', currency: 'CNY', inCount: true }, requestId: 'new-asset' };
+    expect(await (await action('assets.submit', input)).json()).toMatchObject({ status: 'unavailable', error: { code: 'WRITE_LIVE_UNVERIFIED' } });
+    const draft = { kind: 'asset', action: 'assets.submit', requestId: 'asset-draft', input: { mode: 'create', fields: { type: 1, subtype: 11, name: '', money: '', currency: 'CNY', inCount: true } } };
+    expect(await (await action('assets.draft.save', { key: 'new', draft })).json()).toMatchObject({ status: 'ready', data: { draft, operationId: null } });
+    expect(await (await action('assets.draft.get', { key: 'new' })).json()).toMatchObject({ status: 'ready', data: { draft } });
+  });
   it('provides real reimbursement pack members and gates all unverified reimbursement mutations', async () => {
     await seedActions();
     const a = '1792000000123100021', b = '1792000000123100022', pack = '1792000000123100099', source = '1792000000123100001';

@@ -10,7 +10,7 @@ import type { ClientProfile, RouteId } from './profile';
 import { signRequest } from './signer';
 import type { ProtocolSession, WireObject } from './signer';
 
-export interface ProtocolReply { ec: string; data: WireJson; httpStatus: number }
+export interface ProtocolReply { ec: string; data: WireJson; httpStatus: number; hasMore?: boolean }
 export interface ClientOptions {
   clock: Clock;
   deviceId(): string;
@@ -84,14 +84,26 @@ export class QianjiClient {
         throw new ProtocolError('QIANJI_BUSINESS_ERROR', '钱迹业务请求未成功，需按回执核查', 'business', 'unknown',
           { upstreamCode: ec, ...(subcode !== undefined ? { upstreamSubcode: subcode } : {}) });
       }
-      const data = envelope.data ?? null;
+      let data = envelope.data ?? null;
+      let hasMore: boolean | undefined;
+      if (operation.response === 'native-list') {
+        if (!object(data) || !Array.isArray(data.list)) throw new ProtocolError('QIANJI_RESPONSE_INVALID', '钱迹响应缺少原生列表包装', 'protocol', 'unknown', { upstreamCode: ec });
+        const flag = data.hasmore;
+        if (flag !== undefined) hasMore = flag === true || flag === 'true' || flag === '1' || isLosslessNumber(flag) && flag.value === '1';
+        data = data.list;
+      }
+      if (operation.response === 'native-object') {
+        if (!object(data)) throw new ProtocolError('QIANJI_RESPONSE_INVALID', '钱迹响应缺少原生对象包装', 'protocol', 'unknown', { upstreamCode: ec });
+        if (Object.keys(data).length === 1 && Object.hasOwn(data, 'v')) data = data.v ?? null;
+        if (data !== null && !object(data)) throw new ProtocolError('QIANJI_RESPONSE_INVALID', '钱迹原生对象结构发生变化', 'protocol', 'unknown', { upstreamCode: ec });
+      }
       if (operation.response === 'object' && !object(data)) {
         throw new ProtocolError('QIANJI_RESPONSE_INVALID', '钱迹响应缺少预期数据', 'protocol', 'unknown', { upstreamCode: ec });
       }
       if (operation.response === 'array' && !Array.isArray(data)) {
         throw new ProtocolError('QIANJI_RESPONSE_INVALID', '钱迹响应缺少预期列表', 'protocol', 'unknown', { upstreamCode: ec });
       }
-      return { ec, data, httpStatus: response.status };
+      return { ec, data, httpStatus: response.status, ...(hasMore === undefined ? {} : { hasMore }) };
     } catch (error) {
       if (error instanceof ProtocolError) {
         if (error.code === 'QIANJI_SESSION_EXPIRED' && scope !== null) this.options.onSessionExpired?.(scope, session?.credentialGeneration);

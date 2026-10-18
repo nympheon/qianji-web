@@ -302,11 +302,12 @@ cache.ts导出`CacheKey { domain:SyncDomain; queryKey:string }`、`CacheReadStam
 **Files:** Create `src/features/assets/{contract,service,use-cases,summary,balance,groups,finish}.ts`、`src/web/pages/AssetsPage.tsx`、`tests/workers/assets.test.ts`；Modify resources/registry/protocol.operations。service只编排，差额/分组/结清各自聚焦文件。
 **Interfaces:** Consumes tasks05–12；Produces `AssetService.list/summary/submit/reorder/setVisible`、`adjustBalance(input:BalanceAdjustmentInput,meta)`、`setFinished(input:DebtFinishInput,meta)`、分组与delete/check方法；各方法在contract导出对应Input/View，mutations返回OperationView。
 
-- [ ] 写失败断言：差额可选，不记差额不造账单；账号内未同步普通账单阻止余额调整而非只看当前资产；type6包装项不重复汇总，借贷方向/incount/信用卡分期选项生效；结清目标绕过60秒旧缓存。
-- [ ] Run `pnpm test -- tests/workers/assets.test.ts`；预期FAIL于资产域缺失。
-- [ ] 按APK各资产类型建明确表单，资产submit可选diffparams；实现官方asset_group动作、删除检查和关联提示、历史资产趋势的已核对来源。finish仅在最新状态未达目标时一次调用，回执不足则核查；结清不清零余额或替代还款。
-- [ ] 重跑未知写恢复不反向finish、普通资产/借贷删除前提不同、缺真实历史不伪造趋势、差额回执与关联账单核对，PASS；真实按命名测试资产逐项验收。
-- [ ] 提交：`feat: manage assets and native balance adjustments`。
+- [x] 写失败断言：差额可选，不记差额不造账单；账号内未同步普通账单阻止余额调整而非只看当前资产；type6包装项不重复汇总，借贷方向/incount/信用卡分期选项生效；结清目标绕过60秒旧缓存。
+- [x] Run `pnpm test -- tests/workers/assets.test.ts`；预期FAIL于资产域缺失。
+- [x] 按APK各资产类型建明确表单，资产submit可选diffparams；实现官方asset_group动作、删除检查和关联提示、历史资产趋势的已核对来源。finish仅在最新状态未达目标时一次调用，回执不足则核查；结清不清零余额或替代还款。
+- [x] 重跑未知写恢复不反向finish、普通资产/借贷删除前提不同、缺真实历史不伪造趋势、差额回执与关联账单核对，PASS；真实只读核对正常列表、类型、空分组及详情。
+- [ ] 第27步在限定验收环境创建命名测试资产，逐项验证资产/分组/差额/结清/删除写入；当前写能力继续门控。
+- [x] 提交：`feat: manage assets and native balance adjustments`。
 
 ### Task 17：借贷创建、追加、本金偿还与利息
 

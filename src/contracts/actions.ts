@@ -9,6 +9,7 @@ import { ledgerDraftSchema, createBillsSchema, deleteBillsSchema, editBillsSchem
 import { transferActionSchema, transferInputSchema, type TransferOptions, type TransferPreview } from '../features/ledger/transfer-contract';
 import { refundInputSchema } from '../features/ledger/refund-contract';
 import { cancelReimbursementInputSchema, reimburseInputSchema, reimbursableInputSchema, type ReimbursementMembers } from '../features/ledger/reimbursement-contract';
+import { assetDraftSchema, assetDeleteSchema, assetGroupAddSchema, assetGroupDeleteSchema, assetGroupRemoveSchema, assetGroupReorderSchema, assetGroupSubmitSchema, assetIdSchema, assetListSchema, assetReorderSchema, assetSubmitSchema, assetTrendSchema, assetVisibleSchema, balanceAdjustmentSchema, debtFinishSchema, type AssetDetailView, type AssetDeleteCheckView, type AssetGroupsView, type AssetListView, type AssetTrendView, type AssetTypesView, type AssetDraftView, type AssetSummaryView } from '../features/assets/contract';
 const empty = z.strictObject({}), id = z.string().min(1).max(200);
 const route = z.strictObject({ route: z.enum(['main', 'backup', 'overseas']) });
 export const actionSchemas = {
@@ -25,6 +26,15 @@ export const actionSchemas = {
   'ledger.reimburse': reimburseInputSchema.extend({ requestId: id }), 'ledger.cancelReimbursement': cancelReimbursementInputSchema.extend({ requestId: id }),
   'ledger.setReimbursable': reimbursableInputSchema.extend({ requestId: id }), 'ledger.reimbursement.members': z.strictObject({ packId: z.string().regex(/^[1-9]\d{0,24}$/) }),
   'ledger.transfer.options': empty, 'ledger.transfer.preview': z.strictObject({ kind: z.enum(['transfer', 'repay-card']), input: transferInputSchema }),
+  'assets.list': assetListSchema, 'assets.detail': z.strictObject({ id: assetIdSchema }), 'assets.types': empty, 'assets.groups.list': empty, 'assets.trend': assetTrendSchema,
+  'assets.summary': assetListSchema.pick({ status: true, includeInstallments: true }),
+  'assets.deleteCheck': z.strictObject({ id: assetIdSchema }),
+  'assets.submit': z.discriminatedUnion('mode', [assetSubmitSchema.options[0].extend({ requestId: id }), assetSubmitSchema.options[1].extend({ requestId: id })]),
+  'assets.adjustBalance': balanceAdjustmentSchema.safeExtend({ requestId: id }), 'assets.setFinished': debtFinishSchema.extend({ requestId: id }), 'assets.setVisible': assetVisibleSchema.extend({ requestId: id }),
+  'assets.reorder': assetReorderSchema.extend({ requestId: id }), 'assets.delete': assetDeleteSchema.extend({ requestId: id }),
+  'assets.groups.submit': assetGroupSubmitSchema.safeExtend({ requestId: id }), 'assets.groups.delete': assetGroupDeleteSchema.extend({ requestId: id }), 'assets.groups.reorder': assetGroupReorderSchema.extend({ requestId: id }),
+  'assets.groups.add': assetGroupAddSchema.extend({ requestId: id }), 'assets.groups.remove': assetGroupRemoveSchema.extend({ requestId: id }),
+  'assets.draft.get': z.strictObject({ key: z.string().min(1).max(300) }), 'assets.draft.save': z.strictObject({ key: z.string().min(1).max(300), draft: assetDraftSchema }),
 } as const;
 export type ActionName = keyof typeof actionSchemas;
 export type ActionInput<A extends ActionName> = z.infer<typeof actionSchemas[A]>;
@@ -37,11 +47,17 @@ export interface ActionOutputs {
   'ledger.transfer': OperationView; 'ledger.repayCard': OperationView; 'ledger.transfer.preview': TransferPreview; 'ledger.transfer.options': TransferOptions;
   'ledger.refund': OperationView;
   'ledger.reimburse': OperationView; 'ledger.cancelReimbursement': OperationView; 'ledger.setReimbursable': OperationView; 'ledger.reimbursement.members': ReimbursementMembers;
+  'assets.list': AssetListView; 'assets.detail': AssetDetailView; 'assets.types': AssetTypesView; 'assets.groups.list': AssetGroupsView; 'assets.trend': AssetTrendView; 'assets.deleteCheck': AssetDeleteCheckView;
+  'assets.submit': OperationView; 'assets.adjustBalance': OperationView; 'assets.setFinished': OperationView; 'assets.setVisible': OperationView; 'assets.reorder': OperationView; 'assets.delete': OperationView;
+  'assets.groups.submit': OperationView; 'assets.groups.delete': OperationView; 'assets.groups.reorder': OperationView; 'assets.groups.add': OperationView; 'assets.groups.remove': OperationView;
+  'assets.draft.get': AssetDraftView | null; 'assets.draft.save': AssetDraftView;
+  'assets.summary': AssetSummaryView;
 }
 export interface ActionDefinition { title: string; description: string; kind: CapabilityView['kind']; evidence: CapabilityView['evidence']; requiresAccount: boolean; readOnly: boolean; destructive: boolean; unavailable?: { code: string; reason: string } }
 const read = { kind: 'read', evidence: 'apk-static', requiresAccount: true, readOnly: true, destructive: false } as const;
 const connection = { ...read, kind: 'connection', requiresAccount: false } as const;
 const write = { ...read, kind: 'write', readOnly: false, unavailable: { code: 'WRITE_LIVE_UNVERIFIED', reason: '账单写入已完成契约与模拟测试，待专用测试账本真实验收后启用' } } as const;
+const assetWrite = { ...write, unavailable: { code: 'WRITE_LIVE_UNVERIFIED', reason: '资产写入待命名测试资产真实验收后启用' } } as const;
 export const actionDefinitions: Record<ActionName, ActionDefinition> = {
   'connection.status': { ...connection, title: '钱迹连接状态', description: '读取本服务连接状态、当前线路及登录有效性，不请求钱迹。' },
   'connection.check': { ...connection, title: '检查登录状态', description: '主动请求钱迹配置，检查当前登录状态。' },
@@ -68,6 +84,26 @@ export const actionDefinitions: Record<ActionName, ActionDefinition> = {
   'ledger.cancelReimbursement': { ...write, destructive: true, title: '取消报销', description: '按源账单版本调用取消报销，保留type5待报销属性。成功码后仍只读核对源关系、真实子记录和资产；不自动发送额外子删除，不自动升级旧报销数据。必须复用requestId。' },
   'ledger.setReimbursable': { ...write, title: '设置待报销属性', description: '按详情版本将普通支出标记为待报销，或在没有新版/旧版报销时取消该属性；保留退款和其他字段。与取消报销分开，复用requestId。' },
   'ledger.reimbursement.members': { ...read, title: '读取报销组合成员', description: '按packId读取完整副本中的真实type21成员及版本，最多200条；complete=false时禁止把当前页冒充整组。虚拟type22不会产生云端ID或额外统计。' },
+  'assets.list': { ...read, title: '查询资产与汇总', description: '按原生status0正常或2隐藏读取资产、分组和按币种汇总；60秒内合并复用已校验来源，闲置不请求。包装项不重复计入，借贷方向、incount与信用卡分期选项沿用APK。金额不跨币种盲加，分页不影响整个来源汇总。' },
+  'assets.summary': { ...read, title: '资产汇总', description: '只返回整个已校验资产来源的分币种汇总及完整性，不返回单项资产列表。与列表共用缓存和APK计算规则，不另做金额相加或额外刷新。' },
+  'assets.detail': { ...read, title: '资产详情', description: '按资产ID读取官方资料、余额、类型及编辑版本；写后余额以完整官方回执或上游读取为准。' },
+  'assets.types': { ...read, title: '资产类型选项', description: '读取APK使用的官方类型/子类型、分组及图标标识，不将未知类型映射成现金。' },
+  'assets.groups.list': { ...read, title: '查询资产分组', description: '读取官方分组ID、名称、排序及编辑版本。分组ID是字符串。' },
+  'assets.trend': { ...read, title: '查询历史资产趋势', description: '读取官方assetline历史快照，单次一年以内。空历史保持空，不从账单伪造历史余额或插值。' },
+  'assets.deleteCheck': { ...read, title: '检查资产删除影响', description: '普通资产按官方deletecheck核对周期/分期引用，借贷沿用原生跳过该检查的路径。列出会删除的转账/借贷记录及会解除资产关联的账单；需要完整账单副本。此操作不删除任何资料。' },
+  'assets.submit': { ...assetWrite, title: '新增或编辑资产资料', description: '新增普通、储值、投资或信用卡资产，使用官方返回ID；按详情版本编辑名称、备注、统计标记及信用卡资料，保留未知字段。余额修改使用adjustBalance，借贷本金使用专用流程。始终复用requestId，未知结果只查原operationId。' },
+  'assets.adjustBalance': { ...assetWrite, title: '调整资产余额', description: '原生asset.submit可选择是否记录差额；记录时传分类与独立统计/预算标记，并仅应用官方关联账单。money为原生输入余额，已有未还分期会按原生换算存储值。账号内任何未同步账单都会阻止变更。复用requestId，不自动补造调整账单。' },
+  'assets.setFinished': { ...assetWrite, title: '设置借贷结清状态', description: '以finished明确目标，每次强制读最新资产，已达目标则不调用finish。成功码后仍读实际状态；未知结果绝不再次切换。结清保留余额，不等于生成还款账单。必须复用requestId。' },
+  'assets.setVisible': { ...assetWrite, title: '设置资产显隐', description: '按visible明确目标，强制读取当前状态避免旧缓存反向切换；仅一次原生visible调用，未知时只读核查。' },
+  'assets.reorder': { ...assetWrite, title: '排序资产', description: '按真实ID数组调用原生排序，读取官方列表核对次序，不把本地排序当成上游确认。复用requestId。' },
+  'assets.delete': { ...assetWrite, destructive: true, title: '删除资产', description: '按详情版本与原生依赖检查删除资产；可能删除相关转账/借贷记录，并解除其他账单资产关联。使用deleteCheck先查看具体影响，无通用级联开关；回执及账单核查分开，未知结果不重发。' },
+  'assets.groups.submit': { ...assetWrite, title: '新增或编辑资产分组', description: '创建或按版本编辑官方分组名称，使用官方字符串ID；复用requestId，未知新建结果不凭同名猜测完成。' },
+  'assets.groups.delete': { ...assetWrite, destructive: true, title: '删除资产分组', description: '按官方分组ID与版本提交删除，读分组列表核对结果，不调用资产删除接口。' },
+  'assets.groups.reorder': { ...assetWrite, title: '排序资产分组', description: '按字符串分组ID数组排序，成功后读取官方分组顺序核对。' },
+  'assets.groups.add': { ...assetWrite, title: '将资产加入分组', description: '按官方分组ID和真实资产ID加入分组，按原生现有成员数追加排序位置；单次最多20个资产，成功码后只读核对实际归属。复用requestId。' },
+  'assets.groups.remove': { ...assetWrite, title: '解除指定资产分组', description: '先强制读资产最新归属；已离开指定分组时不清除另一个分组。仅一次removeasset调用，未知结果只核查。' },
+  'assets.draft.get': { ...read, evidence: 'local', title: '读取资产草稿', description: '读取本地结构化资产草稿及原请求键对应操作，不请求钱迹。' },
+  'assets.draft.save': { ...read, readOnly: false, evidence: 'local', title: '保存资产草稿', description: '只保存本地输入，已有未知结果时保留原请求键，不能覆盖草稿重复创建。' },
   'ledger.draft.get': { ...read, evidence: 'local', title: '读取账单草稿', description: '读取本账号的本地账单草稿和同一请求键已产生的operationId，不请求钱迹。' },
   'ledger.draft.save': { ...read, readOnly: false, evidence: 'local', title: '保存账单草稿', description: '只保存结构化本地草稿，不上传账单。已有未核清操作时不能替换草稿或请求键。' },
   'operations.get': { ...read, kind: 'reconciliation', title: '查看写操作结果', description: '读取操作日志、逐项结果及确定性，不发送写入。' },

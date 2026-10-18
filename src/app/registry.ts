@@ -31,6 +31,23 @@ const handlers: Record<ActionName, UseCase> = {
   'ledger.reimbursement.members': useCase('ledger.reimbursement.members', (ctx, input) => ctx.ledger.reimbursementMembers(input.packId)),
   'ledger.transfer.preview': useCase('ledger.transfer.preview', (ctx, input) => ctx.ledgerWrites.previewTransfer(input.kind, input.input)),
   'ledger.transfer.options': useCase('ledger.transfer.options', (ctx) => ctx.ledgerWrites.transferOptions()),
+  'assets.list': useCase('assets.list', (ctx, input) => ctx.assets.list(input)), 'assets.detail': useCase('assets.detail', (ctx, input) => ctx.assets.detail(input.id)),
+  'assets.summary': useCase('assets.summary', (ctx, input) => ctx.assets.summary(input)),
+  'assets.types': useCase('assets.types', (ctx) => ctx.assets.types()), 'assets.groups.list': useCase('assets.groups.list', (ctx) => ctx.assets.groups()), 'assets.trend': useCase('assets.trend', (ctx, input) => ctx.assets.trend(input)),
+  'assets.deleteCheck': useCase('assets.deleteCheck', (ctx, input) => ctx.assets.checkDelete(input.id)),
+  'assets.submit': useCase('assets.submit', (ctx, { requestId, ...input }) => ctx.assets.submit(input, { requestId })),
+  'assets.adjustBalance': useCase('assets.adjustBalance', (ctx, { requestId, ...input }) => ctx.assets.adjustBalance(input, { requestId })),
+  'assets.setFinished': useCase('assets.setFinished', (ctx, { requestId, ...input }) => ctx.assets.setFinished(input, { requestId })),
+  'assets.setVisible': useCase('assets.setVisible', (ctx, { requestId, ...input }) => ctx.assets.setVisible(input, { requestId })),
+  'assets.reorder': useCase('assets.reorder', (ctx, { requestId, ...input }) => ctx.assets.reorder(input, { requestId })),
+  'assets.delete': useCase('assets.delete', (ctx, { requestId, ...input }) => ctx.assets.remove(input, { requestId })),
+  'assets.groups.submit': useCase('assets.groups.submit', (ctx, { requestId, ...input }) => ctx.assets.submitGroup(input, { requestId })),
+  'assets.groups.delete': useCase('assets.groups.delete', (ctx, { requestId, ...input }) => ctx.assets.removeGroup(input, { requestId })),
+  'assets.groups.reorder': useCase('assets.groups.reorder', (ctx, { requestId, ...input }) => ctx.assets.reorderGroups(input, { requestId })),
+  'assets.groups.add': useCase('assets.groups.add', (ctx, { requestId, ...input }) => ctx.assets.addToGroup(input, { requestId })),
+  'assets.groups.remove': useCase('assets.groups.remove', (ctx, { requestId, ...input }) => ctx.assets.removeFromGroup(input, { requestId })),
+  'assets.draft.get': useCase('assets.draft.get', (ctx, input) => ctx.assets.getDraft(input.key)),
+  'assets.draft.save': useCase('assets.draft.save', (ctx, input) => ctx.assets.saveDraft(input.key, input.draft)),
   'ledger.draft.get': useCase('ledger.draft.get', (ctx, input) => ctx.ledgerWrites.getDraft(input.key)),
   'ledger.draft.save': useCase('ledger.draft.save', (ctx, input) => ctx.ledgerWrites.saveDraft(input.key, input.draft)),
   'operations.get': useCase('operations.get', (ctx, input) => ctx.coordinator.getOperation(scope(ctx), input.operationId)),
@@ -63,11 +80,12 @@ export class AppRegistry {
         const job = data as Awaited<ReturnType<UseCaseContext['sync']['start']>> | null;
         return { status: job?.state === 'running' ? 'running' : job?.state === 'failed' ? 'error' : job?.state === 'truncated' ? 'partial' : 'ready', data, freshness: null, ...(job ? { jobId: job.id, ...(job.error ? { error: job.error } : {}) } : {}) };
       }
-      if ((action.startsWith('operations.') || ['ledger.create', 'ledger.edit', 'ledger.delete', 'ledger.transfer', 'ledger.repayCard', 'ledger.refund', 'ledger.reimburse', 'ledger.cancelReimbursement', 'ledger.setReimbursable'].includes(action)) && data) {
+      if ((action.startsWith('operations.') || definition.kind === 'write') && data) {
         const operation = data as NonNullable<ReturnType<UseCaseContext['coordinator']['getOperation']>>;
         return { status: ['queued', 'sending', 'verifying'].includes(operation.state) ? 'running' : operation.state === 'uncertain' ? 'uncertain' : operation.state === 'partial' ? 'partial' : operation.state === 'failed' ? 'error' : 'ready', data, freshness: null, operationId: operation.id, ...(operation.error ? { error: operation.error } : {}) };
       }
       const freshness = data && typeof data === 'object' && 'freshness' in data ? (data as { freshness: AppReply<unknown>['freshness'] }).freshness : null;
+      if (action.startsWith('assets.') && data && typeof data === 'object' && 'problem' in data && data.problem && typeof data.problem === 'object' && 'code' in data.problem && 'message' in data.problem && typeof data.problem.code === 'string' && typeof data.problem.message === 'string') return { status: 'partial', data, freshness, error: { code: data.problem.code, message: data.problem.message } };
       const job = action.startsWith('ledger.') ? this.currentJob() : null;
       return { status: job ? 'running' : freshness && !freshness.complete ? 'partial' : 'ready', data, freshness, ...(job ? { jobId: job.id } : {}) };
     } catch (error) {

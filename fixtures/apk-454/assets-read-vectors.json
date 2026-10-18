@@ -1,0 +1,6 @@
+{
+  "description": "Synthetic values with response wrappers verified against APK parser/b and parser/c; no personal account data",
+  "types": {"ec":200,"data":{"list":[{"name":"资金账户"},{"type":{"type":1,"stype":11,"name":"现金","icon":"cash","c":"#f6bf55"}}]}},
+  "emptyGroups": {"ec":200,"data":{"list":[]}},
+  "info": {"ec":200,"data":{"v":{"id":10,"userid":"fixture-user","type":1,"stype":11,"name":"测试资产","money":"100","status":0,"incount":1,"currency":"CNY"}}}
+}
