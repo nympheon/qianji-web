@@ -10,7 +10,6 @@ import { stringifyWire, type WireJson } from '../../shared/wire-json';
 import { invalidSync, integerText, parseCheckpoint, parseLedgerPage, parseTagPage, wireObject } from './incremental';
 import type { WireObject } from '../../protocol/signer';
 import type { MirrorPage } from '../../storage/mirror';
-import type { ResourceRecord } from '../../storage/resources';
 import { safeProblem } from '../../operations/runner';
 
 export interface SyncDependencies {
@@ -148,19 +147,7 @@ export class SyncService {
           checkpoint.collectedTimes = { ...wireObject(checkpoint.collectedTimes), ...result.lastTimes };
           checkpoint.bookId = result.next.bookId; checkpoint.pageOffset = result.next.pageOffset; checkpoint.pageSign = result.next.pageSign;
           hasMore = result.hasMore; received = result.bills.length + result.deletes.length + result.resources.length;
-          const bootstrap: ResourceRecord[] = [];
-          if (row.pages === 0) {
-            const initial = connection.bootstrap(scope);
-            if (initial !== null) {
-              const books = wireObject(initial).books;
-              if (books != null && !Array.isArray(books)) return invalidSync();
-              for (const book of books ?? []) {
-                const object = wireObject(book);
-                bootstrap.push({ id: integerText(object.id), kind: 'book', raw: book });
-              }
-            }
-          }
-          page = { upserts: result.bills, deletes: result.deletes, resources: [...bootstrap, ...result.resources], pageState: { ...result.next } };
+          page = { upserts: result.bills, deletes: result.deletes, resources: result.resources, pageState: { ...result.next } };
           cursor = checkpoint.collectedTimes;
         } else {
           const result = parseTagPage(reply.data);

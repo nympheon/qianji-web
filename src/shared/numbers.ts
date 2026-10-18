@@ -30,6 +30,7 @@ export function addMoney(...values: Money[]): Money {
 }
 
 export function subtractMoney(a: Money, b: Money): Money { return decimal(a).minus(decimal(b)).toFixed(); }
+export function compareMoney(a: Money, b: Money): number { return decimal(a).comparedTo(decimal(b)); }
 export function multiplyMoney(a: Money, b: Money): Money { return decimal(a).times(decimal(b)).toFixed(); }
 
 export function divideMoney(a: Money, b: Money): Money {

@@ -11,19 +11,21 @@ import { DomainError } from '../../shared/errors';
 import { ProtocolError } from '../../protocol/errors';
 import { passwordDigest } from '../../protocol/signer';
 import { CLIENT_PROFILE, ROUTES } from '../../protocol/profile';
-import { parseWire, stringifyWire, wireId, type WireJson } from '../../shared/wire-json';
+import { wireId, type WireJson } from '../../shared/wire-json';
 import type { WireObject } from '../../protocol/signer';
 import type { Problem } from '../../shared/reply';
 import { isLosslessNumber } from 'lossless-json';
+import { ResourceCache } from '../../storage/cache';
+import type { ResourceRecord } from '../../storage/resources';
 
 export interface ConnectionDependencies { repository: Repository; client: QianjiClient; coordinator: Coordinator; vault: CredentialVault; clock: Clock }
 type ConnectionRow = { uid: string | null; connection_epoch: string | null; token_cipher: string | null;
   credential_generation: number; route: string; state: string; profile_raw: string | null };
-interface StoredProfile { user: { id: string; name: string | null; vipType: string | null; vipStartSec: string | null; vipEndSec: string | null } | null; checkedAt: string | null; problem: Problem | null; bootstrap: WireJson }
+interface StoredProfile { user: { id: string; name: string | null; vipType: string | null; vipStartSec: string | null; vipEndSec: string | null } | null; checkedAt: string | null; problem: Problem | null }
 function object(value: WireJson | undefined): value is WireObject { return value !== null && typeof value === 'object' && !Array.isArray(value) && !isLosslessNumber(value); }
 function text(value: WireJson | undefined): string | null { return typeof value === 'string' ? value : isLosslessNumber(value) ? value.value : typeof value === 'number' && Number.isSafeInteger(value) ? String(value) : null; }
 function profile(row: ConnectionRow): StoredProfile {
-  return row.profile_raw ? JSON.parse(row.profile_raw) as StoredProfile : { user: null, checkedAt: null, problem: null, bootstrap: null };
+  return row.profile_raw ? JSON.parse(row.profile_raw) as StoredProfile : { user: null, checkedAt: null, problem: null };
 }
 function user(value: WireJson | undefined): NonNullable<StoredProfile['user']> {
   if (!object(value)) throw new ProtocolError('QIANJI_RESPONSE_INVALID', '钱迹响应缺少用户信息', 'protocol', 'unknown');
@@ -37,6 +39,16 @@ function checkRoute(route: RouteId): void { if (!Object.hasOwn(ROUTES, route)) t
 export class ConnectionService {
   constructor(private readonly dependencies: ConnectionDependencies) {}
   private row(): ConnectionRow { return this.dependencies.repository.sql.exec<ConnectionRow>('SELECT uid,connection_epoch,token_cipher,credential_generation,route,state,profile_raw FROM connection WHERE singleton=1').one(); }
+  private books(value: WireJson | undefined): ResourceRecord[] {
+    if (value == null) return [];
+    if (!Array.isArray(value)) throw new ProtocolError('QIANJI_RESPONSE_INVALID', '账本资料结构发生变化', 'protocol', 'unknown');
+    return value.map((raw) => {
+      if (!object(raw)) throw new ProtocolError('QIANJI_RESPONSE_INVALID', '账本资料缺少对象', 'protocol', 'unknown');
+      let id: string;
+      try { id = wireId(raw.bookid ?? null); } catch { throw new ProtocolError('QIANJI_RESPONSE_INVALID', '账本资料缺少bookid', 'protocol', 'unknown'); }
+      return { id, kind: 'book', raw };
+    });
+  }
   private cancelSources(where: string, bindings: string[], reason: Problem): void {
     const { repository, clock } = this.dependencies;
     repository.sql.exec(`UPDATE sync_jobs SET state='failed',error=?,finished_ms=? WHERE state='running' AND (${where})`, JSON.stringify(reason), clock.nowMs(), ...bindings).toArray();
@@ -75,24 +87,19 @@ export class ConnectionService {
     return coordinator.changeConnection(async () => {
       const reply = await client.request('account.login', { v: parsed.data.account, pwd: passwordDigest(parsed.data.password) }, null);
       if (!object(reply.data) || typeof reply.data.token !== 'string' || reply.data.token.length === 0) throw new ProtocolError('QIANJI_RESPONSE_INVALID', '钱迹响应缺少登录凭证', 'protocol', 'unknown');
-      const account = user(reply.data.user), previous = this.row();
+      const account = user(reply.data.user), books = this.books(reply.data.books), previous = this.row();
       const scope = { uid: account.id, connectionEpoch: previous.uid === account.id && previous.connection_epoch ? previous.connection_epoch : crypto.randomUUID() };
       const cipher = await vault.encrypt(reply.data.token, scope);
-      const saved: StoredProfile = { user: account, checkedAt: clock.nowIso(), problem: null, bootstrap: { books: reply.data.books ?? [] } };
+      const saved: StoredProfile = { user: account, checkedAt: clock.nowIso(), problem: null };
       repository.transaction(() => {
-        repository.sql.exec("UPDATE connection SET uid=?,connection_epoch=?,token_cipher=?,credential_generation=credential_generation+1,state='connected',profile_raw=? WHERE singleton=1", scope.uid, scope.connectionEpoch, cipher, JSON.stringify({ ...saved, bootstrap: null })).toArray();
-        // Store only the business bootstrap, never the complete login envelope/token.
-        repository.sql.exec('INSERT INTO instance_meta(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value', `bootstrap:${scope.uid}`, stringifyWire(saved.bootstrap)).toArray();
+        repository.sql.exec("UPDATE connection SET uid=?,connection_epoch=?,token_cipher=?,credential_generation=credential_generation+1,state='connected',profile_raw=? WHERE singleton=1", scope.uid, scope.connectionEpoch, cipher, JSON.stringify(saved)).toArray();
+        if (books.length) new ResourceCache(repository, clock).confirmResources(scope, 'books', books);
+        repository.sql.exec('DELETE FROM instance_meta WHERE key=?', `bootstrap:${scope.uid}`).toArray();
         this.cancelSources('uid<>? OR connection_epoch<>?', [scope.uid, scope.connectionEpoch], { code: 'CONNECTION_CHANGED', message: '账号连接已变更，原同步任务已停止' });
       });
       await coordinator.recover();
       return this.view();
     });
-  }
-  bootstrap(scope: ActorScope): WireJson {
-    this.dependencies.repository.assertScope(scope);
-    const row = this.dependencies.repository.sql.exec<{ value: string }>('SELECT value FROM instance_meta WHERE key=?', `bootstrap:${scope.uid}`).toArray()[0];
-    return row ? parseWire(row.value) : null;
   }
   private initParams(scope: ActorScope): WireObject {
     const current = profile(this.row()).user;
@@ -111,8 +118,13 @@ export class ConnectionService {
       if (!object(reply.data)) throw new ProtocolError('QIANJI_RESPONSE_INVALID', '钱迹响应缺少配置', 'protocol', 'unknown');
       const account = user(reply.data.userinfo);
       if (account.id !== scope.uid) throw new ProtocolError('QIANJI_RESPONSE_INVALID', '钱迹返回的账号不匹配', 'protocol', 'unknown');
-      const saved: StoredProfile = { user: account, checkedAt: this.dependencies.clock.nowIso(), problem: null, bootstrap: null };
-      this.dependencies.repository.sql.exec('UPDATE connection SET profile_raw=? WHERE singleton=1 AND uid=? AND connection_epoch=? AND credential_generation=?', JSON.stringify(saved), scope.uid, scope.connectionEpoch, row.credential_generation).toArray();
+      const books = this.books(reply.data.books);
+      const saved: StoredProfile = { user: account, checkedAt: this.dependencies.clock.nowIso(), problem: null };
+      this.dependencies.repository.transaction(() => {
+        const updated = this.dependencies.repository.sql.exec('UPDATE connection SET profile_raw=? WHERE singleton=1 AND uid=? AND connection_epoch=? AND credential_generation=?', JSON.stringify(saved), scope.uid, scope.connectionEpoch, row.credential_generation);
+        updated.toArray();
+        if (updated.rowsWritten > 0 && books.length) new ResourceCache(this.dependencies.repository, this.dependencies.clock).confirmResources(scope, 'books', books);
+      });
     } catch (error) {
       const current = this.row();
       if (current.uid === scope.uid && current.connection_epoch === scope.connectionEpoch && current.credential_generation === row.credential_generation) {

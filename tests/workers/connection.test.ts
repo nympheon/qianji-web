@@ -155,4 +155,19 @@ describe('personal Qianji connection', () => {
     });
     await app.restart(); expect(fetch).toHaveBeenCalledTimes(2);
   });
+  it('reads the native bookid field into the independent book source and never replays old login books during ledger sync', async () => {
+    const app = await createTestApp();
+    vi.spyOn(globalThis, 'fetch')
+      .mockImplementationOnce(async () => new Response(`{"ec":200,"data":{"user":{"id":"${uid}"},"token":"NON_REAL","books":[{"bookid":10,"name":"原名","visible":1,"config":{"range":"m25"}}]}}`))
+      .mockImplementationOnce(async () => new Response('{"ec":200,"data":{"bookid":-1,"pageoffset":0,"pagesign":"","hasmore":0,"count":0,"lasttimes":{"-1":100},"changes":[],"deletes":[],"categories":[]}}'));
+    await app.repository(async (repository) => {
+      const ctx = createActorContext(repository.storage, { QIANJI_CREDENTIAL_KEY: secret });
+      await ctx.connection.login(input); const scope = ctx.connection.scope()!;
+      expect(repository.readResources(scope, 'book', { domain: 'books' }).items.map((item) => item.id)).toEqual(['10']);
+      ctx.cache.confirmResources(scope, 'books', [{ id: '10', kind: 'book', raw: { bookid: '10', name: '已确认新名', visible: 1 } }]);
+      expect((await ctx.sync.start({ domain: 'ledger', mode: 'incremental' })).state).toBe('succeeded');
+      expect(repository.readResources(scope, 'book', { domain: 'books' }).items[0]?.raw).toMatchObject({ name: '已确认新名' });
+      expect(repository.readResources(scope, 'book', { domain: 'ledger' }).items).toEqual([]);
+    });
+  });
 });

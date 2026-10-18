@@ -5,7 +5,7 @@
 | 行为 | APK证据 | 本服务实现 |
 | --- | --- | --- |
 | 密码登录 | `account/a.login(String,String,Lql/d;)` | 普通构造POST `account/login`，`v`为手机号/邮箱，`pwd=Lza/h.e(password)`；不携带旧连接的fr/utoken |
-| 响应解析 | `account/c.f`与`account/b`字段注解 | `user.id`为UID，`token`为凭证，`books`为业务bootstrap；不保存完整登录响应 |
+| 响应解析 | `account/c.f`与`account/b`字段注解 | `user.id`为UID，`token`为凭证，`books`按实际bookid保存至独立账本来源；不保存完整登录响应 |
 | 状态检查 | `Ljf/a.initConfig`、`Ljf/c`、`Ljf/b` | `client/init`的`uid/v/vvmark/newinstall/upgradealert`；核对`userinfo.id`，不能只凭本地token存在声称在线 |
 | 会员标志 | `User.isVip()`→`Lza/b.a(JJJ)` | viptype≥1且`vipstart≤当前秒<vipend`时vvmark=1，其他为0；不改变账号权益 |
 | 退出 | `account/a.logout` | 普通构造POST `account/logout`，参数uid；单次请求后清本地凭证，网络结果不明时明确说明，不恢复/重发退出请求 |

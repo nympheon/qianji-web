@@ -2,9 +2,10 @@ import { isLosslessNumber } from 'lossless-json';
 import { DomainError } from '../../shared/errors';
 import { parseWire, wireId, type WireJson } from '../../shared/wire-json';
 import type { WireObject } from '../../protocol/signer';
-import type { BillRecord, BillRelation } from '../../storage/mirror';
+import type { BillRecord } from '../../storage/mirror';
 import type { ResourceRecord } from '../../storage/resources';
 import type { SyncCheckpoint } from './contract';
+import { billLinks } from '../../shared/bill-wire';
 
 export function invalidSync(): never { throw new DomainError('SYNC_RESPONSE_INVALID', '同步响应结构发生变化，保留现有数据及成功游标'); }
 export function wireObject(value: WireJson | undefined): WireObject {
@@ -26,24 +27,10 @@ function list(value: WireJson | undefined): WireJson[] {
   return Array.isArray(value) ? value : invalidSync();
 }
 function id(value: WireJson | undefined): string { try { return wireId(value ?? null); } catch { return invalidSync(); } }
-function relations(raw: WireObject): BillRelation[] {
-  let extra = raw.extra;
-  if (typeof extra === 'string') { try { extra = parseWire(extra); } catch { return invalidSync(); } }
-  if (extra === null || extra === undefined) return [];
-  const object = wireObject(extra), result: BillRelation[] = [];
-  for (const [field, kind] of [['rfds', 'refund'], ['bxs', 'reimbursement']] as const) {
-    const map = object[field];
-    if (map != null) for (const [targetId, value] of Object.entries(wireObject(map))) result.push({ kind, targetId, raw: value ?? null });
-  }
-  for (const [field, kind] of [['refundsid', 'refund-source'], ['bxsid', 'reimbursement-source'], ['refundid', 'refund']] as const) {
-    if (object[field] != null && integerText(object[field]) !== '0') result.push({ kind, targetId: id(object[field]), raw: object[field]! });
-  }
-  return result.filter((relation, index, items) => items.findIndex((item) => item.kind === relation.kind && item.targetId === relation.targetId) === index);
-}
 export function projectBill(value: WireJson): BillRecord {
   const raw = wireObject(value);
   const money = typeof raw.money === 'string' ? raw.money : isLosslessNumber(raw.money) ? raw.money.value : typeof raw.money === 'number' && Number.isSafeInteger(raw.money) ? String(raw.money) : invalidSync();
-  return { id: id(raw.id), bookId: integerText(raw.bookid), type: safeInteger(raw.type), timeSec: safeInteger(raw.time), money, raw: value, relations: relations(raw) };
+  return { id: id(raw.id), bookId: integerText(raw.bookid), type: safeInteger(raw.type), timeSec: safeInteger(raw.time), money, raw: value, relations: billLinks(raw) };
 }
 export interface LedgerPage {
   bills: BillRecord[]; deletes: string[]; resources: ResourceRecord[];

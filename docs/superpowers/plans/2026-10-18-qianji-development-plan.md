@@ -214,11 +214,11 @@ cache.ts导出`CacheKey { domain:SyncDomain; queryKey:string }`、`CacheReadStam
 **Files:** Create `src/features/ledger/{contract,service,use-cases,query}.ts`、`tests/workers/ledger-query.test.ts`；Modify storage查询索引。
 **Interfaces:** Consumes Repository/ensureFresh；Produces `LedgerService.list(input:BillFilter):Promise<BillPage>`、`detail(id:Id):Promise<BillDetail>`、`calendar(input:CalendarInput):Promise<CalendarView>`；BillPage游标绑定UID/数据集/筛选/修订。
 
-- [ ] 写失败断言：长ID、隐藏/多账本、父子分类、成员/标签/资产/备注/来源组合筛选正确；修订变化后旧页游标明确失效；主记录可加载区间外退款/报销子记录。
-- [ ] Run `pnpm test -- tests/workers/ledger-query.test.ts`；预期FAIL于查询实现缺失。
-- [ ] 实现有界索引查询及实际关系补载，支持设计§2全部筛选；组合报销22仅生成含真实成员ID的显示分组，未知类型保留；完整性/陈旧信息透出，不将缺失子账单补成零。
-- [ ] 重跑并测删除后分页、账号切换游标、单成员组、多组packId及聚合前后原始账单数不变，PASS。
-- [ ] 提交：`feat: query bills with relationship-aware pagination`。
+- [x] 写失败断言：长ID、隐藏/多账本、父子分类、成员/标签/资产/备注/来源组合筛选正确；修订变化后旧页游标明确失效；主记录可加载区间外退款/报销子记录。
+- [x] Run `pnpm test -- tests/workers/ledger-query.test.ts`；预期FAIL于查询实现缺失。
+- [x] 实现有界索引查询及实际关系补载，支持设计§2全部筛选；组合报销22仅生成含真实成员ID的显示分组，未知类型保留；完整性/陈旧信息透出，不将缺失子账单补成零。
+- [x] 重跑并测删除后分页、账号切换游标、单成员组、多组packId及聚合前后原始账单数不变，PASS。
+- [x] 提交：`feat: query bills with relationship-aware pagination`。
 
 ### Task 10：共用收支、历史币种与预算执行计算
 

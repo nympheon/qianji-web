@@ -9,6 +9,7 @@ import { SyncService } from '../features/sync/service';
 import { RebuildService } from '../features/sync/rebuild';
 import { FreshnessService } from '../features/sync/freshness';
 import { ResourceCache } from '../storage/cache';
+import { LedgerService } from '../features/ledger/service';
 
 export function createActorContext(storage: DurableObjectStorage, secrets: { QIANJI_CREDENTIAL_KEY?: string } = {}) {
   const repository = new Repository(storage);
@@ -28,5 +29,6 @@ export function createActorContext(storage: DurableObjectStorage, secrets: { QIA
   const sync = new SyncService({ repository, client, coordinator, clock, connection, rebuild: (scope, domains) => rebuild.rebuild(scope, domains) });
   const rebuild = new RebuildService({ repository, cache, client, coordinator, clock, connection, sync });
   const freshness = new FreshnessService({ repository, clock, sync });
-  return { repository, clock, client, coordinator, connection, sync, cache, rebuild, freshness };
+  const ledger = new LedgerService({ repository, connection, freshness, clock });
+  return { repository, clock, client, coordinator, connection, sync, cache, rebuild, freshness, ledger };
 }

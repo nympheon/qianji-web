@@ -2,6 +2,7 @@ import baseSql from './sql/0001-base.sql?raw';
 import operationsSql from './sql/0002-operations.sql?raw';
 import syncSql from './sql/0003-sync.sql?raw';
 import cacheSql from './sql/0004-cache.sql?raw';
+import ledgerQuerySql from './sql/0005-ledger-query.sql?raw';
 import { DomainError } from '../shared/errors';
 
 export interface Migration { version: number; name: string; sql: string }
@@ -10,6 +11,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 2, name: 'operations', sql: operationsSql },
   { version: 3, name: 'sync', sql: syncSql },
   { version: 4, name: 'cache', sql: cacheSql },
+  { version: 5, name: 'ledger-query', sql: ledgerQuerySql },
 ];
 
 /** Each schema step and its version marker commit together, including DDL. */
