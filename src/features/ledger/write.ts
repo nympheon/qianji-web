@@ -82,17 +82,26 @@ function validateReferences(raw: BillObject, changes: BillChanges, ctx: Operatio
   }
   for (const id of changes.tagIds ?? []) if (!resource(ctx, scope, 'tag', id)) return fail('TAG_NOT_LOADED', '所选标签尚未载入');
 }
-function buildBill(changes: BillChanges, raw: BillObject, ctx: OperationContext, scope: ActorScope): BillObject {
+function buildBill(changes: BillChanges, raw: BillObject, ctx: OperationContext, scope: ActorScope, baseCurrency='CNY'): BillObject {
   const extra = { ...billExtra(raw) }, oldFee = moneyText(extra.transfee), type = changes.type ?? Number(numericText(raw.type, '0'));
   if (![0, 1, 5].includes(type)) return fail('BILL_TYPE_UNSUPPORTED', '请使用对应账单类型的专用操作');
   const fee = changes.fee ?? oldFee;
   if (compareMoney(fee, '0') > 0 || (type === 1 && compareMoney(fee, '0') !== 0)) return fail('ORDINARY_FEE_UNSUPPORTED', '普通收入不支持费用，普通支出仅支持负数优惠；手续费请使用转账操作');
-  const financialChange = ['enteredMoney', 'fee', 'assetId', 'type'].some((key) => Object.hasOwn(changes, key));
-  if (extra.curr != null && financialChange) return fail('CURRENCY_EDIT_UNAVAILABLE', '历史多币种金额请使用已核验的多币种操作');
+  const financialChange = ['enteredMoney', 'fee', 'assetId', 'type', 'currency'].some((key) => Object.hasOwn(changes, key));
+  if (extra.curr != null && financialChange && changes.currency===undefined) return fail('CURRENCY_EDIT_UNAVAILABLE', '历史多币种金额请使用已核验的多币种操作');
   if (financialChange) {
-    const entered = changes.enteredMoney ?? addMoney(moneyText(raw.money), abs(oldFee));
+    const assetId=changes.assetId===null?'-1':changes.assetId??numericText(raw.assetid,'-1'),asset=assetId==='-1'?null:resource(ctx,scope,'asset',assetId),assetCurrency=asset&&typeof asset.currency==='string'&&asset.currency?asset.currency:baseCurrency,currency=changes.currency;
+    if(!currency&&assetCurrency!==baseCurrency)return fail('CURRENCY_REQUIRED','此资产需要明确提供本次保存的历史币种金额');
+    const entered = changes.enteredMoney ?? (extra.curr!=null?moneyText(asBillObject(extra.curr).sv):addMoney(moneyText(raw.money), abs(oldFee)));
     if (compareMoney(entered, '0') <= 0 || compareMoney(abs(fee), entered) > 0) return fail('BILL_AMOUNT_INVALID', '录入金额必须大于零，优惠不能超过录入金额');
-    raw.money = numeric(subtractMoney(entered, abs(fee))); extra.transfee = numeric(fee);
+    const net=subtractMoney(entered,abs(fee));
+    if(currency){
+      if(compareMoney(currency.srcValue,entered)!==0||currency.targetSymbol!==assetCurrency||currency.baseSymbol!==baseCurrency||compareMoney(currency.targetValue,'0')<0||compareMoney(currency.baseValue,'0')<0||currency.srcSymbol===currency.targetSymbol&&compareMoney(currency.targetValue,net)!==0||currency.srcSymbol===currency.baseSymbol&&compareMoney(currency.baseValue,net)!==0||currency.targetSymbol===currency.baseSymbol&&compareMoney(currency.targetValue,currency.baseValue)!==0)return fail('BILL_CURRENCY_INVALID','请确认原币录入额、优惠后的资产金额及本位币金额，币种须匹配所选资产和当前本位币');
+      extra.curr={...(extra.curr==null?{}:asBillObject(extra.curr)),ss:currency.srcSymbol,sv:numeric(currency.srcValue),ts:currency.targetSymbol,tv:numeric(currency.targetValue),bs:currency.baseSymbol,bv:numeric(currency.baseValue)};
+      // jd/n0.x0 uses targetValue as final money when a selected ordinary asset matches ts.
+      raw.money=numeric(asset?currency.targetValue:net);
+    }else{raw.money=numeric(net);if(changes.currency===null)delete extra.curr;}
+    extra.transfee=numeric(fee);
   }
   raw.type = type; raw.userid = scope.uid; raw.status = 2; raw.updatetime = Math.floor(ctx.clock.nowMs() / 1000);
   if (changes.bookId !== undefined) raw.bookid = numeric(changes.bookId);
@@ -138,7 +147,7 @@ function applyBatch(payload: Payload, batch: Entry[], receipt: BillReceipt, ctx:
     deletes: success.filter((entry) => entry.mode === 'delete').map((entry) => numericText(entry.wire.id, '')), resources: [], pageState: repository.syncState(payload.scope, 'ledger', dataset.id)?.pageState ?? null });
   return { items: success.map((entry) => ({ id: entry.logicalId, state: 'succeeded' })) };
 }
-export function createLedgerMutationHandler(dependencies: { reconcileSource?: (context: OperationContext) => Promise<boolean>; prepare?: (command: MutationCommand, context: OperationContext) => PreparedMutation | Promise<PreparedMutation> } = {}): MutationHandler {
+export function createLedgerMutationHandler(dependencies: { baseCurrency?:()=>string; reconcileSource?: (context: OperationContext) => Promise<boolean>; prepare?: (command: MutationCommand, context: OperationContext) => PreparedMutation | Promise<PreparedMutation> } = {}): MutationHandler {
   return {
     prepare: async (command, ctx) => {
       if (dependencies.prepare) return dependencies.prepare(command, ctx);
@@ -149,7 +158,7 @@ export function createLedgerMutationHandler(dependencies: { reconcileSource?: (c
         for (const bill of input.bills) {
           const id = nextBillId(ctx, scope, used), nowSec = Math.floor(ctx.clock.nowMs() / 1000);
           const raw: BillObject = { id: numeric(id), bookid: -1, cateid: 0, assetid: -1, fromid: -1, targetid: -1, money: 0, type: 0, time: nowSec, createtime: nowSec, updatetime: nowSec, status: 2, platform: 0, packid: 0, remark: '', extra: {} };
-          entries.push({ logicalId: id, mode: 'create', wire: buildBill(bill, raw, ctx, scope), done: false });
+          entries.push({ logicalId: id, mode: 'create', wire: buildBill(bill, raw, ctx, scope, dependencies.baseCurrency?.()??'CNY'), done: false });
         }
       } else {
         const input = command.action === 'ledger.edit' ? editBillsSchema.parse(restoreBillInput(command.input)) : command.action === 'ledger.delete' ? deleteBillsSchema.parse(restoreBillInput(command.input)) : fail('BILL_ACTION_INVALID', '账单动作无效');
@@ -167,7 +176,7 @@ export function createLedgerMutationHandler(dependencies: { reconcileSource?: (c
             if (links.some((link) => link.kind === 'refund') && changes.type !== undefined && changes.type !== record.type) return fail('REFUND_SOURCE_TYPE_LOCKED', '已有退款的源账单不能切换类型');
           } else ensureBillUnrelated(raw);
           const affectedAssetIds = assetIds(raw);
-          entries.push({ logicalId: bill.id, mode: changes ? 'edit' : 'delete', wire: changes ? buildBill(changes, raw, ctx, scope) : raw, done: false, affectedAssetIds });
+          entries.push({ logicalId: bill.id, mode: changes ? 'edit' : 'delete', wire: changes ? buildBill(changes, raw, ctx, scope, dependencies.baseCurrency?.()??'CNY') : raw, done: false, affectedAssetIds });
         }
       }
       return encode({ scope, entries, preparedAt: String(ctx.clock.nowMs()) });

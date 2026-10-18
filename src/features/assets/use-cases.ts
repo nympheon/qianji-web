@@ -56,7 +56,7 @@ export function createAssetMutationHandler(dependencies: { reconcileLedger?: (ct
       else if (['5', '6'].includes(numericText(raw.type, ''))) return assetError('ASSET_VISIBILITY_TYPE_UNSUPPORTED', '借贷与汇总项使用其原生状态操作');
       const desired = 'finished' in input ? input.finished : input.visible, noop = (finish ? currentFinished(raw) : numericText(raw.status, '0') !== '2') === desired;
       const affectedIds = [`asset:${input.id}`];
-      return { payload: { scope: { ...scope }, id: input.id, logicalId, kind: finish ? 'finish' : 'visible', raw, params: { uid: scope.uid, did: input.id, ...('date' in input && input.date ? { v: input.date } : {}) }, desired, noop }, items: [{ id: logicalId, affectedIds }], affectedIds, affectedDomains: ['assets'] };
+      return { payload: { scope: { ...scope }, id: input.id, logicalId, kind: finish ? 'finish' : 'visible', raw, params: { uid: scope.uid, did: input.id, ...('date' in input && input.date ? { v: input.date } : {}) }, desired, noop }, items: [{ id: logicalId, affectedIds }], affectedIds, affectedDomains: noop ? [] : ['assets'] };
     },
     send: async (prepared, ctx) => {
       const p = decode(prepared);

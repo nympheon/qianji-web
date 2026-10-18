@@ -33,7 +33,7 @@ export function RefundEditor({ source, refund, options, onComplete }: { source: 
     return { kind: 'refund', requestId: crypto.randomUUID(), billId: sourceBill.id, expectedVersion: sourceBill.editVersion ?? '', fields,
       ...(refundBill ? { refundBillId: refundBill.id, refundExpectedVersion: refundBill.editVersion } : {}) };
   }
-  const [draft, setDraft] = useState<RefundDraft>(initial), [loaded, setLoaded] = useState(false), [saved, setSaved] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null), [notice, setNotice] = useState<string | null>(null);
+  const [draft, setDraft] = useState<RefundDraft>(initial), [loaded, setLoaded] = useState(false), [loadAttempt, setLoadAttempt] = useState(0), [saved, setSaved] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null), [notice, setNotice] = useState<string | null>(null);
   const [operation, setOperation] = useState<OperationView | null>(null), [operationId, setOperationId] = useState<string | null>(null);
   const [imagesPending, setImagesPending] = useState(true);
   const queue = useRef<Promise<unknown>>(Promise.resolve()), mounted = useRef(true);
@@ -42,15 +42,15 @@ export function RefundEditor({ source, refund, options, onComplete }: { source: 
     return task.then((reply) => { if (mounted.current) { setSaved(reply.status === 'ready'); if (reply.error) setError(reply.error.message); } return reply; });
   };
   useEffect(() => {
-    let active = true; mounted.current = true;
+    let active = true; mounted.current = true; setLoaded(false);
     void api('ledger.draft.get', { key }).then((reply) => {
       if (!active) return;
+      if (reply.data && (reply.data.draft.kind !== 'refund' || reply.data.draft.billId !== source.id)) { setError('原草稿类型不匹配，请保留原操作'); return; }
       if (reply.data?.draft.kind === 'refund') { setDraft(reply.data.draft); setOperationId(reply.data.operationId); setSaved(true); }
-      else if (reply.error) setError(reply.error.message);
-      setLoaded(true);
+      setError(reply.error?.message ?? null); setLoaded(reply.status === 'ready' && !reply.error);
     });
     return () => { active = false; mounted.current = false; };
-  }, [key]);
+  }, [key,loadAttempt]);
   useEffect(() => { if (!loaded || operationId || busy) return; const timer = setTimeout(() => { void persist(draft); }, 400); return () => clearTimeout(timer); }, [draft, loaded, operationId, busy]);
   function change(fields: Partial<RefundDraft['fields']>) {
     let next = { ...draft.fields, ...fields };
@@ -93,7 +93,7 @@ export function RefundEditor({ source, refund, options, onComplete }: { source: 
     <Field className="col-span-full"><FieldLabel htmlFor="refund-time">退款时间</FieldLabel><Input id="refund-time" type="datetime-local" value={time} disabled={disabled} required onChange={(event) => { const ms = new Date(event.target.value).getTime(); if (Number.isFinite(ms)) change({ timeSec: Math.floor(ms / 1000) }); }} /></Field></div>
     {currency ? <div className="editor-grid"><Field><FieldLabel htmlFor="refund-target">历史到账金额（{currency.targetSymbol}）</FieldLabel><Input id="refund-target" inputMode="decimal" value={currency.targetValue} disabled={disabled || currency.targetSymbol === currency.srcSymbol} onChange={(event) => change({ currency: { ...currency, targetValue: event.target.value } })} required /></Field><Field><FieldLabel htmlFor="refund-base">历史本位币金额（{base}）</FieldLabel><Input id="refund-base" inputMode="decimal" value={currency.baseValue} disabled={disabled || currency.srcSymbol === base} onChange={(event) => change({ currency: { ...currency, baseValue: event.target.value } })} required /></Field></div> : null}
     <Field><FieldLabel htmlFor="refund-remark">退款备注</FieldLabel><Textarea id="refund-remark" value={draft.fields.remark ?? ''} maxLength={500} disabled={disabled} onChange={(event) => change({ remark: event.target.value })} /></Field>
-    {notice ? <p role="status" className="muted-copy">{notice}</p> : null}{error ? <p role="alert">{error}</p> : null}
+    {notice ? <p role="status" className="muted-copy">{notice}</p> : null}{error ? <p role="alert">{error}</p> : null}{!loaded && error ? <Button type="button" variant="outline" onClick={() => setLoadAttempt(value => value + 1)}>重新读取草稿</Button> : null}
     {operationId ? <OperationStatus operationId={operationId} initial={operation} onChange={(value) => { setOperation(value); if (value.state === 'succeeded') onComplete(); }} /> : <p className="muted-copy">{saved ? '草稿已保存' : '正在保存草稿…'}</p>}
     {loaded ? <Attachments references={draft.fields.images ?? []} draftKey={`bill:${key}`} disabled={disabled} onPendingChange={setImagesPending} onChange={async (images) => { const next = { ...draft, fields: { ...draft.fields, images } }; setDraft(next); return (await persist(next)).status === 'ready'; }} /> : null}
     <Button type="submit" disabled={disabled || imagesPending}>{busy ? '正在处理…' : '保存退款'}</Button>

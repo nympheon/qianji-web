@@ -429,11 +429,13 @@ cache.ts导出`CacheKey { domain:SyncDomain; queryKey:string }`、`CacheReadStam
 **Files:** Modify `src/web/{App.tsx,styles.css}`、所有页面/共用组件、registry与各域输出映射；Create `tests/e2e/full-app.spec.ts`、`tests/mcp/coverage.test.ts`、`tests/workers/performance.test.ts`、`docs/acceptance/local-matrix.md`。
 **Interfaces:** Consumes所有已实现use-case；Produces完整路由/导航和Web/MCP能力覆盖表；不增加新的账务公式或一套页面专用后端。
 
-- [ ] 写失败断言：设计§2每项可实现能力至少对应Web操作、MCP工具、所属契约/测试及状态；不依赖金额label猜单位；所有写视图能区分排队/未知/部分/已确认。
-- [ ] Run `pnpm test -- tests/mcp/coverage.test.ts tests/workers/performance.test.ts`和`pnpm test:e2e -- tests/e2e/full-app.spec.ts`；预期先FAIL于明确缺口，不能仅断言注册工具数量。
-- [ ] 完成总览/账单日历/统计/资产借贷/预算/周期分期/储蓄/资料/服务管理的桌面与手机交互，筛选与状态共用，并沿用任务11的Tailwind/shadcn组件与语义变量；页面不混演示账、内部签名术语或APK系统设置。按React最佳实践消除可测瀑布/重复读取，索引/修订缓存及有界统计不改变口径。
-- [ ] 按frontend-testing-debugging技能做渲染与交互检查，工具控制优先可用Browser插件，回归保留Playwright；记录选择工具原因及截图到忽略的`.artifacts/qa/`。核对360px/桌面长中文、长ID/金额、表单错误、表格滚动与弹窗焦点，不对CSS类名写镜像断言。网络被fake延迟20秒时本地状态请求仍能完成且先于上游释放；冷热/年度统计记录实际CPU和读写量，不编造提速倍数。
-- [ ] 重跑上述回归及`pnpm verify`，全部PASS后提交：`feat: complete responsive web and MCP feature coverage`。
+- [x] 写失败断言：设计§2每项可实现能力至少对应Web操作、MCP工具、所属契约/测试及状态；不依赖金额label猜单位；所有写视图能区分排队/未知/部分/已确认。
+- [x] Run `pnpm test -- tests/mcp/coverage.test.ts tests/workers/performance.test.ts`和`pnpm test:e2e -- tests/e2e/full-app.spec.ts`；预期先FAIL于明确缺口，不能仅断言注册工具数量。
+- [x] 完成总览/账单日历/统计/资产借贷/预算/周期分期/储蓄/资料/服务管理的桌面与手机交互，筛选与状态共用，并沿用任务11的Tailwind/shadcn组件与语义变量；页面不混演示账、内部签名术语或APK系统设置。按React最佳实践消除可测瀑布/重复读取，索引/修订缓存及有界统计不改变口径。
+- [x] 按frontend-testing-debugging技能做渲染与交互检查，工具控制优先可用Browser插件，回归保留Playwright；记录选择工具原因及截图到忽略的`.artifacts/qa/`。核对360px/桌面长中文、长ID/金额、表单错误、表格滚动与弹窗焦点，不对CSS类名写镜像断言。网络被fake延迟20秒时本地状态请求仍能完成且先于上游释放；冷热/年度统计记录实际CPU和读写量，不编造提速倍数。
+- [x] 重跑上述回归及`pnpm verify`，全部PASS后提交：`feat: complete responsive web and MCP feature coverage`。
+
+实施记录：本地覆盖见 `docs/acceptance/local-matrix.md`；真实写入与发布验收仍属于任务27/28。Web普通账单逐笔维护，批量数组通过MCP；两者范围在覆盖表明确列出。
 
 ### Task 27：逐域真实验收与能力放行
 

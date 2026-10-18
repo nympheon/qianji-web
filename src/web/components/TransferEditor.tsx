@@ -34,7 +34,7 @@ export function TransferEditor({ kind, mode = 'create', options, bill, onComplet
       : currencyFields({ bookId: options?.books[0]?.id, fromAssetId: from?.id, targetAssetId: target?.id, enteredMoney: '', fee: '0', timeSec: Math.floor(Date.now() / 1000), remark: '' });
     return { kind, mode, requestId: crypto.randomUUID(), fields, ...(bill ? { billId: bill.id, expectedVersion: bill.editVersion } : {}) };
   };
-  const [draft, setDraft] = useState<TransferDraft>(initial), [loaded, setLoaded] = useState(false), [saved, setSaved] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null);
+  const [draft, setDraft] = useState<TransferDraft>(initial), [loaded, setLoaded] = useState(false), [loadAttempt, setLoadAttempt] = useState(0), [saved, setSaved] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<TransferPreview | null>(null), [operationId, setOperationId] = useState<string | null>(null), [operation, setOperation] = useState<OperationView | null>(null);
   const [imagesPending, setImagesPending] = useState(true);
   const queue = useRef<Promise<unknown>>(Promise.resolve()), baseline = useRef(draft.fields), mounted = useRef(true);
@@ -43,15 +43,15 @@ export function TransferEditor({ kind, mode = 'create', options, bill, onComplet
     return task.then((reply) => { if (mounted.current) { setSaved(reply.status === 'ready'); if (reply.error) setError(reply.error.message); } return reply; });
   };
   useEffect(() => {
-    let active = true; mounted.current = true;
+    let active = true; mounted.current = true; setLoaded(false);
     void api('ledger.draft.get', { key }).then((reply) => {
       if (!active) return;
+      if (reply.data && (reply.data.draft.kind !== kind || reply.data.draft.mode !== mode || reply.data.draft.billId !== bill?.id)) { setError('原草稿类型不匹配，请保留原操作'); return; }
       if (reply.data && (reply.data.draft.kind === 'transfer' || reply.data.draft.kind === 'repay-card')) { setDraft(reply.data.draft); setOperationId(reply.data.operationId); setSaved(true); }
-      else if (reply.error) setError(reply.error.message);
-      setLoaded(true);
+      setError(reply.error?.message ?? null); setLoaded(reply.status === 'ready' && !reply.error);
     });
     return () => { active = false; mounted.current = false; };
-  }, [key]);
+  }, [key,loadAttempt]);
   useEffect(() => { if (!loaded || operationId || busy) return; const timer = setTimeout(() => { void persist(draft); }, 400); return () => clearTimeout(timer); }, [draft, loaded, operationId, busy]);
   function change(fields: Partial<TransferDraft['fields']>) {
     let next = { ...draft.fields, ...fields };
@@ -91,7 +91,7 @@ export function TransferEditor({ kind, mode = 'create', options, bill, onComplet
     <Field><FieldLabel htmlFor="transfer-remark">备注</FieldLabel><Textarea id="transfer-remark" value={draft.fields.remark ?? ''} disabled={disabled || deleting} maxLength={500} onChange={(event) => change({ remark: event.target.value })} /></Field>
     <Button type="button" variant="outline" disabled={disabled} onClick={async () => { const value = input(); if (!value) return; setBusy(true); try { const reply = await api('ledger.transfer.preview', { kind, input: value }); setPreview(reply.data); setError(reply.error?.message ?? null); } finally { setBusy(false); } }}>预览金额</Button>
     {preview ? <div className="operation-status"><dl className="transfer-amounts"><dt>本金</dt><dd data-testid="transfer-principal">{formatMoney(preview.principal)} {preview.from.currency}</dd><dt>转出金额</dt><dd data-testid="transfer-from">{formatMoney(preview.fromAmount)} {preview.from.currency}</dd><dt>转入金额</dt><dd data-testid="transfer-target">{formatMoney(preview.targetAmount)} {preview.target.currency}</dd></dl><p className="muted-copy">资产变动为预期值，确认余额以钱迹回读为准。{preview.stale ? '当前预览采用缓存资料。' : ''}</p></div> : null}
-    {error ? <p role="alert">{error}</p> : null}{operationId ? <OperationStatus operationId={operationId} initial={operation} onChange={(value) => { setOperation(value); if (value.state === 'succeeded') onComplete(); }} /> : <p className="muted-copy">{saved ? '草稿已保存' : '正在保存草稿…'}</p>}
+    {error ? <p role="alert">{error}</p> : null}{!loaded && error ? <Button type="button" variant="outline" onClick={() => setLoadAttempt(value => value + 1)}>重新读取草稿</Button> : null}{operationId ? <OperationStatus operationId={operationId} initial={operation} onChange={(value) => { setOperation(value); if (value.state === 'succeeded') onComplete(); }} /> : <p className="muted-copy">{saved ? '草稿已保存' : '正在保存草稿…'}</p>}
     {loaded && !deleting ? <Attachments references={draft.fields.images ?? bill?.images ?? []} draftKey={`bill:${key}`} disabled={disabled} onPendingChange={setImagesPending} onChange={async (images) => { const next = { ...draft, fields: { ...draft.fields, images } }; setDraft(next); return (await persist(next)).status === 'ready'; }} /> : null}
     <Button type="submit" variant={deleting ? 'destructive' : 'default'} disabled={disabled || (!deleting && imagesPending)}>{busy ? '正在处理…' : deleting ? '确认删除记录' : kind === 'repay-card' ? '保存还款' : '保存转账'}</Button>
     {mode === 'create' && operation && operationIsFinal(operation) ? <Button type="button" variant="outline" onClick={() => { const next = initial(); baseline.current = next.fields; setDraft(next); setOperation(null); setOperationId(null); setPreview(null); setError(null); setSaved(false); }}>建立新草稿</Button> : null}

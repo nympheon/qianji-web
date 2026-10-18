@@ -14,6 +14,7 @@ export async function runMutation(operation: StoredOperation, handler: MutationH
   if (operation.state !== 'queued' || operation.sendCount > 0) return operation;
   repository.assertScope(operation.scope);
   try {
+    repository.assertDraftCurrency(operation.scope,operation.requestId);
     const prepared = await handler.prepare({ scope: operation.scope, requestId: operation.requestId, action: operation.action, input: operation.input }, context);
     repository.assertScope(operation.scope);
     operation = store.prepare(operation, prepared);

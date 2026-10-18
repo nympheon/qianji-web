@@ -93,6 +93,11 @@ describe('native assets and balance changes', () => {
     const result = await s.run((coordinator) => coordinator.submit({ action: 'assets.setFinished', requestId: 'finish-target', scope: s.app.scope, input: { id: '10', finished: true } })); expect(result.state).toBe('succeeded'); expect(s.upstream.calls).toHaveLength(1); expect(s.upstream.calls[0]!.url).toContain('/asset/info');
     await s.app.repository((repo) => expect(numericText(asBillObject(repo.readResources(s.app.scope, 'asset', { domain: 'assets', ids: ['10'] }).items[0]!.raw).money, '')).toBe('-100'));
   });
+  it('keeps a validated asset list fresh when a finish goal is already satisfied', async () => {
+    const s=await setup(),debt={...asset('10','-100',5,51),status:1};let info=false;
+    s.upstream.respond(async()=>{if(s.upstream.calls.at(-1)!.url.includes('/asset/info')){info=true;return new Response(stringifyWire({ec:200,data:debt}));}return new Response(stringifyWire({ec:200,data:{list:[debt],groups:[]}}));});
+    await s.app.repository(async repository=>{const cache=new ResourceCache(repository,s.clock),coordinator=new Coordinator({repository,clock:s.clock,client:s.upstream.client},new Map([['assets.setFinished',createAssetMutationHandler()]])),service=new AssetService({repository,cache,clock:s.clock,client:s.upstream.client,connection:{scope:()=>s.app.scope}});await service.list();const result=await coordinator.submit({action:'assets.setFinished',requestId:'finish-cache',scope:s.app.scope,input:{id:'10',finished:true}});expect(result.state).toBe('succeeded');expect(info).toBe(true);await service.list();expect(s.upstream.calls).toHaveLength(2);});
+  });
   it('never toggles finish again after a lost response; reconciliation only reads the actual target', async () => {
     const s = await setup(), debt = asset('10', '-100', 5, 51); let finished = false, mutations = 0;
     s.upstream.respond(async () => {

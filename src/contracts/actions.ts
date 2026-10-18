@@ -18,11 +18,14 @@ import { tagListSchema, tagWriteSchemas, tagDraftSchema, type TagDraftView, type
 import { budgetQuerySchema, budgetChangesSchema, budgetDraftSchema, type BudgetDraftView, type BudgetView } from '../features/budget/contract';
 import { repeatQuerySchema, repeatPreviewSchema, repeatSubmitSchema, repeatPauseSchema, repeatDeleteSchema, repeatDraftSchema, type RepeatListView, type RepeatDraftView, type PreviewBill } from '../features/repeat/contract';
 import { planBindingSchema } from '../features/plans/contract';
+import {categoryBatchSchema,categoryBatchDraftSchema,type CategoryIconListView,type CategoryBatchDraftView} from '../features/categories/catalog-contract';
 import { savingsQuerySchema, savingsProjectSchema, savingsWriteSchemas, savingsDraftSchema, type SavingsListView, type SavingsProjection, type SavingsDraftView } from '../features/savings/contract';
 import { installmentQuerySchema, installmentPreviewSchema, installmentWriteSchemas, installmentDraftSchema, type InstallmentListView, type InstallmentPreview, type InstallmentDraftView } from '../features/installments/contract';
 import { uploadImageSchema, imageReferenceSchema, uploadDraftSchema, type UploadDraftView, type AttachmentOptions, type UploadedImage, type ImageView } from '../features/attachments/contract';
 const route = z.strictObject({ route: z.enum(['main', 'backup', 'overseas']) });
 export const actionSchemas = {
+  'categories.icons': empty, 'categories.submitMany':categoryBatchSchema.safeExtend({requestId:id}),
+  'categories.batch.draft.get':z.strictObject({key:z.string().min(1).max(300)}),'categories.batch.draft.save':z.strictObject({key:z.string().min(1).max(300),draft:categoryBatchDraftSchema}),
   'savings.list': savingsQuerySchema, 'savings.project': savingsProjectSchema,
   'savings.submit': z.discriminatedUnion('mode', [savingsWriteSchemas['savings.submit'].options[0].extend({ requestId: id }), savingsWriteSchemas['savings.submit'].options[1].extend({ requestId: id })]),
   'savings.deposit': savingsWriteSchemas['savings.deposit'].extend({ requestId: id }), 'savings.cancelDeposit': savingsWriteSchemas['savings.cancelDeposit'].extend({ requestId: id }), 'savings.delete': savingsWriteSchemas['savings.delete'].extend({ requestId: id }), 'savings.reorder': savingsWriteSchemas['savings.reorder'].extend({ requestId: id }),
@@ -85,6 +88,7 @@ export const actionSchemas = {
 export type ActionName = keyof typeof actionSchemas;
 export type ActionInput<A extends ActionName> = z.infer<typeof actionSchemas[A]>;
 export interface ActionOutputs {
+  'categories.icons':CategoryIconListView;'categories.submitMany':OperationView;'categories.batch.draft.get':CategoryBatchDraftView|null;'categories.batch.draft.save':CategoryBatchDraftView;
   'savings.list': SavingsListView; 'savings.project': SavingsProjection; 'savings.submit': OperationView; 'savings.deposit': OperationView; 'savings.cancelDeposit': OperationView; 'savings.delete': OperationView; 'savings.reorder': OperationView; 'savings.draft.get': SavingsDraftView | null; 'savings.draft.save': SavingsDraftView;
   'installments.list': InstallmentListView; 'installments.preview': InstallmentPreview; 'installments.create': OperationView; 'installments.configure': OperationView; 'installments.prepay': OperationView; 'installments.setBillBinding': OperationView; 'installments.delete': OperationView; 'installments.draft.get': InstallmentDraftView | null; 'installments.draft.save': InstallmentDraftView;
   'repeat.list': RepeatListView; 'repeat.preview': PreviewBill[]; 'repeat.submit': OperationView; 'repeat.setPaused': OperationView; 'repeat.setBillBinding': OperationView; 'repeat.delete': OperationView; 'repeat.draft.get': RepeatDraftView | null; 'repeat.draft.save': RepeatDraftView;
@@ -117,6 +121,10 @@ const connection = { ...read, kind: 'connection', requiresAccount: false } as co
 const write = { ...read, kind: 'write', readOnly: false, unavailable: { code: 'WRITE_LIVE_UNVERIFIED', reason: '账单写入已完成契约与模拟测试，待专用测试账本真实验收后启用' } } as const;
 const assetWrite = { ...write, unavailable: { code: 'WRITE_LIVE_UNVERIFIED', reason: '资产写入待命名测试资产真实验收后启用' } } as const;
 export const actionDefinitions: Record<ActionName, ActionDefinition> = {
+  'categories.icons':{...read,title:'查询官方分类图标',description:'读取原生图标分组和名称、图标标识，按需60秒来源缓存。图标目录与个人分类集合分开；group项不会当成待创建分类。'},
+  'categories.submitMany':{...write,title:'批量新增分类',description:'在明确账本、收支类型和可选一级父分类下，按原生submitmultiple一次提交名称/图标列表。每个新分类分别核对官方ID，部分或未知不重发，不按同名认领。复用requestId。'},
+  'categories.batch.draft.get':{...read,evidence:'local',title:'读取批量分类草稿',description:'读取当前账号的图标选择、名称及原操作，不请求钱迹。'},
+  'categories.batch.draft.save':{...read,readOnly:false,evidence:'local',title:'保存批量分类草稿',description:'保存结构化批量分类草稿，未核清原操作时禁止换键重新创建。'},
   'savings.list': { ...read, title: '查询存钱计划', description: '完整官方目录、实际transactions和进度；planId/transId原样字符串，不转为数字。按需60秒来源缓存，闲置不请求。' },
   'savings.project': { ...read, title: '预览存钱规则', description: '七种原生创建规则：定额、12月、36月、365天、52周、逆向52周、灵活目标。计划行不是实际存入，无交易ID，不自动写账。随机新建入口尚未确认。' },
   'savings.submit': { ...write, title: '新增或编辑存钱计划', description: '按原生分字段提交名称、币种、图标、颜色、备注与规则。编辑保留原模式，不修改历史交易；已有存入的币种变更待专项核验。未知新建不按同名认领，复用requestId。' },
@@ -205,7 +213,7 @@ export const actionDefinitions: Record<ActionName, ActionDefinition> = {
   'ledger.detail': { ...read, title: '账单详情', description: '读取真实账单与跨期退款、报销关联，明确缺失资料与数据时间。' },
   'ledger.calendar': { ...read, title: '账单日历', description: '按自然月与指定时区统计真实账单条数，展示完整性及分页。' },
   'ledger.statistics': { ...read, evidence: 'native-vector', title: '收支统计', description: '按 APK 口径计算收支、退款、报销、历史币种、趋势、分组和同期比较。多标签或父子分类分组可重叠，禁止将这些分组再相加当总额。running 时等待同一任务完成后重读。' },
-  'ledger.create': { ...write, title: '新增账单', description: '批量新增普通支出、收入、待报销支出。enteredMoney为录入原价，fee为负数优惠，优惠仅扣一次。必须提供稳定requestId；未知结果只查询operationId，不换键重建。' },
+  'ledger.create': { ...write, title: '新增账单', description: '批量新增普通支出、收入、待报销支出。enteredMoney为原币录入原价，fee为负数优惠，优惠仅扣一次。currency.srcValue保留原价，targetValue/baseValue为优惠后历史金额；关联资产时Bill.money为资产币种金额，禁止套用当前汇率。必须提供稳定requestId；未知结果只查询operationId，不换键重建。' },
   'ledger.edit': { ...write, title: '编辑账单', description: '按详情editVersion选择性修改完整账单，保留未修改字段。必须提供稳定requestId；云端副本变化时保留草稿并重看详情。' },
   'ledger.delete': { ...write, destructive: true, title: '删除账单', description: '按真实账单ID和详情editVersion批量删除，逐项查看回执。必须提供稳定requestId，未确认项目仅核查原操作。有关联记录时使用对应专用操作。' },
   'ledger.transfer': { ...write, destructive: true, title: '管理转账', description: '新增/编辑/删除一笔真实转账。enteredMoney是录入额，fee正为手续费、负为优惠；本金扣一次绝对费用。预期资产变动与上游确认余额分开。始终复用requestId，未知结果核查operationId。' },

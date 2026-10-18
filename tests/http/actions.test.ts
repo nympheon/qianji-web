@@ -20,6 +20,9 @@ export async function seedActions() {
 }
 export const action = (name: string, input: unknown = {}) => exports.default.fetch('https://test/api/actions', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: name, input }) });
 describe('shared HTTP actions', () => {
+  it('exposes the category icon catalog and a typed batch draft without enabling unverified creation',async()=>{
+    await seedActions();expect(await(await action('categories.icons')).json()).toMatchObject({status:'partial',data:{items:[]}});expect(await(await action('categories.submitMany',{bookId:'10',type:0,parentId:null,items:[{name:'吃饭',icon:'food-01'}],requestId:'batch'})).json()).toMatchObject({status:'unavailable',error:{code:'WRITE_LIVE_UNVERIFIED'}});const draft={requestId:'batch-draft',input:{bookId:'10',type:0,parentId:null,items:[]}};expect(await(await action('categories.batch.draft.save',{key:'new',draft})).json()).toMatchObject({status:'ready',data:{draft,operationId:null}});
+  });
   it('shares savings projections, opaque IDs and empty drafts while gating unverified writes', async () => {
     await seedActions();expect(await(await action('savings.list')).json()).toMatchObject({status:'partial',data:{items:[]}});
     expect(await(await action('savings.project',{rule:{mode:'custom',total:'1000',startDate:'2026-01-01'}})).json()).toMatchObject({status:'ready',data:{rows:[],totalAmount:'1000',kind:'flexible-target'}});

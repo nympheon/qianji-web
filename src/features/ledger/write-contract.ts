@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { transferDraftSchema } from './transfer-contract';
+import { transferDraftSchema, historicalCurrencySchema } from './transfer-contract';
 import { refundDraftSchema } from './refund-contract';
 import { reimbursementDraftSchema } from './reimbursement-contract';
 import { bookIdSchema } from '../books/contract';
@@ -8,6 +8,7 @@ const id = z.string().regex(/^[1-9]\d{0,24}$/), money = z.string().max(80).regex
 export const billChangesSchema = z.strictObject({
   bookId: bookIdSchema.optional(), type: z.union([z.literal(0), z.literal(1), z.literal(5)]).optional(), enteredMoney: money.optional(),
   fee: money.optional(), timeSec: z.int().min(0).max(253402300799).optional(), categoryId: id.optional(),
+  currency: historicalCurrencySchema.nullable().optional(),
   assetId: id.nullable().optional(), remark: z.string().max(500).optional(), tagIds: z.array(z.string().min(1).max(200)).max(100).optional(),
   images: z.array(z.string().min(1).max(2048)).max(200).optional(),
   countInStatistics: z.boolean().optional(), countInBudget: z.boolean().optional(),
@@ -22,7 +23,7 @@ export type CreateBillsInput = z.infer<typeof createBillsSchema>;
 export type EditBillsInput = z.infer<typeof editBillsSchema>;
 export type DeleteBillsInput = z.infer<typeof deleteBillsSchema>;
 export const billDraftSchema = z.strictObject({
-  kind: z.enum(['create', 'edit']), requestId: z.string().min(1).max(200), fields: billChangesSchema.extend({ enteredMoney: z.string().max(80).optional(), fee: z.string().max(80).optional() }),
+  kind: z.enum(['create', 'edit']), requestId: z.string().min(1).max(200), fields: billChangesSchema.extend({ enteredMoney: z.string().max(80).optional(), fee: z.string().max(80).optional(), currency: historicalCurrencySchema.extend({srcValue:z.string().max(80),targetValue:z.string().max(80),baseValue:z.string().max(80)}).nullable().optional() }),
   billId: id.optional(), expectedVersion: z.string().length(64).optional(),
 });
 export type BillDraft = z.infer<typeof billDraftSchema>;

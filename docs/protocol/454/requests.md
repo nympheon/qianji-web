@@ -23,3 +23,8 @@ node tools/protocol/mt-read.mts --tool mt_apk_read_text --args-file <args.json> 
 ```
 
 args使用该服务实际工具Schema。工具只允许源码/结构/native检查，不自动执行返回的nextActions，不包含修改、安装、写入APK或文件管理操作。
+# 普通多币种账单补充
+
+APK 4.5.4 `jd/n0.x0` 与 buildCurrencyIncomeSpend：原币录入原价保留在 CurrencyExtra.sv；先扣 abs(transfee)，targetValue/baseValue 为优惠后历史金额。普通账单关联资产且币种匹配 targetSymbol 时，Bill.money 保存 targetValue；不关联资产时保存原币优惠后金额。三组符号相同时金额必须一致，不能按当前汇率改写历史值。仅编辑备注保留旧币种及未知扩展字段；更改金额、优惠、资产或类型必须明确复核币种。详情/列表明确标注原币录入额，金额筛选沿用记录的 Bill.money，避免把资产币种金额标成原币金额。
+
+以上静态向量和本地回归通过；真实多币种写入仍须专用测试资源验收，不能用人民币无优惠样例概括放行。

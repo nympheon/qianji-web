@@ -4,8 +4,9 @@ import type { BillDraft, BillChanges } from '../../features/ledger/write-contrac
 import { newBillSchema } from '../../features/ledger/write-contract';
 import type { OperationView } from '../../operations/contract';
 import { operationIsFinal } from '../../operations/contract';
-import { addMoney } from '../../shared/numbers';
+import { addMoney,subtractMoney } from '../../shared/numbers';
 import { api } from '../api';
+import { useAction } from '../lib/use-action';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Field, FieldGroup, FieldLabel } from './ui/field';
@@ -15,13 +16,15 @@ import { OperationStatus } from './OperationStatus';
 import { Attachments } from './Attachments';
 
 export function BillEditor({ options, bill, onComplete }: { options: LedgerOptions | null; bill?: BillDetail; onComplete(): void }) {
+  const transfers=useAction('ledger.transfer.options',{}),base=transfers.data?.baseCurrency??options?.baseCurrency??'CNY',assets=transfers.data?.assets.filter(asset=>![5,6].includes(asset.type))??[];
   const key = bill ? `edit:${bill.id}` : 'new';
   const initial = (): BillDraft => ({ kind: bill ? 'edit' : 'create', requestId: crypto.randomUUID(), fields: bill ? {
+    assetId:bill.assetId,currency:bill.currency?{srcSymbol:bill.currency.srcSymbol??base,srcValue:bill.currency.srcValue,targetSymbol:bill.currency.targetSymbol??base,targetValue:bill.currency.targetValue,baseSymbol:bill.currency.baseSymbol??base,baseValue:bill.currency.baseValue}:undefined,
     bookId: bill.bookId, categoryId: bill.categoryId ?? undefined, type: bill.type as 0 | 1 | 5,
-    enteredMoney: addMoney(bill.money, bill.transferFee.startsWith('-') ? bill.transferFee.slice(1) : bill.transferFee), fee: bill.transferFee,
+    enteredMoney: bill.currency?.srcValue??addMoney(bill.money, bill.transferFee.startsWith('-') ? bill.transferFee.slice(1) : bill.transferFee), fee: bill.transferFee,
     remark: bill.remark, timeSec: bill.timeSec, tagIds: bill.tagIds, images: bill.images, countInStatistics: !(bill.flags & 1), countInBudget: !(bill.flags & 2),
   } : { bookId: options?.books[0]?.id, categoryId: options?.categories[0]?.id, type: 0, enteredMoney: '', fee: '0', timeSec: Math.floor(Date.now() / 1000), remark: '' }, ...(bill ? { billId: bill.id, expectedVersion: bill.editVersion } : {}) });
-  const [draft, setDraft] = useState<BillDraft>(initial), [loaded, setLoaded] = useState(false), [saved, setSaved] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null);
+  const [draft, setDraft] = useState<BillDraft>(initial), [loaded, setLoaded] = useState(false), [loadAttempt, setLoadAttempt] = useState(0), [saved, setSaved] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null);
   const [operation, setOperation] = useState<OperationView | null>(null), [operationId, setOperationId] = useState<string | null>(null);
   const [imagesPending, setImagesPending] = useState(true);
   const queue = useRef<Promise<unknown>>(Promise.resolve()), mounted = useRef(true);
@@ -31,15 +34,15 @@ export function BillEditor({ options, bill, onComplete }: { options: LedgerOptio
     return task.then((reply) => { if (mounted.current) { setSaved(reply.status === 'ready'); if (reply.error) setError(reply.error.message); } return reply; });
   };
   useEffect(() => {
-    let active = true; mounted.current = true;
+    let active = true; mounted.current = true; setLoaded(false);
     void api('ledger.draft.get', { key }).then((reply) => {
       if (!active) return;
+      if (reply.data && (reply.data.draft.kind !== (bill ? 'edit' : 'create') || (reply.data.draft.kind === 'edit' && reply.data.draft.billId !== bill?.id))) { setError('原草稿类型不匹配，请保留原操作'); return; }
       if (reply.data && (reply.data.draft.kind === 'create' || reply.data.draft.kind === 'edit')) { setDraft(reply.data.draft); setOperationId(reply.data.operationId); setSaved(true); }
-      else if (reply.error) setError(reply.error.message);
-      setLoaded(true);
+      setError(reply.error?.message ?? null); setLoaded(reply.status === 'ready' && !reply.error);
     });
     return () => { active = false; mounted.current = false; };
-  }, [key]);
+  }, [key,loadAttempt]);
   useEffect(() => {
     if (!loaded || operationId || busy) return;
     const timer = setTimeout(() => { void persist(draft); }, 400);
@@ -53,7 +56,8 @@ export function BillEditor({ options, bill, onComplete }: { options: LedgerOptio
     setBusy(true); setError(null);
     try {
       const savedReply = await persist(draft); if (savedReply.status !== 'ready') return;
-      const changes = Object.fromEntries(Object.entries(parsed.data).filter(([name, value]) => JSON.stringify(baseline.current[name as keyof BillChanges]) !== JSON.stringify(value)));
+      const changes:Partial<BillChanges> = Object.fromEntries(Object.entries(parsed.data).filter(([name, value]) => JSON.stringify(baseline.current[name as keyof BillChanges]) !== JSON.stringify(value)));
+      if(draft.kind==='edit'&&draft.fields.currency&&['enteredMoney','fee','assetId','type'].some(key=>Object.hasOwn(changes,key)))changes.currency=parsed.data.currency;
       if (draft.kind === 'edit' && (!draft.billId || !draft.expectedVersion)) { setError('请重新载入账单详情后编辑。'); return; }
       if (draft.kind === 'edit' && !Object.keys(changes).length) { setError('尚未修改账单。'); return; }
       const reply = draft.kind === 'edit'
@@ -73,14 +77,17 @@ export function BillEditor({ options, bill, onComplete }: { options: LedgerOptio
   return <form onSubmit={(event) => { void submit(event); }} className="bill-editor"><FieldGroup>
     <div className="editor-grid"><Field><FieldLabel>账本</FieldLabel><Select value={draft.fields.bookId ?? ''} disabled={disabled} onValueChange={(bookId) => change({ bookId })}><SelectTrigger aria-label="记账账本"><SelectValue placeholder="选择账本" /></SelectTrigger><SelectContent>{options?.books.map((book) => <SelectItem key={book.id} value={book.id}>{book.name}</SelectItem>)}</SelectContent></Select></Field>
     <Field><FieldLabel>类型</FieldLabel><Select value={String(draft.fields.type ?? 0)} disabled={disabled || !!bill?.refundIds.length} onValueChange={(type) => change({ type: Number(type) as 0 | 1 | 5, ...(type === '1' ? { fee: '0' } : {}) })}><SelectTrigger aria-label="记账类型"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="0">支出</SelectItem><SelectItem value="1">收入</SelectItem><SelectItem value="5">待报销支出</SelectItem></SelectContent></Select></Field>
-    <Field><FieldLabel htmlFor="bill-entered-money">录入金额</FieldLabel><Input id="bill-entered-money" inputMode="decimal" value={draft.fields.enteredMoney ?? ''} disabled={disabled} onChange={(event) => change({ enteredMoney: event.target.value })} required /></Field>
+    <Field><FieldLabel htmlFor="bill-entered-money">录入金额</FieldLabel><Input id="bill-entered-money" inputMode="decimal" value={draft.fields.enteredMoney ?? ''} disabled={disabled} onChange={(event) => change({ enteredMoney: event.target.value, ...(draft.fields.currency?{currency:{...draft.fields.currency,srcValue:event.target.value}}:{}) })} required /><p className="muted-copy">{draft.fields.currency?.srcSymbol??base}</p></Field>
     <Field><FieldLabel htmlFor="bill-fee">优惠（负数）</FieldLabel><Input id="bill-fee" inputMode="decimal" value={draft.fields.fee ?? '0'} disabled={disabled || draft.fields.type === 1} onChange={(event) => change({ fee: event.target.value })} /></Field>
+    <Field><FieldLabel>关联资产</FieldLabel><Select value={draft.fields.assetId??'none'} disabled={disabled} onValueChange={value=>{const assetId=value==='none'?null:value,target=assets.find(asset=>asset.id===assetId)?.currency??base;change({assetId,...(draft.fields.currency?{currency:{...draft.fields.currency,targetSymbol:target,targetValue:target===draft.fields.currency.targetSymbol?draft.fields.currency.targetValue:''}}:{})});}}><SelectTrigger aria-label="记账关联资产"><SelectValue placeholder="不关联资产" /></SelectTrigger><SelectContent><SelectItem value="none">不关联资产</SelectItem>{assets.map(asset=><SelectItem value={asset.id} key={asset.id}>{asset.name} · {asset.currency}</SelectItem>)}</SelectContent></Select></Field>
     <Field><FieldLabel>分类</FieldLabel><Select value={draft.fields.categoryId ?? ''} disabled={disabled} onValueChange={(categoryId) => change({ categoryId })}><SelectTrigger aria-label="记账分类"><SelectValue placeholder="选择分类" /></SelectTrigger><SelectContent>{options?.categories.map((category) => <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>)}</SelectContent></Select></Field>
     <Field><FieldLabel htmlFor="bill-time">时间</FieldLabel><Input id="bill-time" type="datetime-local" value={time} disabled={disabled} onChange={(event) => { const ms = new Date(event.target.value).getTime(); if (Number.isFinite(ms)) change({ timeSec: Math.floor(ms / 1000) }); }} required /></Field></div>
+    <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={!!draft.fields.currency} disabled={disabled} onChange={event=>{const symbol=assets.find(asset=>asset.id===draft.fields.assetId)?.currency??base,entered=draft.fields.enteredMoney??'',fee=draft.fields.fee??'0';let net='';try{net=subtractMoney(entered,fee.startsWith('-')?fee.slice(1):fee);}catch{}change({currency:event.target.checked?{srcSymbol:base,srcValue:entered,targetSymbol:symbol,targetValue:symbol===base?net:'',baseSymbol:base,baseValue:net}:null});}} />使用多币种</label>
+    {draft.fields.currency?<div className="editor-grid rounded-xl border p-4"><Field><FieldLabel htmlFor="bill-source-currency">原币种</FieldLabel><Input id="bill-source-currency" value={draft.fields.currency.srcSymbol} maxLength={20} disabled={disabled} onChange={event=>change({currency:{...draft.fields.currency!,srcSymbol:event.target.value.toUpperCase(),targetValue:'',baseValue:''}})} /></Field><Field><FieldLabel htmlFor="bill-target-money">优惠后资产币种金额</FieldLabel><Input id="bill-target-money" inputMode="decimal" value={draft.fields.currency.targetValue} disabled={disabled} onChange={event=>change({currency:{...draft.fields.currency!,targetValue:event.target.value}})} /><p className="muted-copy">{draft.fields.currency.targetSymbol}</p></Field><Field><FieldLabel htmlFor="bill-base-money">优惠后本位币金额</FieldLabel><Input id="bill-base-money" inputMode="decimal" value={draft.fields.currency.baseValue} disabled={disabled} onChange={event=>change({currency:{...draft.fields.currency!,baseValue:event.target.value}})} /><p className="muted-copy">{draft.fields.currency.baseSymbol}</p></Field><p className="muted-copy">保留本次保存的历史金额，不按当前汇率推算。更改录入额或优惠后请确认这些金额。</p>{draft.fields.currency.baseSymbol!==base?<Button type="button" variant="outline" disabled={disabled} onClick={()=>change({currency:{...draft.fields.currency!,baseSymbol:base,baseValue:''}})}>按当前本位币重新填写</Button>:null}</div>:null}
     <Field><FieldLabel htmlFor="bill-remark">备注</FieldLabel><Textarea id="bill-remark" value={draft.fields.remark ?? ''} maxLength={500} disabled={disabled} onChange={(event) => change({ remark: event.target.value })} /></Field>
     {options?.tags.some((tag) => !tag.archived || bill?.tagIds.includes(tag.id)) ? <fieldset className="flex flex-wrap gap-3 rounded-lg border p-3"><legend className="px-1 text-sm font-medium">标签</legend>{options.tags.filter((tag) => !tag.archived || bill?.tagIds.includes(tag.id)).map((tag) => <label className="flex items-center gap-2 text-sm" key={tag.id}><input type="checkbox" className="size-4 accent-primary" checked={draft.fields.tagIds?.includes(tag.id) ?? false} disabled={disabled} onChange={(event) => change({ tagIds: event.target.checked ? [...new Set([...(draft.fields.tagIds ?? []), tag.id])] : (draft.fields.tagIds ?? []).filter((id) => id !== tag.id) })} />{tag.name}{tag.archived ? '（已归档）' : ''}</label>)}</fieldset> : null}
     <div className="flex flex-wrap gap-4 text-sm"><label><input type="checkbox" checked={draft.fields.countInStatistics !== false} disabled={disabled} onChange={(event) => change({ countInStatistics: event.target.checked })} /> 计入收支</label><label><input type="checkbox" checked={draft.fields.countInBudget !== false} disabled={disabled} onChange={(event) => change({ countInBudget: event.target.checked })} /> 计入预算</label></div>
-    {error ? <p role="alert">{error}</p> : null}{operationId ? <OperationStatus operationId={operationId} initial={operation} onChange={(value) => { setOperation(value); if (value.state === 'succeeded') onComplete(); }} /> : <p className="muted-copy">{saved ? '草稿已保存' : '正在保存草稿…'}</p>}
+    {error ? <p role="alert">{error}</p> : null}{!loaded && error ? <Button type="button" variant="outline" onClick={() => setLoadAttempt(value => value + 1)}>重新读取草稿</Button> : null}{operationId ? <OperationStatus operationId={operationId} initial={operation} onChange={(value) => { setOperation(value); if (value.state === 'succeeded') onComplete(); }} /> : <p className="muted-copy">{saved ? '草稿已保存' : '正在保存草稿…'}</p>}
     {loaded ? <Attachments references={draft.fields.images ?? bill?.images ?? []} draftKey={`bill:${key}`} disabled={disabled} onPendingChange={setImagesPending} onChange={async (images) => { const next = { ...draft, fields: { ...draft.fields, images } }; setDraft(next); return (await persist(next)).status === 'ready'; }} /> : null}
     <Button type="submit" disabled={disabled || imagesPending}>{busy ? '正在提交…' : '保存账单'}</Button>
     {operation && operationIsFinal(operation) ? <Button type="button" variant="outline" onClick={() => { const next = initial(); baseline.current = next.fields; setDraft(next); setOperationId(null); setOperation(null); setSaved(false); }}>建立新草稿</Button> : null}

@@ -6,6 +6,8 @@ import { useCase, type UseCase, type UseCaseContext } from './use-case';
 
 function scope(context: UseCaseContext) { const scope = context.connection.scope(); if (!scope) throw new DomainError('CONNECTION_REQUIRED', '请先连接钱迹'); return scope; }
 const handlers: Record<ActionName, UseCase> = {
+  'categories.icons':useCase('categories.icons',ctx=>ctx.categoryCatalog.icons()),'categories.submitMany':useCase('categories.submitMany',(ctx,{requestId,...input})=>ctx.categoryCatalog.submitMany(input,{requestId})),
+  'categories.batch.draft.get':useCase('categories.batch.draft.get',(ctx,input)=>ctx.categoryCatalog.getDraft(input.key)),'categories.batch.draft.save':useCase('categories.batch.draft.save',(ctx,input)=>ctx.categoryCatalog.saveDraft(input.key,input.draft)),
   'savings.list': useCase('savings.list', (ctx, input) => ctx.savings.list(input)), 'savings.project': useCase('savings.project', (ctx, input) => ctx.savings.project(input)),
   'savings.submit': useCase('savings.submit', (ctx, { requestId, ...input }) => ctx.savings.mutate('savings.submit', input, { requestId })),
   'savings.deposit': useCase('savings.deposit', (ctx, { requestId, ...input }) => ctx.savings.mutate('savings.deposit', input, { requestId })),

@@ -152,7 +152,22 @@ export class Repository {
   }
   saveDraft(scope: ActorScope, id: Id, raw: WireJson): void {
     this.assertScope(scope); requireId(id);
-    this.sql.exec('INSERT INTO drafts(uid,id,raw) VALUES (?,?,?) ON CONFLICT(uid,id) DO UPDATE SET raw=excluded.raw', scope.uid, id, stringifyWire(raw)).toArray();
+    this.transaction(()=>{
+      if(/^(bill|asset|debt|budget|repeat|installment|saving):/.test(id)&&raw&&typeof raw==='object'&&!Array.isArray(raw)&&'requestId'in raw&&typeof raw.requestId==='string'){
+        const contextId=`currency-context:${id}`,prior=this.readDraft(scope,contextId);
+        if(!prior||typeof prior!=='object'||Array.isArray(prior)||!('requestId'in prior)||prior.requestId!==raw.requestId){
+          const baseCurrency=this.sql.exec<{base_currency:string}>('SELECT base_currency FROM accounting_config WHERE uid=?',scope.uid).toArray()[0]?.base_currency??'CNY';
+          this.sql.exec('INSERT INTO drafts(uid,id,raw) VALUES (?,?,?) ON CONFLICT(uid,id) DO UPDATE SET raw=excluded.raw',scope.uid,contextId,stringifyWire({requestId:raw.requestId,baseCurrency})).toArray();
+        }
+      }
+      this.sql.exec('INSERT INTO drafts(uid,id,raw) VALUES (?,?,?) ON CONFLICT(uid,id) DO UPDATE SET raw=excluded.raw', scope.uid, id, stringifyWire(raw)).toArray();
+    });
+  }
+  assertDraftCurrency(scope:ActorScope,requestId:string):void{
+    this.assertScope(scope);
+    const current=this.sql.exec<{base_currency:string}>('SELECT base_currency FROM accounting_config WHERE uid=?',scope.uid).toArray()[0]?.base_currency??'CNY';
+    const contexts=this.sql.exec<{base_currency:string}>("SELECT json_extract(raw,'$.baseCurrency') AS base_currency FROM drafts WHERE uid=? AND id LIKE 'currency-context:%' AND json_extract(raw,'$.requestId')=?",scope.uid,requestId).toArray();
+    const changed=contexts.find(row=>row.base_currency!==current);if(changed)throw new DomainError('DRAFT_CURRENCY_CHANGED',`草稿保存时本位币为${changed.base_currency}，当前为${current}。请重新载入资料、确认各项金额并建立新草稿`);
   }
   readDraft(scope: ActorScope, id: Id): WireJson | null {
     this.assertScope(scope);

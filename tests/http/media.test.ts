@@ -3,7 +3,12 @@ import { env, exports } from 'cloudflare:workers';
 import { runInDurableObject } from 'cloudflare:test';
 import { Repository } from '../../src/storage/database';
 import { handleImageHttp } from '../../src/worker/images';
+import { ResourceCache } from '../../src/storage/cache';
+import { TestClock } from '../support/upstream';
 afterEach(() => vi.restoreAllMocks());
+it('proxies only exact published HTTP icon references from the current official catalog',async()=>{
+  const reference='http://res3.qianjiapp.com/cateic_fixture.png';await runInDurableObject(env.QIANJI_STATE.getByName('personal'),(_actor,state)=>{const repository=new Repository(state.storage),scope={uid:'catalog-media',connectionEpoch:'catalog-media'};repository.bindScope(scope);new ResourceCache(repository,new TestClock()).confirmResources(scope,'catalogs',[{id:'0',kind:'categoryIcon',raw:{icon:reference,name:'test',group:'test'}}]);});const fetch=vi.spyOn(globalThis,'fetch').mockImplementation(async()=>new Response(new Uint8Array([137,80,78,71]),{headers:{'content-type':'image/png'}}));const result=await handleImageHttp(new Request('https://test/api/images?purpose=category&reference='+encodeURIComponent(reference)),env);expect(result.status).toBe(200);expect(fetch.mock.calls[0]![0]).toBe(reference);fetch.mockClear();expect((await handleImageHttp(new Request('https://test/api/images?purpose=category&reference='+encodeURIComponent(reference+'-unknown')),env)).status).toBe(502);expect(fetch).not.toHaveBeenCalled();
+});
 it('bounds MCP image JSON before the SDK parses base64', async () => {
   const response = await exports.default.fetch('https://test/mcp', { method: 'POST', headers: { 'content-type': 'application/json' }, body: new Uint8Array(12 * 1024 * 1024 + 1) }); expect(response.status).toBe(413);
   const within = await exports.default.fetch('https://test/mcp', { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'attachments.upload', arguments: { requestId: 'bounded-image', purpose: 'bill', mime: 'image/jpeg', dataBase64: 'A'.repeat(5 * 1024 * 1024) } } }) }); expect(within.status).not.toBe(413);

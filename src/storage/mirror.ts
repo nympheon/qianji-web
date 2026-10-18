@@ -3,7 +3,7 @@ import type { WireJson } from '../shared/wire-json';
 import type { ResourceRecord } from './resources';
 
 export type SyncDomain = 'ledger' | 'tags' | 'assets' | 'debt' | 'books'
-  | 'categories' | 'budget' | 'repeat' | 'installments' | 'savings' | 'attachments';
+  | 'catalogs' | 'categories' | 'budget' | 'repeat' | 'installments' | 'savings' | 'attachments';
 export interface BillRelation { kind: string; targetId: Id; raw: WireJson }
 export interface BillRecord {
   id: Id; bookId: Id; type: number; timeSec: number; money: Money;
