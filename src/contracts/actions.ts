@@ -18,10 +18,15 @@ import { tagListSchema, tagWriteSchemas, tagDraftSchema, type TagDraftView, type
 import { budgetQuerySchema, budgetChangesSchema, budgetDraftSchema, type BudgetDraftView, type BudgetView } from '../features/budget/contract';
 import { repeatQuerySchema, repeatPreviewSchema, repeatSubmitSchema, repeatPauseSchema, repeatDeleteSchema, repeatDraftSchema, type RepeatListView, type RepeatDraftView, type PreviewBill } from '../features/repeat/contract';
 import { planBindingSchema } from '../features/plans/contract';
+import { savingsQuerySchema, savingsProjectSchema, savingsWriteSchemas, savingsDraftSchema, type SavingsListView, type SavingsProjection, type SavingsDraftView } from '../features/savings/contract';
 import { installmentQuerySchema, installmentPreviewSchema, installmentWriteSchemas, installmentDraftSchema, type InstallmentListView, type InstallmentPreview, type InstallmentDraftView } from '../features/installments/contract';
 import { uploadImageSchema, imageReferenceSchema, uploadDraftSchema, type UploadDraftView, type AttachmentOptions, type UploadedImage, type ImageView } from '../features/attachments/contract';
 const route = z.strictObject({ route: z.enum(['main', 'backup', 'overseas']) });
 export const actionSchemas = {
+  'savings.list': savingsQuerySchema, 'savings.project': savingsProjectSchema,
+  'savings.submit': z.discriminatedUnion('mode', [savingsWriteSchemas['savings.submit'].options[0].extend({ requestId: id }), savingsWriteSchemas['savings.submit'].options[1].extend({ requestId: id })]),
+  'savings.deposit': savingsWriteSchemas['savings.deposit'].extend({ requestId: id }), 'savings.cancelDeposit': savingsWriteSchemas['savings.cancelDeposit'].extend({ requestId: id }), 'savings.delete': savingsWriteSchemas['savings.delete'].extend({ requestId: id }), 'savings.reorder': savingsWriteSchemas['savings.reorder'].extend({ requestId: id }),
+  'savings.draft.get': z.strictObject({ key: z.string().min(1).max(300) }), 'savings.draft.save': z.strictObject({ key: z.string().min(1).max(300), draft: savingsDraftSchema }),
   'installments.list': installmentQuerySchema, 'installments.preview': installmentPreviewSchema,
   'installments.create': installmentWriteSchemas['installments.create'].extend({ requestId: id }),
   'installments.configure': installmentWriteSchemas['installments.configure'].extend({ requestId: id }),
@@ -80,6 +85,7 @@ export const actionSchemas = {
 export type ActionName = keyof typeof actionSchemas;
 export type ActionInput<A extends ActionName> = z.infer<typeof actionSchemas[A]>;
 export interface ActionOutputs {
+  'savings.list': SavingsListView; 'savings.project': SavingsProjection; 'savings.submit': OperationView; 'savings.deposit': OperationView; 'savings.cancelDeposit': OperationView; 'savings.delete': OperationView; 'savings.reorder': OperationView; 'savings.draft.get': SavingsDraftView | null; 'savings.draft.save': SavingsDraftView;
   'installments.list': InstallmentListView; 'installments.preview': InstallmentPreview; 'installments.create': OperationView; 'installments.configure': OperationView; 'installments.prepay': OperationView; 'installments.setBillBinding': OperationView; 'installments.delete': OperationView; 'installments.draft.get': InstallmentDraftView | null; 'installments.draft.save': InstallmentDraftView;
   'repeat.list': RepeatListView; 'repeat.preview': PreviewBill[]; 'repeat.submit': OperationView; 'repeat.setPaused': OperationView; 'repeat.setBillBinding': OperationView; 'repeat.delete': OperationView; 'repeat.draft.get': RepeatDraftView | null; 'repeat.draft.save': RepeatDraftView;
   'attachments.draft.applied': UploadDraftView; 'attachments.draft.get': UploadDraftView | null; 'attachments.draft.save': UploadDraftView; 'attachments.options': AttachmentOptions; 'attachments.resolve': ImageView; 'attachments.result': UploadedImage | null; 'attachments.upload': OperationView;
@@ -111,6 +117,15 @@ const connection = { ...read, kind: 'connection', requiresAccount: false } as co
 const write = { ...read, kind: 'write', readOnly: false, unavailable: { code: 'WRITE_LIVE_UNVERIFIED', reason: '账单写入已完成契约与模拟测试，待专用测试账本真实验收后启用' } } as const;
 const assetWrite = { ...write, unavailable: { code: 'WRITE_LIVE_UNVERIFIED', reason: '资产写入待命名测试资产真实验收后启用' } } as const;
 export const actionDefinitions: Record<ActionName, ActionDefinition> = {
+  'savings.list': { ...read, title: '查询存钱计划', description: '完整官方目录、实际transactions和进度；planId/transId原样字符串，不转为数字。按需60秒来源缓存，闲置不请求。' },
+  'savings.project': { ...read, title: '预览存钱规则', description: '七种原生创建规则：定额、12月、36月、365天、52周、逆向52周、灵活目标。计划行不是实际存入，无交易ID，不自动写账。随机新建入口尚未确认。' },
+  'savings.submit': { ...write, title: '新增或编辑存钱计划', description: '按原生分字段提交名称、币种、图标、颜色、备注与规则。编辑保留原模式，不修改历史交易；已有存入的币种变更待专项核验。未知新建不按同名认领，复用requestId。' },
+  'savings.deposit': { ...write, title: '存入计划', description: 'amount以计划/转入资产币种计。无billInfo只记录进度；可选bookId/outAssetId/inAssetId与历史币种、图片、标签，让钱迹一次生成关联转账。只采用官方transaction/bill，不另补转账；未知沿原操作查询。' },
+  'savings.cancelDeposit': { ...write, destructive: true, title: '撤销一笔存入', description: '按原样transId及版本撤销实际存入；计划交易移除与关联billId删除分别确认，不发送额外账单删除。未知只读核对，不重发。' },
+  'savings.delete': { ...write, destructive: true, title: '删除存钱计划', description: '必须明确deleteBills，false保留已有账单，true核对关联账单删除与资产回拉。计划管理对象删除和账单影响分别跟踪，不自动清空其他数据。' },
+  'savings.reorder': { ...write, title: '排序存钱计划', description: '提交完整且不重复的原样planId数组，通过只读目录核对顺序，不改交易或预览规则。复用requestId。' },
+  'savings.draft.get': { ...read, evidence: 'local', title: '读取存钱计划草稿', description: '读取本账号结构化草稿及原操作，不请求钱迹。' },
+  'savings.draft.save': { ...read, evidence: 'local', readOnly: false, title: '保存存钱计划草稿', description: '只保存结构化输入；未知或部分成功操作未核清时拒绝更换请求键。' },
   'installments.list': { ...read, title: '查询分期', description: '按原生创建时间0、状态1、总金额2、剩余金额3及ascending排序，完整目录按资产和状态筛选；60秒来源缓存，闲置不请求。' },
   'installments.preview': { ...read, title: '预览分期拆分', description: '按原生六种尾差及手续费分配预览，包含原生月末顺延和初始执行次数。纯预览不会生成或补写账单，实际以钱迹回执为准。金额币种来自所选信用卡，否则为本位币。' },
   'installments.create': { ...write, title: '新增分期', description: '在信用卡和所选账本支出分类下创建原生type1分期。六种尾差、三种费用分配及本金/费用计入统计选项；官方生成账单，网页不上传预览。复用requestId。' },

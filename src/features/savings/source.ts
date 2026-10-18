@@ -1,0 +1,26 @@
+import { asBillObject, moneyText, numericText, positiveBillId, type BillObject } from '../../shared/bill-wire';
+import { DomainError } from '../../shared/errors';
+import { ResourceCache } from '../../storage/cache';
+import type { OperationContext } from '../../operations/contract';
+import type { ActorScope } from '../../shared/model';
+import { addMoney } from '../../shared/numbers';
+import { billVersion } from '../ledger/write';
+import { installmentBusinessDate } from '../installments/source';
+import { savingsRuleSchema, type SavingsTransactionView, type SavingsView } from './contract';
+export const savingsKey={domain:'savings',resourceKind:'savings',queryKey:'saving:list'} as const;
+export function opaque(value:unknown) {if(typeof value!=='string'||!value||value.length>200)throw new DomainError('SAVINGS_ID_INVALID','储蓄计划或交易ID格式无效');return value;}
+function integer(value:import('../../shared/wire-json').WireJson|undefined,fallback='0'){const result=Number(numericText(value,fallback));if(!Number.isSafeInteger(result))throw new DomainError('SAVINGS_DATA_INVALID','储蓄整数资料无法核对');return result;}
+export function transactionView(raw:BillObject):SavingsTransactionView {return {transId:opaque(raw.transid),planId:opaque(raw.planid),amount:moneyText(raw.amount),timeSec:integer(raw.time),remark:typeof raw.remark==='string'?raw.remark:'',billId:positiveBillId(raw.billid),version:billVersion(raw)};}
+export function savingsFields(raw:BillObject) {
+  const wire=asBillObject(raw.rule),mode=String(wire.mode),start=integer(wire.start),date=installmentBusinessDate(start),time=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Shanghai',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(start*1000), dates={startDate:date,time,zone:'Asia/Shanghai'};
+  const rule=savingsRuleSchema.safeParse(mode==='custom'?{mode,...dates,total:moneyText(wire.total),endDate:integer(wire.end)>0?installmentBusinessDate(integer(wire.end)):null}:['fixedAmount','fixedAmount12','fixedAmount36'].includes(mode)?{mode,...dates,amount:moneyText(wire.amount),...(mode==='fixedAmount'?{period:integer(wire.period),frequency:String(wire.frequency)}:{})}:{mode,...dates,initialAmount:moneyText(wire.initialAmount),increment:moneyText(wire.increment)});
+  if(!rule.success)return null;return {name:typeof raw.name==='string'?raw.name:'',currency:typeof raw.currency==='string'?raw.currency:'',rule:rule.data,remark:typeof raw.remark==='string'?raw.remark:'',icon:typeof raw.icon==='string'?raw.icon:'',color:typeof raw.color==='string'?raw.color:'3792FA'};
+}
+export function savingsView(raw:BillObject):SavingsView {
+  const transactions=raw.transactions==null?[]:raw.transactions;if(!Array.isArray(transactions)||transactions.length>10000)throw new DomainError('SAVINGS_TRANSACTIONS_LIMIT','储蓄交易集合超出本次完整核对范围');const items=transactions.map(value=>transactionView(asBillObject(value))),planId=opaque(raw.planid),seen=new Set<string>();for(const row of items){if(row.planId!==planId||seen.has(row.transId))throw new DomainError('SAVINGS_TRANSACTION_INVALID','储蓄交易归属或ID重复');seen.add(row.transId);}
+  const fields=savingsFields(raw);return {planId,name:typeof raw.name==='string'?raw.name:'',currency:typeof raw.currency==='string'?raw.currency:'',mode:String(asBillObject(raw.rule).mode),fields,status:integer(raw.status,'1'),savedAmount:raw.savedAmount==null?items.reduce((sum,row)=>addMoney(sum,row.amount),'0'):moneyText(raw.savedAmount),transactions:items,editVersion:billVersion({name:raw.name??'',currency:raw.currency??'',rule:raw.rule??null,remark:raw.remark??'',icon:raw.icon??'',color:raw.color??''}),unsupportedReason:fields?null:'当前模式的规则尚未核验，可查看官方进度及交易'};
+}
+export async function refreshSavings(ctx:Pick<OperationContext,'repository'|'clock'|'client'>,scope:ActorScope) {
+  const cache=new ResourceCache(ctx.repository,ctx.clock),stamp=cache.captureRead(scope,savingsKey),reply=await ctx.client.request('saving.list',{uid:scope.uid},scope);if(!Array.isArray(reply.data)||reply.data.length>1000||reply.hasMore)throw new DomainError('SAVINGS_LIST_INVALID','储蓄完整列表格式或范围无法核对');const seen=new Set<string>();let total=0;const items=reply.data.map(value=>{const raw=asBillObject(value),view=savingsView(raw);if(seen.has(view.planId)||raw.userid!=null&&numericText(raw.userid,'')!==scope.uid||view.transactions.some((_,index)=>{const tx=asBillObject((raw.transactions as import('../../shared/wire-json').WireJson[])[index]);return tx.userid!=null&&numericText(tx.userid,'')!==scope.uid;})||(total+=view.transactions.length)>50000)throw new DomainError('SAVINGS_SCOPE_INVALID','储蓄列表包含重复、其他账号交易或超出范围');seen.add(view.planId);return {id:view.planId,kind:'savings' as const,raw};});
+  ctx.repository.transaction(()=>{const dataset=ctx.repository.dataset(scope,'savings'),previous=dataset?ctx.repository.sql.exec<{id:string}>("SELECT id FROM resources WHERE uid=? AND domain='savings' AND dataset_id=? AND kind='savings' LIMIT 1001",scope.uid,dataset.id).toArray():[];if(previous.length>1000)throw new DomainError('SAVINGS_LIST_INVALID','本地目录超出完整范围');if(cache.applyRead(stamp,{items,deletes:previous.map(x=>x.id).filter(id=>!seen.has(id)),complete:true})!=='applied')throw new DomainError('SOURCE_SUPERSEDED','储蓄读取期间发生变化');ctx.repository.bumpSourceGeneration(scope,'savings');});return items.map(item=>item.raw);
+}

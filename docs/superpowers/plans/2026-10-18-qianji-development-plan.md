@@ -416,11 +416,11 @@ cache.ts导出`CacheKey { domain:SyncDomain; queryKey:string }`、`CacheReadStam
 **Files:** Create `src/features/savings/{contract,service,use-cases,projection}.ts`、`src/web/pages/SavingsPage.tsx`、`tests/workers/savings.test.ts`；Modify registry。
 **Interfaces:** Consumes资产/账本/附件；Produces `SavingsService.list/submit/reorder/project/deposit/cancelDeposit/delete`；明确planId/transId为原样字符串，DepositInput有可选billInfo，DeleteSavingsInput明确deleteBills。
 
-- [ ] 写失败断言：计划计算行不当实际交易；无billInfo只存交易，有则采用官方transaction/bill；撤销传transId并核查关联账单删除；删计划deleteBills=0/1影响分开。
-- [ ] Run `pnpm test -- tests/workers/savings.test.ts`；预期FAIL于储蓄域缺失。
-- [ ] 实现已确认七个创建入口的规则/预览、编辑名称规则及排序；保存原始字符串ID和秒/毫秒边界。random仅枚举发现，关闭其创建研究点前不声称支持；不改历史交易或按计算行定时deposit，不自行再写一笔转账。
-- [ ] 重跑关联账单已删/未删、存入/撤销响应丢失、规则改动不重写历史、模式币种校验和删除策略，PASS；真实同时检查plan/transaction/bill/资产。
-- [ ] 提交：`feat: manage savings plans and linked deposits`。
+- [x] 写失败断言：计划计算行不当实际交易；无billInfo只存交易，有则采用官方transaction/bill；撤销传transId并核查关联账单删除；删计划deleteBills=0/1影响分开。
+- [x] Run `pnpm test -- tests/workers/savings.test.ts`；预期FAIL于储蓄域缺失。
+- [x] 实现已确认七个创建入口的规则/预览、编辑名称规则及排序；保存原始字符串ID和秒/毫秒边界。random仅枚举和适配器发现，已确认七分支无新建入口，明确不开放随机创建；不改历史交易或按计算行定时deposit，不自行再写一笔转账。
+- [x] 重跑关联账单已删/未删、存入/撤销响应丢失、规则改动不重写历史、模式币种校验和删除策略，PASS；真实同时检查plan/transaction/bill/资产移交任务27；正式写能力未启用。
+- [x] 提交：`feat: manage savings plans and linked deposits`。
 
 ## M4：整体验证与发布
 

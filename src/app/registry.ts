@@ -6,6 +6,13 @@ import { useCase, type UseCase, type UseCaseContext } from './use-case';
 
 function scope(context: UseCaseContext) { const scope = context.connection.scope(); if (!scope) throw new DomainError('CONNECTION_REQUIRED', '请先连接钱迹'); return scope; }
 const handlers: Record<ActionName, UseCase> = {
+  'savings.list': useCase('savings.list', (ctx, input) => ctx.savings.list(input)), 'savings.project': useCase('savings.project', (ctx, input) => ctx.savings.project(input)),
+  'savings.submit': useCase('savings.submit', (ctx, { requestId, ...input }) => ctx.savings.mutate('savings.submit', input, { requestId })),
+  'savings.deposit': useCase('savings.deposit', (ctx, { requestId, ...input }) => ctx.savings.mutate('savings.deposit', input, { requestId })),
+  'savings.cancelDeposit': useCase('savings.cancelDeposit', (ctx, { requestId, ...input }) => ctx.savings.mutate('savings.cancelDeposit', input, { requestId })),
+  'savings.delete': useCase('savings.delete', (ctx, { requestId, ...input }) => ctx.savings.mutate('savings.delete', input, { requestId })),
+  'savings.reorder': useCase('savings.reorder', (ctx, { requestId, ...input }) => ctx.savings.mutate('savings.reorder', input, { requestId })),
+  'savings.draft.get': useCase('savings.draft.get', (ctx, input) => ctx.savings.getDraft(input.key)), 'savings.draft.save': useCase('savings.draft.save', (ctx, input) => ctx.savings.saveDraft(input.key, input.draft)),
   'installments.list': useCase('installments.list', (ctx, input) => ctx.installments.list(input)), 'installments.preview': useCase('installments.preview', (ctx, input) => ctx.installments.preview(input)),
   'installments.create': useCase('installments.create', (ctx, { requestId, ...input }) => ctx.installments.mutate('installments.create', input, { requestId })),
   'installments.configure': useCase('installments.configure', (ctx, { requestId, ...input }) => ctx.installments.mutate('installments.configure', input, { requestId })),

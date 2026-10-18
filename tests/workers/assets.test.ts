@@ -68,7 +68,7 @@ describe('native assets and balance changes', () => {
     const s = await setup(); await s.run(async (coordinator) => { coordinator.store.create({ action: 'debt.pay', requestId: 'debt-queued', scope: s.app.scope, input: { id: '100', principal: '1' } }, 'pending-debt-digest'); expect((await coordinator.submit(s.command())).error?.code).toBe('UNSYNCED_BILLS'); }); expect(s.upstream.calls).toHaveLength(0);
   });
   it('includes recurring submit and toggle intents that can return official bills in the balance guard', async () => {
-    for (const action of ['repeat.submit', 'repeat.setPaused', 'installments.create', 'installments.prepay']) { const s = await setup(); await s.run(async (coordinator) => { coordinator.store.create({ action, requestId: 'recurring-queued', scope: s.app.scope, input: { id: '100' } }, 'pending-recurring-digest'); expect((await coordinator.submit(s.command())).error?.code).toBe('UNSYNCED_BILLS'); }); expect(s.upstream.calls).toHaveLength(0); }
+    for (const action of ['repeat.submit', 'repeat.setPaused', 'installments.create', 'installments.prepay', 'savings.deposit', 'savings.cancelDeposit', 'savings.delete']) { const s = await setup(); await s.run(async (coordinator) => { coordinator.store.create({ action, requestId: 'recurring-queued', scope: s.app.scope, input: { id: '100' } }, 'pending-recurring-digest'); expect((await coordinator.submit(s.command())).error?.code).toBe('UNSYNCED_BILLS'); }); expect(s.upstream.calls).toHaveLength(0); }
   });
   it('converts the entered credit balance back to stored money with counted outstanding installments once', async () => {
     const s = await setup(), original = { ...asset('10', '100', 2, 21), installs: [{ money: 40, fee: 2, incount: 1, status: 1, data: { feeincount: 1 } }] };

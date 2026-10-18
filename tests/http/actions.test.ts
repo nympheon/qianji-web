@@ -20,6 +20,12 @@ export async function seedActions() {
 }
 export const action = (name: string, input: unknown = {}) => exports.default.fetch('https://test/api/actions', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: name, input }) });
 describe('shared HTTP actions', () => {
+  it('shares savings projections, opaque IDs and empty drafts while gating unverified writes', async () => {
+    await seedActions();expect(await(await action('savings.list')).json()).toMatchObject({status:'partial',data:{items:[]}});
+    expect(await(await action('savings.project',{rule:{mode:'custom',total:'1000',startDate:'2026-01-01'}})).json()).toMatchObject({status:'ready',data:{rows:[],totalAmount:'1000',kind:'flexible-target'}});
+    const draft={action:'savings.submit',requestId:'saving-draft',input:{mode:'create',fields:{name:'',rule:{mode:'fixedAmount',amount:'',startDate:''}}}};expect(await(await action('savings.draft.save',{key:'new',draft})).json()).toMatchObject({status:'ready',data:{draft,operationId:null}});
+    expect(await(await action('savings.delete',{planId:'opaque-plan',deleteBills:false,requestId:'delete'})).json()).toMatchObject({status:'unavailable',error:{code:'WRITE_LIVE_UNVERIFIED'}});
+  });
   it('shares native installment previews and durable drafts while requiring live write acceptance', async () => {
     await seedActions();
     expect(await (await action('installments.list')).json()).toMatchObject({ status: 'partial', data: { items: [] } });
