@@ -34,6 +34,7 @@ export interface BillSummary {
   legacyReimbursement: { marked: boolean; money: Money; timeSec: number | null; assetId: Id | null };
 }
 export interface BillDetail extends BillSummary {
+  editVersion?: string;
   refunds: BillSummary[]; reimbursements: BillSummary[]; sources: BillSummary[];
   missingRelatedIds: Id[]; incompleteReasons: string[]; freshness: Freshness;
 }

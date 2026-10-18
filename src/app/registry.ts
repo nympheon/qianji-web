@@ -19,6 +19,11 @@ const handlers: Record<ActionName, UseCase> = {
   'ledger.detail': useCase('ledger.detail', (ctx, input) => ctx.ledger.detail(input.id)),
   'ledger.calendar': useCase('ledger.calendar', (ctx, input) => ctx.ledger.calendar({ year: input.year, month: input.month, ...(input.filter ? { filter: input.filter } : {}), ...(input.cursor ? { cursor: input.cursor } : {}) })),
   'ledger.statistics': useCase('ledger.statistics', (ctx, input) => ctx.ledger.statistics(input)),
+  'ledger.create': useCase('ledger.create', (ctx, input) => ctx.ledger.create({ bills: input.bills }, { requestId: input.requestId })),
+  'ledger.edit': useCase('ledger.edit', (ctx, input) => ctx.ledger.edit({ bills: input.bills }, { requestId: input.requestId })),
+  'ledger.delete': useCase('ledger.delete', (ctx, input) => ctx.ledger.remove({ bills: input.bills }, { requestId: input.requestId })),
+  'ledger.draft.get': useCase('ledger.draft.get', (ctx, input) => ctx.ledgerWrites.getDraft(input.key)),
+  'ledger.draft.save': useCase('ledger.draft.save', (ctx, input) => ctx.ledgerWrites.saveDraft(input.key, input.draft)),
   'operations.get': useCase('operations.get', (ctx, input) => ctx.coordinator.getOperation(scope(ctx), input.operationId)),
   'operations.reconcile': useCase('operations.reconcile', (ctx, input) => ctx.coordinator.reconcileOperation(scope(ctx), input.operationId)),
   'capabilities.list': useCase('capabilities.list', (ctx) => listCapabilities(ctx)),
@@ -49,7 +54,7 @@ export class AppRegistry {
         const job = data as Awaited<ReturnType<UseCaseContext['sync']['start']>> | null;
         return { status: job?.state === 'running' ? 'running' : job?.state === 'failed' ? 'error' : job?.state === 'truncated' ? 'partial' : 'ready', data, freshness: null, ...(job ? { jobId: job.id, ...(job.error ? { error: job.error } : {}) } : {}) };
       }
-      if (action.startsWith('operations.') && data) {
+      if ((action.startsWith('operations.') || ['ledger.create', 'ledger.edit', 'ledger.delete'].includes(action)) && data) {
         const operation = data as NonNullable<ReturnType<UseCaseContext['coordinator']['getOperation']>>;
         return { status: ['queued', 'sending', 'verifying'].includes(operation.state) ? 'running' : operation.state === 'uncertain' ? 'uncertain' : operation.state === 'partial' ? 'partial' : operation.state === 'failed' ? 'error' : 'ready', data, freshness: null, operationId: operation.id, ...(operation.error ? { error: operation.error } : {}) };
       }

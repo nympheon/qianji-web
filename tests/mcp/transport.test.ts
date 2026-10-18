@@ -9,7 +9,7 @@ import { projectBill } from '../../src/features/sync/incremental';
 import { page } from '../support/fixtures';
 import { Repository } from '../../src/storage/database';
 
-interface RpcReply { result?: { tools?: { name: string; inputSchema: object; annotations?: { readOnlyHint?: boolean } }[]; structuredContent?: unknown; protocolVersion?: string; _meta?: object }; error?: { code: number } }
+interface RpcReply { result?: { tools?: { name: string; inputSchema: object; annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean; idempotentHint?: boolean } }[]; structuredContent?: unknown; protocolVersion?: string; _meta?: object }; error?: { code: number } }
 async function rpc(method: string, params: object = {}, modern = false) {
   const response = await exports.default.fetch('https://test/mcp', { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...(modern ? { 'mcp-protocol-version': '2026-07-28', 'mcp-method': method, ...('name' in params && typeof params.name === 'string' ? { 'mcp-name': params.name } : {}) } : {}) }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params: { ...params, ...(modern ? { _meta: { 'io.modelcontextprotocol/protocolVersion': '2026-07-28', 'io.modelcontextprotocol/clientInfo': { name: 'test', version: '1' }, 'io.modelcontextprotocol/clientCapabilities': {} } } : {}) } }) });
   const text = await response.text(), data = response.headers.get('content-type')?.includes('text/event-stream') ? text.split('\n').filter((line) => line.startsWith('data:')).at(-1)!.slice(5).trim() : text;
@@ -29,6 +29,8 @@ describe('stateless MCP transport', () => {
       expect(response.headers.get('cache-control')).toBe('no-store');
       expect(body.result?.tools?.map((tool) => tool.name)).toEqual(expect.arrayContaining(['ledger.list', 'ledger.statistics', 'sync.start', 'capabilities.list']));
       expect(body.result?.tools?.find((tool) => tool.name === 'ledger.list')?.annotations?.readOnlyHint).toBe(true);
+      expect(body.result?.tools?.find((tool) => tool.name === 'ledger.create')?.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: false, idempotentHint: true });
+      expect(body.result?.tools?.find((tool) => tool.name === 'ledger.delete')?.annotations?.destructiveHint).toBe(true);
       expect(JSON.stringify(body.result?.tools)).not.toMatch(/password|executeSql|rawRequest|connection.login/);
     }
   });

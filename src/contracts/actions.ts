@@ -5,6 +5,7 @@ import type { ConnectionView, RouteCheckView } from '../features/connection/cont
 import { syncInputSchema, type JobView } from '../features/sync/contract';
 import type { OperationView } from '../operations/contract';
 import type { CapabilityView } from './capabilities';
+import { billDraftSchema, createBillsSchema, deleteBillsSchema, editBillsSchema, type BillDraftView } from '../features/ledger/write-contract';
 const empty = z.strictObject({}), id = z.string().min(1).max(200);
 const route = z.strictObject({ route: z.enum(['main', 'backup', 'overseas']) });
 export const actionSchemas = {
@@ -14,6 +15,8 @@ export const actionSchemas = {
   'ledger.options': empty, 'ledger.list': billFilterSchema, 'ledger.detail': z.strictObject({ id }),
   'ledger.calendar': z.strictObject({ year: z.int().min(1).max(9999), month: z.int().min(1).max(12), filter: billFilterSchema.optional(), cursor: z.string().max(4096).optional() }),
   'ledger.statistics': statisticsInputSchema, 'operations.get': z.strictObject({ operationId: id }), 'operations.reconcile': z.strictObject({ operationId: id }), 'capabilities.list': empty,
+  'ledger.create': createBillsSchema.extend({ requestId: id }), 'ledger.edit': editBillsSchema.extend({ requestId: id }), 'ledger.delete': deleteBillsSchema.extend({ requestId: id }),
+  'ledger.draft.get': z.strictObject({ key: z.string().min(1).max(100) }), 'ledger.draft.save': z.strictObject({ key: z.string().min(1).max(100), draft: billDraftSchema }),
 } as const;
 export type ActionName = keyof typeof actionSchemas;
 export type ActionInput<A extends ActionName> = z.infer<typeof actionSchemas[A]>;
@@ -22,10 +25,12 @@ export interface ActionOutputs {
   'connection.selectRoute': ConnectionView; 'connection.testRoute': RouteCheckView; 'sync.start': JobView | null; 'sync.status': JobView;
   'ledger.options': LedgerOptions; 'ledger.list': BillPage; 'ledger.detail': BillDetail; 'ledger.calendar': CalendarView; 'ledger.statistics': StatisticsView;
   'operations.get': OperationView; 'operations.reconcile': OperationView; 'capabilities.list': CapabilityView[];
+  'ledger.create': OperationView; 'ledger.edit': OperationView; 'ledger.delete': OperationView; 'ledger.draft.get': BillDraftView | null; 'ledger.draft.save': BillDraftView;
 }
 export interface ActionDefinition { title: string; description: string; kind: CapabilityView['kind']; evidence: CapabilityView['evidence']; requiresAccount: boolean; readOnly: boolean; destructive: boolean; unavailable?: { code: string; reason: string } }
 const read = { kind: 'read', evidence: 'apk-static', requiresAccount: true, readOnly: true, destructive: false } as const;
 const connection = { ...read, kind: 'connection', requiresAccount: false } as const;
+const write = { ...read, kind: 'write', readOnly: false, unavailable: { code: 'WRITE_LIVE_UNVERIFIED', reason: '账单写入已完成契约与模拟测试，待专用测试账本真实验收后启用' } } as const;
 export const actionDefinitions: Record<ActionName, ActionDefinition> = {
   'connection.status': { ...connection, title: '钱迹连接状态', description: '读取本服务连接状态、当前线路及登录有效性，不请求钱迹。' },
   'connection.check': { ...connection, title: '检查登录状态', description: '主动请求钱迹配置，检查当前登录状态。' },
@@ -40,6 +45,11 @@ export const actionDefinitions: Record<ActionName, ActionDefinition> = {
   'ledger.detail': { ...read, title: '账单详情', description: '读取真实账单与跨期退款、报销关联，明确缺失资料与数据时间。' },
   'ledger.calendar': { ...read, title: '账单日历', description: '按自然月与指定时区统计真实账单条数，展示完整性及分页。' },
   'ledger.statistics': { ...read, evidence: 'native-vector', title: '收支统计', description: '按 APK 口径计算收支、退款、报销、历史币种、趋势、分组和同期比较。多标签或父子分类分组可重叠，禁止将这些分组再相加当总额。running 时等待同一任务完成后重读。' },
+  'ledger.create': { ...write, title: '新增账单', description: '批量新增普通支出、收入、待报销支出。enteredMoney为录入原价，fee为负数优惠，优惠仅扣一次。必须提供稳定requestId；未知结果只查询operationId，不换键重建。' },
+  'ledger.edit': { ...write, title: '编辑账单', description: '按详情editVersion选择性修改完整账单，保留未修改字段。必须提供稳定requestId；云端副本变化时保留草稿并重看详情。' },
+  'ledger.delete': { ...write, destructive: true, title: '删除账单', description: '按真实账单ID和详情editVersion批量删除，逐项查看回执。必须提供稳定requestId，未确认项目仅核查原操作。有关联记录时使用对应专用操作。' },
+  'ledger.draft.get': { ...read, evidence: 'local', title: '读取账单草稿', description: '读取本账号的本地账单草稿和同一请求键已产生的operationId，不请求钱迹。' },
+  'ledger.draft.save': { ...read, readOnly: false, evidence: 'local', title: '保存账单草稿', description: '只保存结构化本地草稿，不上传账单。已有未核清操作时不能替换草稿或请求键。' },
   'operations.get': { ...read, kind: 'reconciliation', title: '查看写操作结果', description: '读取操作日志、逐项结果及确定性，不发送写入。' },
   'operations.reconcile': { ...read, kind: 'reconciliation', title: '核查未知写入结果', description: '通过只读上游查询核查原操作，绝不重发已发送写入。' },
   'capabilities.list': { ...read, evidence: 'local', requiresAccount: false, title: '查看可用功能', description: '读取当前连接下各动作的证据阶段、可用性与不可用原因。模拟测试成功不代表真实验收通过。' },

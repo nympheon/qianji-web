@@ -12,8 +12,11 @@ import { asBillObject, numericText, optionalWireId } from '../../shared/bill-wir
 import { parseWire } from '../../shared/wire-json';
 import { aggregate, toStatItem } from './statistics';
 import { statisticsDimensions } from './statistics-view';
+import { billVersion } from './write';
+import type { LedgerWriteService } from './write-service';
+import type { CreateBillsInput, DeleteBillsInput, EditBillsInput } from './write-contract';
 
-export interface LedgerDependencies { repository: Repository; connection: ConnectionService; freshness: FreshnessService; clock: Clock; baseCurrency?: () => Id }
+export interface LedgerDependencies { repository: Repository; connection: ConnectionService; freshness: FreshnessService; clock: Clock; baseCurrency?: () => Id; writes?: LedgerWriteService }
 function hydrateBill(bill: BillSummary, read: (id: Id) => BillSummary | null, freshness: Freshness): BillDetail {
   const missing: Id[] = [];
   const load = (ids: Id[]) => ids.slice(0, 200).flatMap((id) => { const row = read(id); if (!row) { missing.push(id); return []; } return [row]; });
@@ -26,6 +29,10 @@ function hydrateBill(bill: BillSummary, read: (id: Id) => BillSummary | null, fr
 export class LedgerService {
   readonly #statistics = new Map<string, Omit<StatisticsView, 'freshness'>>();
   constructor(private readonly dependencies: LedgerDependencies) {}
+  private writes() { if (!this.dependencies.writes) throw new DomainError('ACTION_UNAVAILABLE', '账单写入尚不可用'); return this.dependencies.writes; }
+  create(input: CreateBillsInput, meta: { requestId: string }) { return this.writes().create(input, meta); }
+  edit(input: EditBillsInput, meta: { requestId: string }) { return this.writes().edit(input, meta); }
+  remove(input: DeleteBillsInput, meta: { requestId: string }) { return this.writes().remove(input, meta); }
   async statistics(input: StatisticsInput): Promise<StatisticsView> {
     const parsed = statisticsInputSchema.safeParse(input);
     if (!parsed.success) throw new DomainError('INVALID_STATISTICS_INPUT', '统计筛选参数无效');
@@ -108,9 +115,9 @@ export class LedgerService {
     const source = await this.dependencies.freshness.ensureFresh(scope, ['ledger'], 'normal');
     const record = this.dependencies.repository.readBill(scope, id);
     if (!record) throw new DomainError(source.freshness.complete ? 'BILL_NOT_FOUND' : 'BILL_NOT_LOADED', source.freshness.complete ? '账单不存在' : '账单尚未完整载入');
-    return hydrateBill(summarizeBill(record), (id) => {
+    return { ...hydrateBill(summarizeBill(record), (id) => {
       const row = this.dependencies.repository.readBill(scope, id); return row ? summarizeBill(row) : null;
-    }, source.freshness);
+    }, source.freshness), editVersion: billVersion(record.raw) };
   }
   async calendar(input: CalendarInput): Promise<CalendarView> {
     const zone = input.filter?.zone ?? 'Asia/Shanghai';

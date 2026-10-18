@@ -10,7 +10,7 @@ export async function handleMcp(request: Request, env: Env, _ctx: ExecutionConte
     for (const action of Object.keys(actionDefinitions) as ActionName[]) {
       const definition = actionDefinitions[action];
       const schema: StandardSchemaWithJSON = actionSchemas[action];
-      server.registerTool<StandardSchemaWithJSON, StandardSchemaWithJSON>(action, { title: definition.title, description: definition.description, inputSchema: schema, annotations: { readOnlyHint: definition.readOnly, destructiveHint: definition.destructive, idempotentHint: definition.readOnly || definition.kind === 'sync', openWorldHint: true } }, async (input: unknown) => {
+      server.registerTool<StandardSchemaWithJSON, StandardSchemaWithJSON>(action, { title: definition.title, description: definition.description, inputSchema: schema, annotations: { readOnlyHint: definition.readOnly, destructiveHint: definition.destructive, idempotentHint: definition.readOnly || definition.kind === 'sync' || definition.kind === 'write', openWorldHint: true } }, async (input: unknown) => {
         const reply = appReplySchema.parse(JSON.parse(await env.QIANJI_STATE.getByName('personal').call(action, input)));
         return { content: [{ type: 'text', text: JSON.stringify(reply) }], structuredContent: { ...reply }, isError: reply.status === 'error' || reply.status === 'unavailable' };
       });

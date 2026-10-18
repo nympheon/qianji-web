@@ -1,0 +1,176 @@
+import { describe, expect, it } from 'vitest';
+import { createHash } from 'node:crypto';
+import { createTestApp } from '../support/app';
+import { createUpstream, TestClock } from '../support/upstream';
+import { Coordinator } from '../../src/actor/coordinator';
+import { createLedgerMutationHandler } from '../../src/features/ledger/write';
+import { asBillObject, billExtra, numericText } from '../../src/shared/bill-wire';
+import { parseWire, stringifyWire, type WireJson } from '../../src/shared/wire-json';
+import { projectBill } from '../../src/features/sync/incremental';
+import type { MutationCommand } from '../../src/operations/contract';
+import { LedgerWriteService } from '../../src/features/ledger/write-service';
+
+const fixture = '{"id":1792000000123100001,"bookid":1,"type":0,"money":90,"time":1792000000,"updatetime":1792000000,"status":1,"userid":"user-A","assetid":-1,"cateid":2,"remark":"original","extra":{"transfee":-10,"flag":64,"future":{"long":9223372036854775801}},"serverFuture":{"keep":true}}';
+const version = (raw: WireJson) => createHash('sha256').update(stringifyWire(raw)).digest('hex');
+async function scenario() {
+  const app = await createTestApp(), clock = new TestClock(Date.now() + 3600_000), upstream = createUpstream(clock, app.scope);
+  const original = projectBill(parseWire(fixture));
+  await app.repository((repo) => {
+    repo.sql.exec("UPDATE connection SET state='connected' WHERE singleton=1").toArray();
+    for (const domain of ['books', 'ledger'] as const) {
+      repo.createDataset(app.scope, domain, domain);
+    }
+    repo.applyPage(app.scope, 'books', { upserts: [], deletes: [], resources: [{ id: '1', kind: 'book', raw: { bookid: 1, name: 'test', visible: 1 } }], pageState: null, complete: true }, 'books');
+    repo.applyPage(app.scope, 'ledger', { upserts: [original], deletes: [], resources: [{ id: '2', kind: 'category', raw: { id: 2, bookid: 1, type: 0, name: 'test' } }], pageState: null, complete: true });
+    repo.switchDataset(app.scope, 'ledger', 'ledger', null); repo.switchDataset(app.scope, 'books', 'books', null);
+  });
+  const handler = createLedgerMutationHandler();
+  const command = (action: string, input: WireJson, requestId: string = crypto.randomUUID()): MutationCommand => ({ action, input, requestId, scope: app.scope });
+  const run = <T>(fn: (coordinator: Coordinator) => Promise<T>) => app.repository((repository) => fn(new Coordinator({ repository, client: upstream.client, clock }, new Map(['ledger.create', 'ledger.edit', 'ledger.delete'].map((action) => [action, handler])))));
+  function sent() {
+    return upstream.calls.map((call) => {
+      const form = new URLSearchParams(call.body), v = asBillObject(parseWire(form.get('v')!)), bills = asBillObject(v.bills);
+      return { changed: (bills.changelist as WireJson[]).map(asBillObject), deleted: bills.dellist as WireJson[], text: form.get('v')! };
+    });
+  }
+  const receipt = (newIds: string[] = [], updateIds: string[] = [], delIds: string[] = [], confIds: string[] = []) => new Response(`{"ec":200,"data":{"sync_result":{"bill":{"userid":"user-A","new_ids":[${newIds}],"update_ids":[${updateIds}],"del_ids":[${delIds}],"conf_ids":[${confIds}],"has_failed":${confIds.length > 0}}}}}`);
+  const newInput = (overrides = {}) => ({ bookId: '1', categoryId: '2', type: 0 as const, enteredMoney: '100', fee: '-10', timeSec: 1792000000, remark: 'test', ...overrides });
+  return { app, clock, upstream, original, command, run, sent, receipt, newInput };
+}
+
+describe('native bill writes', () => {
+  it('saves entered100/coupon-10 as money90 exactly once with a native-range long numeric ID', async () => {
+    const s = await scenario();
+    s.upstream.respond(async () => s.receipt(s.sent().at(-1)!.changed.map((bill) => numericText(bill.id, ''))));
+    const cmd = s.command('ledger.create', { bills: [s.newInput()] });
+    await s.run(async (coordinator) => {
+      const result = await coordinator.submit(cmd);
+      expect(result.state).toBe('succeeded');
+      expect((await coordinator.submit(cmd)).id).toBe(result.id);
+      await expect(coordinator.submit({ ...cmd, input: { bills: [s.newInput({ enteredMoney: '200' })] } })).rejects.toThrow('REQUEST_KEY_REUSED');
+    });
+    expect(s.upstream.calls).toHaveLength(1);
+    const wire = s.sent()[0]!.changed[0]!;
+    expect(numericText(wire.money, '')).toBe('90'); expect(numericText(billExtra(wire).transfee, '')).toBe('-10');
+    expect(s.sent()[0]!.text).toMatch(/"id":\d{19}/);
+    expect(Number(BigInt(numericText(wire.id, '')) % 1_000_000n)).toBeLessThan(200000);
+    await s.app.repository((repo) => { expect(repo.readBill(s.app.scope, numericText(wire.id, ''))?.money).toBe('90'); expect(numericText(asBillObject(repo.readBill(s.app.scope, numericText(wire.id, ''))!.raw).status, '')).toBe('1'); });
+  });
+
+  it('patches existing whole records without recalculating money or discarding unknown extra/flag fields', async () => {
+    const s = await scenario(); s.upstream.respond(async () => s.receipt([], [s.original.id]));
+    const result = await s.run((coordinator) => coordinator.submit(s.command('ledger.edit', { bills: [{ id: s.original.id, expectedVersion: version(s.original.raw), changes: { remark: 'edited', countInBudget: false } }] })));
+    expect(result.state).toBe('succeeded');
+    const wire = s.sent()[0]!.changed[0]!;
+    expect(wire.remark).toBe('edited'); expect(numericText(wire.money, '')).toBe('90');
+    expect(numericText(billExtra(wire).flag, '')).toBe('66');
+    expect(stringifyWire(billExtra(wire).future!)).toBe('{"long":9223372036854775801}');
+    expect(wire.serverFuture).toEqual({ keep: true });
+  });
+
+  it('refuses changed drafts, unsupported fees and deleting a source with related refunds before sending', async () => {
+    const s = await scenario();
+    const invalid = await s.run((coordinator) => coordinator.submit(s.command('ledger.edit', { bills: [{ id: s.original.id, expectedVersion: '0'.repeat(64), changes: { remark: 'stale' } }] })));
+    expect(invalid.error?.code).toBe('DRAFT_SOURCE_CHANGED');
+    const fee = await s.run((coordinator) => coordinator.submit(s.command('ledger.create', { bills: [s.newInput({ fee: '10' })] })));
+    expect(fee.error?.code).toBe('ORDINARY_FEE_UNSUPPORTED');
+    const raw = asBillObject(parseWire(fixture)); raw.extra = { rfds: { '1792000000123100010': 1 } };
+    await s.app.repository((repo) => repo.applyPage(s.app.scope, 'ledger', { upserts: [projectBill(raw)], deletes: [], resources: [], pageState: null }));
+    const related = await s.run((coordinator) => coordinator.submit(s.command('ledger.delete', { bills: [{ id: s.original.id, expectedVersion: version(raw) }] })));
+    expect(related.error?.code).toBe('RELATED_BILL_WRITE_UNAVAILABLE');
+    expect(s.upstream.calls).toHaveLength(0);
+  });
+
+  it('reassigns only explicitly rejected NEW IDs and persists the map before another send', async () => {
+    const s = await scenario(); let first = '';
+    s.upstream.respond(async () => {
+      const id = numericText(s.sent().at(-1)!.changed[0]!.id, '');
+      if (s.upstream.calls.length === 1) { first = id; return s.receipt([], [], [], [id]); }
+      return s.receipt([id]);
+    });
+    const result = await s.run((coordinator) => coordinator.submit(s.command('ledger.create', { bills: [s.newInput()] })));
+    expect(result.state).toBe('succeeded'); expect(s.upstream.calls).toHaveLength(2);
+    expect(result.idMap[first]).toBe(numericText(s.sent()[1]!.changed[0]!.id, ''));
+    expect(result.idMap[first]).not.toBe(first);
+  });
+
+  it('never reassigns an edit ID or retries unknown/missing acknowledgements', async () => {
+    const s = await scenario(); s.upstream.respond(async () => s.receipt([], [], [], [s.original.id]));
+    const cmd = s.command('ledger.edit', { bills: [{ id: s.original.id, expectedVersion: version(s.original.raw), changes: { remark: 'changed' } }] });
+    const result = await s.run((coordinator) => coordinator.submit(cmd));
+    expect(result.state).toBe('failed'); expect(result.items[0]?.error?.code).toBe('EXISTING_ID_REJECTED');
+    expect(result.idMap).toEqual({}); expect(s.upstream.calls).toHaveLength(1);
+    s.upstream.respond(async () => s.receipt());
+    const unknownCmd = s.command('ledger.create', { bills: [s.newInput()] });
+    await s.run(async (coordinator) => {
+      const unknown = await coordinator.submit(unknownCmd); expect(unknown.state).toBe('uncertain');
+      expect((await coordinator.submit(unknownCmd)).id).toBe(unknown.id);
+      expect(s.upstream.calls).toHaveLength(2);
+    });
+  });
+
+  it('persists the first200 successes when the second batch loses its response; restart never resends them', async () => {
+    const s = await scenario();
+    s.upstream.respond(async () => {
+      if (s.upstream.calls.length > 1) throw new Error('response lost');
+      return s.receipt(s.sent()[0]!.changed.map((bill) => numericText(bill.id, '')));
+    });
+    const cmd = s.command('ledger.create', { bills: Array.from({ length: 201 }, () => s.newInput()) });
+    const result = await s.run((coordinator) => coordinator.submit(cmd));
+    expect(result.state).toBe('partial'); expect(result.items.filter((item) => item.state === 'succeeded')).toHaveLength(200);
+    expect(result.items.at(-1)?.state).toBe('uncertain'); expect(s.upstream.calls).toHaveLength(2);
+    await s.app.restart();
+    await s.run(async (coordinator) => { await coordinator.recover(); await coordinator.submit(cmd); });
+    expect(s.upstream.calls).toHaveLength(2);
+  });
+
+  it('bounds one original push to five batches and rejects malformed or wrong-UID receipts without success', async () => {
+    const s = await scenario();
+    s.upstream.respond(async () => s.receipt([], [], [], [numericText(s.sent().at(-1)!.changed[0]!.id, '')]));
+    const result = await s.run((coordinator) => coordinator.submit(s.command('ledger.create', { bills: [s.newInput()] })));
+    expect(s.upstream.calls).toHaveLength(5); expect(result.state).toBe('failed');
+    expect(result.items[0]?.error?.code).toBe('ID_CONFLICT_LIMIT');
+    s.upstream.respond(async () => new Response('{"ec":200,"data":{"sync_result":{"bill":{"userid":"other","new_ids":[],"has_failed":false}}}}'));
+    const bad = await s.run((coordinator) => coordinator.submit(s.command('ledger.create', { bills: [s.newInput()] })));
+    expect(bad.state).toBe('uncertain');
+  });
+
+  it('deletes only acknowledged real IDs and preserves the current successful cursor/check time', async () => {
+    const s = await scenario(); s.upstream.respond(async () => s.receipt([], [], [s.original.id]));
+    await s.app.repository((repo) => repo.applyPage(s.app.scope, 'ledger', { upserts: [], deletes: [], resources: [], pageState: null, cursor: { old: 'cursor' }, validatedAt: '2026-01-01T00:00:00Z' }));
+    const result = await s.run((coordinator) => coordinator.submit(s.command('ledger.delete', { bills: [{ id: s.original.id, expectedVersion: version(s.original.raw) }] })));
+    expect(result.state).toBe('succeeded'); expect(s.sent()[0]!.changed).toEqual([]);
+    await s.app.repository((repo) => { expect(repo.readBill(s.app.scope, s.original.id)).toBeNull(); expect(repo.dataset(s.app.scope, 'ledger')?.validatedAt).toBe('2026-01-01T00:00:00Z'); expect(repo.syncState(s.app.scope, 'ledger', 'ledger')?.cursor).toEqual({ old: 'cursor' }); });
+  });
+
+  it('recovers a submitted draft operation by its original request key after a lost browser reply', async () => {
+    const s = await scenario(); s.upstream.respond(async () => { throw new Error('lost receipt'); });
+    const requestId = 'durable-draft';
+    await s.app.repository(async (repository) => {
+      const coordinator = new Coordinator({ repository, client: s.upstream.client, clock: s.clock }, new Map([['ledger.create', createLedgerMutationHandler()]]));
+      const service = new LedgerWriteService({ repository, coordinator, connection: { scope: () => s.app.scope } });
+      service.saveDraft('new', { kind: 'create', requestId, fields: s.newInput() });
+      expect(service.getDraft('new')?.draft.fields.timeSec).toBe(1792000000);
+      const result = await coordinator.submit(s.command('ledger.create', { bills: [s.newInput()] }, requestId));
+      expect(service.getDraft('new')?.operationId).toBe(result.id);
+      expect(() => service.saveDraft('new', { kind: 'create', requestId: 'new-key', fields: s.newInput() })).toThrow('DRAFT_OPERATION_PENDING');
+    });
+  });
+
+  it('uses read-only post-send source verification to confirm an unknown receipt without resending', async () => {
+    const s = await scenario(); s.upstream.respond(async () => { throw new Error('lost receipt'); });
+    await s.app.repository(async (repository) => {
+      let checked = false;
+      const handler = createLedgerMutationHandler({ reconcileSource: async (ctx) => {
+        await expect(ctx.client.request('bill.syncall', {}, s.app.scope)).rejects.toThrow('READ_ONLY_PROTOCOL');
+        const wire = s.sent()[0]!.changed[0]!;
+        ctx.repository.applyPage(s.app.scope, 'ledger', { upserts: [projectBill({ ...wire, status: 1 })], deletes: [], resources: [], pageState: null, validatedAt: s.clock.nowIso() }); checked = true; return true;
+      } });
+      const coordinator = new Coordinator({ repository, client: s.upstream.client, clock: s.clock }, new Map([['ledger.create', handler]]));
+      const result = await coordinator.submit(s.command('ledger.create', { bills: [s.newInput()] }));
+      expect(result.state).toBe('uncertain');
+      expect((await coordinator.reconcileOperation(s.app.scope, result.id)).state).toBe('succeeded');
+      expect(checked).toBe(true); expect(s.upstream.calls).toHaveLength(1);
+    });
+  });
+});

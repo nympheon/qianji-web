@@ -10,6 +10,8 @@ import { RebuildService } from '../features/sync/rebuild';
 import { FreshnessService } from '../features/sync/freshness';
 import { ResourceCache } from '../storage/cache';
 import { LedgerService } from '../features/ledger/service';
+import { createLedgerMutationHandler } from '../features/ledger/write';
+import { LedgerWriteService } from '../features/ledger/write-service';
 
 export function createActorContext(storage: DurableObjectStorage, secrets: { QIANJI_CREDENTIAL_KEY?: string } = {}, execution?: { waitUntil(task: Promise<unknown>): void }) {
   const repository = new Repository(storage);
@@ -21,15 +23,22 @@ export function createActorContext(storage: DurableObjectStorage, secrets: { QIA
     session: (scope) => connection.session(scope),
     onSessionExpired: (scope, generation) => connection.expire(scope, generation),
   });
-  const coordinator = new Coordinator({ repository, client, clock }, new Map());
+  const executionOptions = execution ? { background: (task: Promise<unknown>) => execution.waitUntil(task) } : undefined;
+  const background = executionOptions ?? {};
+  const billHandler = createLedgerMutationHandler({ reconcileSource: async () => {
+    const current = connection.scope(); if (!current) return false;
+    const result = await freshness.ensureFresh(current, ['ledger'], 'manual-incremental');
+    return result.job?.state === 'succeeded';
+  } });
+  const coordinator = new Coordinator({ repository, client, clock }, new Map(['ledger.create', 'ledger.edit', 'ledger.delete'].map((action) => [action, billHandler])), executionOptions);
   const instanceId = repository.sql.exec<{ value: string }>("SELECT value FROM instance_meta WHERE key='instance_id'").one().value;
   const vault = new CredentialVault(secrets.QIANJI_CREDENTIAL_KEY, instanceId);
   const connection = new ConnectionService({ repository, client, coordinator, clock, vault });
   const cache = new ResourceCache(repository, clock);
-  const background = execution ? { background: (task: Promise<unknown>) => execution.waitUntil(task) } : {};
   const sync = new SyncService({ repository, client, coordinator, clock, connection, rebuild: (scope, domains) => rebuild.rebuild(scope, domains), ...background });
   const rebuild = new RebuildService({ repository, cache, client, coordinator, clock, connection, sync, ...background });
   const freshness = new FreshnessService({ repository, clock, sync });
-  const ledger = new LedgerService({ repository, connection, freshness, clock });
-  return { repository, clock, client, coordinator, connection, sync, cache, rebuild, freshness, ledger };
+  const ledgerWrites = new LedgerWriteService({ repository, coordinator, connection });
+  const ledger = new LedgerService({ repository, connection, freshness, clock, writes: ledgerWrites });
+  return { repository, clock, client, coordinator, connection, sync, cache, rebuild, freshness, ledger, ledgerWrites };
 }

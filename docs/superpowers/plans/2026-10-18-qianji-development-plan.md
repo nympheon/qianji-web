@@ -254,10 +254,11 @@ cache.ts导出`CacheKey { domain:SyncDomain; queryKey:string }`、`CacheReadStam
 **Files:** Create `src/features/ledger/write.ts`、`src/web/components/BillEditor.tsx`、`tests/workers/ledger-write.test.ts`、`tests/e2e/bill-write.spec.ts`；Modify ledger域、BillsPage、registry和protocol.operations。
 **Interfaces:** Consumes Coordinator/Repository；Produces `LedgerService.create(input:CreateBillInput,meta):Promise<OperationView>`、`edit(input:EditBillInput,meta)`、`remove(input:DeleteBillsInput,meta)`；动作`ledger.create/edit/delete`，输入明确金额、费用、时间、分类、资产、标记和选择性变更，不开放raw v。
 
-- [ ] 写失败断言：录入100优惠-10保存money90，未知extra保留；同一写键重放只一笔；批量部分成功不重发成功项；网络未知时UI/MCP保持operationId，不提示重新创建。
-- [ ] Run `pnpm test -- tests/workers/ledger-write.test.ts`；预期FAIL于普通写用例缺失。
-- [ ] 实现APK普通整笔上送/删除及状态回执，普通保存走push-only，不每次先拉全域。网页草稿保存稳定requestId直至结果确定，新增与编辑分开；仅明确新建ID拒绝才换ID并留映射，一轮5批/每批200边界不改成每项5次重试。源子关联删除由14–15接入，之前明确不可操作而非孤立删父行。
-- [ ] 重跑及`pnpm test:e2e -- tests/e2e/bill-write.spec.ts`；覆盖刷新/重开草稿、长ID、实际业务失败、同键异参，PASS；执行对应真实小额测试后才启用该写能力。
+- [x] 写失败断言：录入100优惠-10保存money90，未知extra保留；同一写键重放只一笔；批量部分成功不重发成功项；网络未知时UI/MCP保持operationId，不提示重新创建。
+- [x] Run `pnpm test -- tests/workers/ledger-write.test.ts`；预期FAIL于普通写用例缺失。
+- [x] 实现APK普通整笔上送/删除及状态回执，普通保存走push-only，不每次先拉全域。网页草稿保存稳定requestId直至结果确定，新增与编辑分开；仅明确新建ID拒绝才换ID并留映射，一轮5批/每批200边界不改成每项5次重试。源子关联删除由14–15接入，之前明确不可操作而非孤立删父行。
+- [x] 重跑及`pnpm test:e2e -- tests/e2e/bill-write.spec.ts`；覆盖刷新/重开草稿、长ID、模拟业务失败、同键异参，PASS。
+- [ ] 执行对应真实小额测试后才启用该写能力：第18步建立专用测试账本后闭环核验，第27步统一真实回归。现有账本保持只读。
 - [ ] 提交：`feat: write bills with stable keys and itemized receipts`。
 
 ### Task 13：转账与信用卡还款

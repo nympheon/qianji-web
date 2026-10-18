@@ -22,7 +22,12 @@ export interface StoredOperation extends OperationView {
 export interface ItemUpdate { id: Id; state: 'succeeded' | 'failed' | 'uncertain'; error?: Problem | null }
 export interface OperationUpdate { items: readonly ItemUpdate[]; idMap?: Record<Id, Id>; error?: Problem | null }
 export interface ReconciliationResult extends OperationUpdate { receipt?: ProtocolReply }
-export interface OperationContext { repository: Repository; client: QianjiClient; clock: Clock }
+export interface OperationContext {
+  repository: Repository; client: QianjiClient; clock: Clock;
+  /** Available only during the original send; never during read-only reconciliation. */
+  currentOperation?: () => StoredOperation;
+  checkpoint?: (prepared: PreparedMutation, update: OperationUpdate | (() => OperationUpdate)) => void;
+}
 export interface MutationHandler {
   prepare(command: MutationCommand, ctx: OperationContext): Promise<PreparedMutation>;
   send(prepared: PreparedMutation, ctx: OperationContext): Promise<ProtocolReply>;

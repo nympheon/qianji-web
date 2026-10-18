@@ -48,6 +48,9 @@ function aggregate(items: readonly OperationItem[]): OperationState {
   if (items.some((item) => item.state === 'succeeded')) return 'partial';
   return 'uncertain';
 }
+function encodePrepared(prepared: PreparedMutation): string {
+  return stringifyWire({ payload: prepared.payload, affectedIds: [...prepared.affectedIds], affectedDomains: [...prepared.affectedDomains ?? []], items: prepared.items.map((item) => ({ id: item.id, affectedIds: [...item.affectedIds] })) });
+}
 
 export class OperationStore {
   constructor(readonly repository: Repository, private readonly clock: Clock) {}
@@ -79,7 +82,7 @@ export class OperationStore {
     const items: OperationItem[] = prepared.items.map((item) => ({ id: item.id, affectedIds: [...item.affectedIds], state: 'queued', error: null }));
     return this.repository.transaction(() => {
       this.repository.sql.exec('UPDATE operations SET prepared=?,items=?,affected_ids=?,updated_ms=? WHERE id=?',
-        stringifyWire({ payload: prepared.payload, affectedIds: [...prepared.affectedIds], affectedDomains: [...prepared.affectedDomains ?? []], items: prepared.items.map((item) => ({ id: item.id, affectedIds: [...item.affectedIds] })) }),
+        encodePrepared(prepared),
         JSON.stringify(items), JSON.stringify([...new Set(prepared.affectedIds)]), this.clock.nowMs(), operation.id).toArray();
       this.repository.sql.exec('DELETE FROM operation_domains WHERE operation_id=?', operation.id).toArray();
       for (const domain of new Set(prepared.affectedDomains ?? [])) this.repository.sql.exec('INSERT INTO operation_domains(operation_id,uid,domain) VALUES (?,?,?)', operation.id, operation.scope.uid, domain).toArray();
@@ -99,15 +102,26 @@ export class OperationStore {
     this.repository.sql.exec('UPDATE operations SET state=?,items=?,error=?,updated_ms=? WHERE id=?', items.length ? aggregate(items) : state, JSON.stringify(items), error === null ? null : JSON.stringify(error), this.clock.nowMs(), operation.id).toArray();
     return this.get(operation.scope, operation.id)!;
   }
-  apply(operation: StoredOperation, update: OperationUpdate): StoredOperation {
+  checkpoint(operation: StoredOperation, prepared: PreparedMutation, update: OperationUpdate): StoredOperation {
+    this.repository.assertScope(operation.scope); rejectCredentials(prepared.payload);
+    if (!operation.prepared || prepared.items.length !== operation.items.length || new Set(prepared.items.map((item) => item.id)).size !== operation.items.length
+      || prepared.items.some((item) => !operation.items.some((old) => old.id === item.id))) throw new DomainError('RECEIPT_ITEMS_INVALID', '批次检查点不能改变逻辑项目');
+    const affectedIds = [...new Set([...operation.affectedIds, ...prepared.affectedIds])];
+    const items = operation.items.map((item) => ({ ...item, affectedIds: [...new Set([...item.affectedIds, ...prepared.items.find((next) => next.id === item.id)!.affectedIds])] }));
+    this.repository.sql.exec('UPDATE operations SET prepared=?,items=?,affected_ids=?,updated_ms=? WHERE id=?', encodePrepared(prepared), JSON.stringify(items), JSON.stringify(affectedIds), this.clock.nowMs(), operation.id).toArray();
+    return this.apply(this.get(operation.scope, operation.id)!, update, true);
+  }
+  apply(operation: StoredOperation, update: OperationUpdate, checkpoint = false): StoredOperation {
     const updates = new Map(update.items.map((item) => [item.id, item]));
     if (update.items.length !== updates.size || update.items.some((item) => !operation.items.some((old) => old.id === item.id))) throw new DomainError('RECEIPT_ITEMS_INVALID', '回执项目不匹配');
     const items = operation.items.map((item) => {
       if (item.state === 'succeeded' || item.state === 'failed') return item;
       const next = updates.get(item.id);
+      if (!next && checkpoint) return item;
       return { ...item, state: next?.state ?? 'uncertain' as ItemState, error: next?.error ?? null };
     });
-    this.repository.sql.exec('UPDATE operations SET state=?,items=?,id_map=?,error=?,updated_ms=? WHERE id=?', aggregate(items), JSON.stringify(items),
+    const state = checkpoint && items.some((item) => item.state === 'sending') ? 'sending' : aggregate(items);
+    this.repository.sql.exec('UPDATE operations SET state=?,items=?,id_map=?,error=?,updated_ms=? WHERE id=?', state, JSON.stringify(items),
       JSON.stringify({ ...operation.idMap, ...update.idMap }), update.error ? JSON.stringify(update.error) : null, this.clock.nowMs(), operation.id).toArray();
     return this.get(operation.scope, operation.id)!;
   }

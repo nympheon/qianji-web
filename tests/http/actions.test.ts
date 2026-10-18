@@ -20,6 +20,13 @@ export async function seedActions() {
 }
 export const action = (name: string, input: unknown = {}) => exports.default.fetch('https://test/api/actions', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: name, input }) });
 describe('shared HTTP actions', () => {
+  it('keeps unverified writes gated, and saves typed local drafts without contacting Qianji', async () => {
+    await seedActions();
+    const input = { requestId: 'write-key', bills: [{ bookId: '10', categoryId: '50', type: 0, enteredMoney: '1', timeSec: 1768000000 }] };
+    expect(await (await action('ledger.create', input)).json()).toMatchObject({ status: 'unavailable', error: { code: 'WRITE_LIVE_UNVERIFIED' } });
+    expect(await (await action('ledger.draft.save', { key: 'new', draft: { kind: 'create', requestId: 'draft-key', fields: { enteredMoney: '1', type: 0 } } })).json()).toMatchObject({ status: 'ready', data: { draft: { requestId: 'draft-key' }, operationId: null } });
+    expect(await (await action('ledger.draft.get', { key: 'new' })).json()).toMatchObject({ data: { draft: { fields: { type: 0, enteredMoney: '1' } } } });
+  });
   it('returns exact canonical query values with no-store freshness', async () => {
     await seedActions(); const response = await action('ledger.list');
     expect(response.status).toBe(200); expect(response.headers.get('cache-control')).toBe('no-store');

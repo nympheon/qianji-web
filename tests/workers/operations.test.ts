@@ -55,6 +55,77 @@ async function scenario() {
 }
 
 describe('durable mutation coordinator', () => {
+  it('durably checkpoints an earlier receipt before a later batch loses its response', async () => {
+    const app = await createTestApp();
+    const clock = new TestClock(Date.now()), upstream = createUpstream(clock, app.scope);
+    let sends = 0;
+    await app.repository(async (repository) => {
+      repository.sql.exec("UPDATE connection SET state='connected' WHERE singleton=1").toArray();
+      const handler: MutationHandler = {
+        prepare: async () => ({ payload: {}, items: [{ id: 'a', affectedIds: ['a'] }, { id: 'b', affectedIds: ['b'] }], affectedIds: ['a', 'b'] }),
+        send: async (prepared, ctx) => {
+          sends++;
+          ctx.checkpoint!(prepared, { items: [{ id: 'a', state: 'succeeded' }] });
+          expect(ctx.currentOperation!().items.map((item) => item.state)).toEqual(['succeeded', 'sending']);
+          throw new ProtocolError('QIANJI_NETWORK_ERROR', 'lost second batch', 'network', 'unknown');
+        },
+        applyReceipt: () => ({ items: [] }), reconcile: async () => ({ items: [] }),
+      };
+      const coordinator = new Coordinator({ repository, client: upstream.client, clock }, new Map([['test.batch', handler]]));
+      const command: MutationCommand = { action: 'test.batch', input: {}, scope: app.scope, requestId: 'batch-checkpoint' };
+      const result = await coordinator.submit(command);
+      expect(result.state).toBe('partial');
+      expect(result.items.map((item) => item.state)).toEqual(['succeeded', 'uncertain']);
+      expect((await coordinator.submit(command)).id).toBe(result.id);
+      expect(sends).toBe(1);
+    });
+  });
+
+  it('rolls back canonical changes with a failed receipt checkpoint and keeps replacement IDs protected', async () => {
+    const app = await createTestApp(), clock = new TestClock(Date.now()), upstream = createUpstream(clock, app.scope);
+    await app.repository(async (repository) => {
+      repository.sql.exec("UPDATE connection SET state='connected' WHERE singleton=1").toArray();
+      const handler: MutationHandler = {
+        prepare: async () => ({ payload: {}, items: [{ id: 'old', affectedIds: ['old'] }], affectedIds: ['old'] }),
+        send: async (prepared, ctx) => {
+          const next = { ...prepared, items: [{ id: 'old', affectedIds: ['old', 'replacement'] }], affectedIds: ['old', 'replacement'] };
+          ctx.checkpoint!(next, { items: [], idMap: { old: 'replacement' } });
+          expect(ctx.currentOperation!().items[0]?.affectedIds).toContain('replacement');
+          ctx.checkpoint!(next, () => {
+            repository.saveDraft(app.scope, 'must-rollback', { changed: true });
+            throw new Error('interrupted receipt transaction');
+          });
+          return { ec: '200', data: {}, httpStatus: 200 };
+        },
+        applyReceipt: () => ({ items: [] }), reconcile: async () => ({ items: [] }),
+      };
+      const coordinator = new Coordinator({ repository, client: upstream.client, clock }, new Map([['test.batch', handler]]));
+      const result = await coordinator.submit({ action: 'test.batch', input: {}, requestId: 'atomic-checkpoint', scope: app.scope });
+      expect(result.state).toBe('uncertain'); expect(result.idMap).toEqual({ old: 'replacement' });
+      expect(repository.readDraft(app.scope, 'must-rollback')).toBeNull();
+    });
+  });
+
+  it('returns a durable operation immediately when execution uses actor background work', async () => {
+    const s = await scenario();
+    let finish!: () => void;
+    s.hold(new Promise<void>((resolve) => { finish = resolve; }));
+    await s.withCoordinator(async (_old, ctx) => {
+      const pending: Promise<unknown>[] = [];
+      const handler: MutationHandler = {
+        prepare: async () => ({ payload: {}, items: [{ id: 'a', affectedIds: ['a'] }], affectedIds: ['a'] }),
+        send: async () => { await new Promise<void>((resolve) => { finish = resolve; }); return { ec: '200', data: {}, httpStatus: 200 }; },
+        applyReceipt: () => ({ items: [{ id: 'a', state: 'succeeded' }] }), reconcile: async () => ({ items: [] }),
+      };
+      const coordinator = new Coordinator(ctx, new Map([['test.write', handler]]), { background: (task) => pending.push(task) });
+      const result = await coordinator.submit(s.command());
+      expect(['queued', 'sending']).toContain(result.state);
+      expect(pending).toHaveLength(1);
+      for (let i = 0; i < 100 && coordinator.getOperation(s.app.scope, result.id)?.state !== 'sending'; i++) await new Promise((resolve) => setTimeout(resolve, 1));
+      finish(); await Promise.all(pending);
+      expect(coordinator.getOperation(s.app.scope, result.id)?.state).toBe('succeeded');
+    });
+  });
   it('deduplicates concurrent identical requests, rejects changed input, and persists ID mappings', async () => {
     const s = await scenario();
     await s.withCoordinator(async (coordinator) => {

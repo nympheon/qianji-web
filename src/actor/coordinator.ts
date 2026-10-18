@@ -14,7 +14,7 @@ export class Coordinator {
   readonly #jobHandlers = new Map<string, (job: DurableJob) => Promise<void>>();
   readonly #active = new Set<Id>();
   #resuming: Promise<void> | null = null;
-  constructor(private readonly context: OperationContext, private readonly handlers: ReadonlyMap<string, MutationHandler>) {
+  constructor(private readonly context: OperationContext, private readonly handlers: ReadonlyMap<string, MutationHandler>, private readonly execution?: { background(task: Promise<unknown>): void }) {
     this.store = new OperationStore(context.repository, context.clock);
     this.jobs = new Jobs(context.repository, context.clock);
   }
@@ -35,6 +35,10 @@ export class Coordinator {
       if (operation.state === 'queued') this.jobs.put(operation.id, operation.scope, 'mutation', { operationId: operation.id });
       return operation;
     });
+    if (this.execution) {
+      this.execution.background(this.executeQueued(command.scope, operation.id));
+      return operationView(operation);
+    }
     return this.executeQueued(command.scope, operation.id);
   }
   private executeQueued(scope: ActorScope, id: Id): Promise<OperationView> {
