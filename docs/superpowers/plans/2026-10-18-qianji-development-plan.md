@@ -377,13 +377,15 @@ cache.ts导出`CacheKey { domain:SyncDomain; queryKey:string }`、`CacheReadStam
 ### Task 22：官方图片上传、关联与展示
 
 **Files:** Create `src/features/attachments/{contract,service,use-cases,upload}.ts`、`src/web/components/Attachments.tsx`、`src/worker/upload.ts`、`tests/workers/attachments.test.ts`、`tests/e2e/attachments.spec.ts`；Modify已支持图片的业务表单与registry。
-**Interfaces:** Consumes任务03、05及图片业务；Produces `AttachmentService.upload(input:UploadImageInput):Promise<UploadedImage>`、`resolve(input:ImageReferenceInput):Promise<ImageView>`；UploadedImage的有效凭据是已确认上游对象key，上传字节与登录token不得混淆。
+**Interfaces:** Consumes任务03、05及图片业务；Produces `AttachmentService.upload(input:UploadImageInput):Promise<OperationView>`、`result(operationId):UploadedImage|null`、`resolve(input:ImageReferenceInput):Promise<ImageView>`；UploadedImage的有效凭据是已确认上游对象key，上传字节与登录token不得混淆。
 
-- [ ] 先核对原生预处理格式/大小、token及上传区/凭证/响应key契约；写失败断言：过期前60秒不再复用token，数量取配置而非硬编码6，上传未成功没有可关联key，普通URL不是上传成功证明。
-- [ ] Run `pnpm test -- tests/workers/attachments.test.ts`；预期FAIL于附件链路缺失。
-- [ ] 通过Web标准HTTP/流或有界FormData接入官方对象存储，不引入Node七牛原生依赖或R2。网页文件上传和MCP有界base64输入转换为同一UploadImageInput；未提供实际图片字节的ChatGPT调用给网页上传入口，不承诺平台会自动传图片文件。按已核对协议预处理；移除账单引用不声称销毁云端对象。
-- [ ] 重跑测试及`pnpm test:e2e -- tests/e2e/attachments.spec.ts`；覆盖凭证失效、对象上传成功但账单失败、重复回调不重复关联、实际图片展示，PASS。若官方链路确需持久暂存，再提出有证据的R2变更，不默认绕过去。
-- [ ] 提交：`feat: upload and associate official Qianji images`。
+- [x] 先核对原生预处理格式/大小、token及上传区/凭证/响应key契约；写失败断言：过期前60秒不再复用token，数量取配置而非硬编码6，上传未成功没有可关联key，普通URL不是上传成功证明。
+- [x] Run `pnpm test -- tests/workers/attachments.test.ts`；预期FAIL于附件链路缺失。
+- [x] 通过Web标准HTTP/流或有界FormData接入官方对象存储，不引入Node七牛原生依赖或R2。网页文件上传和MCP有界base64输入转换为同一UploadImageInput；未提供实际图片字节的ChatGPT调用给网页上传入口，不承诺平台会自动传图片文件。按已核对协议预处理；移除账单引用不声称销毁云端对象。
+- [x] 重跑测试及`pnpm test:e2e -- tests/e2e/attachments.spec.ts`；覆盖凭证失效、对象上传成功但账单失败、重复回调不重复关联、实际图片展示，PASS。若官方链路确需持久暂存，再提出有证据的R2变更，不默认绕过去。
+- [x] 提交：`feat: upload and associate official Qianji images`。
+
+实现阶段已验证；真实官方上传与关联验收仍由 Task27 完成。
 
 ### Task 23：周期规则预览与任务管理
 

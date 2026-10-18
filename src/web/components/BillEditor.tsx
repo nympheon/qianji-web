@@ -12,16 +12,18 @@ import { Field, FieldGroup, FieldLabel } from './ui/field';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Textarea } from './ui/textarea';
 import { OperationStatus } from './OperationStatus';
+import { Attachments } from './Attachments';
 
 export function BillEditor({ options, bill, onComplete }: { options: LedgerOptions | null; bill?: BillDetail; onComplete(): void }) {
   const key = bill ? `edit:${bill.id}` : 'new';
   const initial = (): BillDraft => ({ kind: bill ? 'edit' : 'create', requestId: crypto.randomUUID(), fields: bill ? {
     bookId: bill.bookId, categoryId: bill.categoryId ?? undefined, type: bill.type as 0 | 1 | 5,
     enteredMoney: addMoney(bill.money, bill.transferFee.startsWith('-') ? bill.transferFee.slice(1) : bill.transferFee), fee: bill.transferFee,
-    remark: bill.remark, timeSec: bill.timeSec, tagIds: bill.tagIds, countInStatistics: !(bill.flags & 1), countInBudget: !(bill.flags & 2),
+    remark: bill.remark, timeSec: bill.timeSec, tagIds: bill.tagIds, images: bill.images, countInStatistics: !(bill.flags & 1), countInBudget: !(bill.flags & 2),
   } : { bookId: options?.books[0]?.id, categoryId: options?.categories[0]?.id, type: 0, enteredMoney: '', fee: '0', timeSec: Math.floor(Date.now() / 1000), remark: '' }, ...(bill ? { billId: bill.id, expectedVersion: bill.editVersion } : {}) });
   const [draft, setDraft] = useState<BillDraft>(initial), [loaded, setLoaded] = useState(false), [saved, setSaved] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null);
   const [operation, setOperation] = useState<OperationView | null>(null), [operationId, setOperationId] = useState<string | null>(null);
+  const [imagesPending, setImagesPending] = useState(true);
   const queue = useRef<Promise<unknown>>(Promise.resolve()), mounted = useRef(true);
   const baseline = useRef<BillChanges>(draft.fields);
   const persist = (value: BillDraft) => {
@@ -45,7 +47,7 @@ export function BillEditor({ options, bill, onComplete }: { options: LedgerOptio
   }, [draft, loaded, operationId, busy]);
   function change(fields: Partial<BillChanges>) { setDraft({ ...draft, fields: { ...draft.fields, ...fields } }); setSaved(false); setError(null); }
   async function submit(event: FormEvent) {
-    event.preventDefault(); if (busy || operationId || !loaded) return;
+    event.preventDefault(); if (busy || operationId || !loaded || imagesPending) return;
     const parsed = newBillSchema.safeParse(draft.fields);
     if (!parsed.success) { setError('请完整填写账本、分类、类型、金额和时间，金额请使用十进制数字。'); return; }
     setBusy(true); setError(null);
@@ -79,7 +81,8 @@ export function BillEditor({ options, bill, onComplete }: { options: LedgerOptio
     {options?.tags.some((tag) => !tag.archived || bill?.tagIds.includes(tag.id)) ? <fieldset className="flex flex-wrap gap-3 rounded-lg border p-3"><legend className="px-1 text-sm font-medium">标签</legend>{options.tags.filter((tag) => !tag.archived || bill?.tagIds.includes(tag.id)).map((tag) => <label className="flex items-center gap-2 text-sm" key={tag.id}><input type="checkbox" className="size-4 accent-primary" checked={draft.fields.tagIds?.includes(tag.id) ?? false} disabled={disabled} onChange={(event) => change({ tagIds: event.target.checked ? [...new Set([...(draft.fields.tagIds ?? []), tag.id])] : (draft.fields.tagIds ?? []).filter((id) => id !== tag.id) })} />{tag.name}{tag.archived ? '（已归档）' : ''}</label>)}</fieldset> : null}
     <div className="flex flex-wrap gap-4 text-sm"><label><input type="checkbox" checked={draft.fields.countInStatistics !== false} disabled={disabled} onChange={(event) => change({ countInStatistics: event.target.checked })} /> 计入收支</label><label><input type="checkbox" checked={draft.fields.countInBudget !== false} disabled={disabled} onChange={(event) => change({ countInBudget: event.target.checked })} /> 计入预算</label></div>
     {error ? <p role="alert">{error}</p> : null}{operationId ? <OperationStatus operationId={operationId} initial={operation} onChange={(value) => { setOperation(value); if (value.state === 'succeeded') onComplete(); }} /> : <p className="muted-copy">{saved ? '草稿已保存' : '正在保存草稿…'}</p>}
-    <Button type="submit" disabled={disabled}>{busy ? '正在提交…' : '保存账单'}</Button>
+    {loaded ? <Attachments references={draft.fields.images ?? bill?.images ?? []} draftKey={`bill:${key}`} disabled={disabled} onPendingChange={setImagesPending} onChange={async (images) => { const next = { ...draft, fields: { ...draft.fields, images } }; setDraft(next); return (await persist(next)).status === 'ready'; }} /> : null}
+    <Button type="submit" disabled={disabled || imagesPending}>{busy ? '正在提交…' : '保存账单'}</Button>
     {operation && operationIsFinal(operation) ? <Button type="button" variant="outline" onClick={() => { const next = initial(); baseline.current = next.fields; setDraft(next); setOperationId(null); setOperation(null); setSaved(false); }}>建立新草稿</Button> : null}
   </FieldGroup></form>;
 }

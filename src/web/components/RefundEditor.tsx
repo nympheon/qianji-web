@@ -10,6 +10,7 @@ import { Input } from './ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Textarea } from './ui/textarea';
 import { OperationStatus } from './OperationStatus';
+import { Attachments } from './Attachments';
 import { formatMoney } from './Totals';
 
 export function RefundEditor({ source, refund, options, onComplete }: { source: BillDetail; refund?: BillDetail; options: TransferOptions | null; onComplete(): void }) {
@@ -34,6 +35,7 @@ export function RefundEditor({ source, refund, options, onComplete }: { source: 
   }
   const [draft, setDraft] = useState<RefundDraft>(initial), [loaded, setLoaded] = useState(false), [saved, setSaved] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null), [notice, setNotice] = useState<string | null>(null);
   const [operation, setOperation] = useState<OperationView | null>(null), [operationId, setOperationId] = useState<string | null>(null);
+  const [imagesPending, setImagesPending] = useState(true);
   const queue = useRef<Promise<unknown>>(Promise.resolve()), mounted = useRef(true);
   const persist = (value: RefundDraft) => {
     const task = queue.current.then(() => api('ledger.draft.save', { key, draft: value })); queue.current = task;
@@ -56,7 +58,7 @@ export function RefundEditor({ source, refund, options, onComplete }: { source: 
     setDraft({ ...draft, fields: next }); setSaved(false); setError(null); setNotice(null);
   }
   async function submit(event: FormEvent) {
-    event.preventDefault(); if (busy || operationId || !loaded) return;
+    event.preventDefault(); if (busy || operationId || !loaded || imagesPending) return;
     const value = { ...draft.fields, money: draft.fields.money?.trim() || undefined, billId: draft.billId, expectedVersion: draft.expectedVersion,
       ...(draft.refundBillId ? { refundBillId: draft.refundBillId, refundExpectedVersion: draft.refundExpectedVersion } : {}) };
     const parsed = refundInputSchema.safeParse(value); if (!parsed.success) { setError('请核对退款时间、金额和历史币种资料。'); return; }
@@ -93,7 +95,8 @@ export function RefundEditor({ source, refund, options, onComplete }: { source: 
     <Field><FieldLabel htmlFor="refund-remark">退款备注</FieldLabel><Textarea id="refund-remark" value={draft.fields.remark ?? ''} maxLength={500} disabled={disabled} onChange={(event) => change({ remark: event.target.value })} /></Field>
     {notice ? <p role="status" className="muted-copy">{notice}</p> : null}{error ? <p role="alert">{error}</p> : null}
     {operationId ? <OperationStatus operationId={operationId} initial={operation} onChange={(value) => { setOperation(value); if (value.state === 'succeeded') onComplete(); }} /> : <p className="muted-copy">{saved ? '草稿已保存' : '正在保存草稿…'}</p>}
-    <Button type="submit" disabled={disabled}>{busy ? '正在处理…' : '保存退款'}</Button>
+    {loaded ? <Attachments references={draft.fields.images ?? []} draftKey={`bill:${key}`} disabled={disabled} onPendingChange={setImagesPending} onChange={async (images) => { const next = { ...draft, fields: { ...draft.fields, images } }; setDraft(next); return (await persist(next)).status === 'ready'; }} /> : null}
+    <Button type="submit" disabled={disabled || imagesPending}>{busy ? '正在处理…' : '保存退款'}</Button>
     {operation && operationIsFinal(operation) ? <Button type="button" variant="outline" disabled={busy} onClick={() => { void nextDraft(); }}>载入最新资料并建立新草稿</Button> : null}
   </FieldGroup></form>;
 }

@@ -20,6 +20,9 @@ export async function seedActions() {
 }
 export const action = (name: string, input: unknown = {}) => exports.default.fetch('https://test/api/actions', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: name, input }) });
 describe('shared HTTP actions', () => {
+  it('exposes media options and source URLs without treating URL text as uploaded proof', async () => {
+    await seedActions(); expect(await (await action('attachments.options')).json()).toMatchObject({ status: 'partial', data: { maxBillImages: 6, countSource: 'apk-default', uploadPage: '/attachments' } }); expect(await (await action('attachments.resolve', { reference: 'https://example.test/picture.jpg' })).json()).toMatchObject({ data: { url: 'https://example.test/picture.jpg', uploaded: false, source: 'external-url' } }); expect(await (await action('attachments.upload', { purpose: 'bill', mime: 'image/jpeg', requestId: 'image-upload' })).json()).toMatchObject({ status: 'unavailable', error: { code: 'WRITE_LIVE_UNVERIFIED' } });
+  });
   it('exposes budget progress and typed drafts while retaining the live write gate', async () => {
     await seedActions(); const input = { bookId: '10', date: { kind: 'month', year: 2026, month: 10 }, range: '', zone: 'Asia/Shanghai' };
     expect(await (await action('budget.list', input)).json()).toMatchObject({ status: 'partial', data: { configurations: [], query: input, incompleteReasons: expect.arrayContaining(['BUDGET_SOURCE_INCOMPLETE']) } });

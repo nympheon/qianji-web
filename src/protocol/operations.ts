@@ -18,6 +18,7 @@ export const OPERATIONS = {
   'account.refreshtoken': op('account', 'refreshtoken', 'normal'),
   'account.logout': op('account', 'logout', 'normal', true, 'optional'),
   'client.init': op('client', 'init', 'normal', true, 'object', true),
+  'common.uploadToken': op('common', 'uploadtoken', 'normal', true, 'object', true),
   'syncv2.pull': op('syncv2', 'pull', 'sync-string', true, 'object', true),
   'bill.syncall': op('bill', 'syncall', 'sync-string'),
   'bill.refund': op('bill', 'refund2', 'normal', true, 'native-list'),

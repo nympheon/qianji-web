@@ -2,6 +2,7 @@ import { DurableObject } from 'cloudflare:workers';
 import type { Env } from '../worker/env';
 import { createActorContext } from './context';
 import type { ConnectionView, PasswordLoginInput } from '../features/connection/contract';
+import type { ImageReferenceInput } from '../features/attachments/contract';
 import { AppRegistry } from '../app/registry';
 
 export class QianjiState extends DurableObject<Env> {
@@ -29,6 +30,7 @@ export class QianjiState extends DurableObject<Env> {
   async login(input: PasswordLoginInput): Promise<ConnectionView> {
     return this.#context.connection.login(input);
   }
+  imageSource(input: ImageReferenceInput): string { return this.#context.attachments.source(input); }
   async call(action: string, input: unknown, meta: unknown = {}): Promise<string> {
     return JSON.stringify(await new AppRegistry(this.#context).invoke(action, input, meta));
   }

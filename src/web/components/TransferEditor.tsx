@@ -11,6 +11,7 @@ import { Field, FieldGroup, FieldLabel } from './ui/field';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Textarea } from './ui/textarea';
 import { OperationStatus } from './OperationStatus';
+import { Attachments } from './Attachments';
 import { formatMoney } from './Totals';
 
 export function TransferEditor({ kind, mode = 'create', options, bill, onComplete }: { kind: 'transfer' | 'repay-card'; mode?: 'create' | 'edit' | 'delete'; options: TransferOptions | null; bill?: BillDetail; onComplete(): void }) {
@@ -28,13 +29,14 @@ export function TransferEditor({ kind, mode = 'create', options, bill, onComplet
     const from = eligible[0], target = (kind === 'repay-card' ? eligible.find((asset) => asset.type === 2 && asset.id !== from?.id) : null) ?? eligible.find((asset) => asset.id !== from?.id);
     const fields: TransferDraft['fields'] = bill ? { bookId: bill.bookId, fromAssetId: bill.fromId ?? undefined, targetAssetId: bill.targetId ?? undefined,
       enteredMoney: bill.currency?.srcValue ?? addMoney(bill.money, bill.transferFee.startsWith('-') ? bill.transferFee.slice(1) : bill.transferFee), fee: bill.transferFee,
-      timeSec: bill.timeSec, remark: bill.remark, tagIds: bill.tagIds, countInStatistics: !(bill.flags & 1), countInBudget: !(bill.flags & 2),
+      timeSec: bill.timeSec, remark: bill.remark, tagIds: bill.tagIds, images: bill.images, countInStatistics: !(bill.flags & 1), countInBudget: !(bill.flags & 2),
       ...(bill.currency?.srcSymbol && bill.currency.targetSymbol && bill.currency.baseSymbol ? { currency: { ...bill.currency, srcSymbol: bill.currency.srcSymbol, targetSymbol: bill.currency.targetSymbol, baseSymbol: bill.currency.baseSymbol } } : {}) }
       : currencyFields({ bookId: options?.books[0]?.id, fromAssetId: from?.id, targetAssetId: target?.id, enteredMoney: '', fee: '0', timeSec: Math.floor(Date.now() / 1000), remark: '' });
     return { kind, mode, requestId: crypto.randomUUID(), fields, ...(bill ? { billId: bill.id, expectedVersion: bill.editVersion } : {}) };
   };
   const [draft, setDraft] = useState<TransferDraft>(initial), [loaded, setLoaded] = useState(false), [saved, setSaved] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<TransferPreview | null>(null), [operationId, setOperationId] = useState<string | null>(null), [operation, setOperation] = useState<OperationView | null>(null);
+  const [imagesPending, setImagesPending] = useState(true);
   const queue = useRef<Promise<unknown>>(Promise.resolve()), baseline = useRef(draft.fields), mounted = useRef(true);
   const persist = (value: TransferDraft) => {
     const task = queue.current.then(() => api('ledger.draft.save', { key, draft: value })); queue.current = task;
@@ -64,7 +66,7 @@ export function TransferEditor({ kind, mode = 'create', options, bill, onComplet
     return parsed.data;
   }
   async function submit(event: FormEvent) {
-    event.preventDefault(); if (busy || operationId || !loaded) return;
+    event.preventDefault(); if (busy || operationId || !loaded || (mode !== 'delete' && imagesPending)) return;
     const value = input(); if (!value) return;
     setBusy(true); setError(null);
     try {
@@ -90,7 +92,8 @@ export function TransferEditor({ kind, mode = 'create', options, bill, onComplet
     <Button type="button" variant="outline" disabled={disabled} onClick={async () => { const value = input(); if (!value) return; setBusy(true); try { const reply = await api('ledger.transfer.preview', { kind, input: value }); setPreview(reply.data); setError(reply.error?.message ?? null); } finally { setBusy(false); } }}>预览金额</Button>
     {preview ? <div className="operation-status"><dl className="transfer-amounts"><dt>本金</dt><dd data-testid="transfer-principal">{formatMoney(preview.principal)} {preview.from.currency}</dd><dt>转出金额</dt><dd data-testid="transfer-from">{formatMoney(preview.fromAmount)} {preview.from.currency}</dd><dt>转入金额</dt><dd data-testid="transfer-target">{formatMoney(preview.targetAmount)} {preview.target.currency}</dd></dl><p className="muted-copy">资产变动为预期值，确认余额以钱迹回读为准。{preview.stale ? '当前预览采用缓存资料。' : ''}</p></div> : null}
     {error ? <p role="alert">{error}</p> : null}{operationId ? <OperationStatus operationId={operationId} initial={operation} onChange={(value) => { setOperation(value); if (value.state === 'succeeded') onComplete(); }} /> : <p className="muted-copy">{saved ? '草稿已保存' : '正在保存草稿…'}</p>}
-    <Button type="submit" variant={deleting ? 'destructive' : 'default'} disabled={disabled}>{busy ? '正在处理…' : deleting ? '确认删除记录' : kind === 'repay-card' ? '保存还款' : '保存转账'}</Button>
+    {loaded && !deleting ? <Attachments references={draft.fields.images ?? bill?.images ?? []} draftKey={`bill:${key}`} disabled={disabled} onPendingChange={setImagesPending} onChange={async (images) => { const next = { ...draft, fields: { ...draft.fields, images } }; setDraft(next); return (await persist(next)).status === 'ready'; }} /> : null}
+    <Button type="submit" variant={deleting ? 'destructive' : 'default'} disabled={disabled || (!deleting && imagesPending)}>{busy ? '正在处理…' : deleting ? '确认删除记录' : kind === 'repay-card' ? '保存还款' : '保存转账'}</Button>
     {mode === 'create' && operation && operationIsFinal(operation) ? <Button type="button" variant="outline" onClick={() => { const next = initial(); baseline.current = next.fields; setDraft(next); setOperation(null); setOperationId(null); setPreview(null); setError(null); setSaved(false); }}>建立新草稿</Button> : null}
   </FieldGroup></form>;
 }

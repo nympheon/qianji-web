@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { assertImageReferences } from '../attachments/references';
 import { isLosslessNumber, LosslessNumber } from 'lossless-json';
 import type { ExpectedAssetEffect, ItemUpdate, MutationCommand, MutationHandler, OperationContext, OperationUpdate, PreparedMutation } from '../../operations/contract';
 import { DomainError } from '../../shared/errors';
@@ -99,6 +100,7 @@ function buildBill(changes: BillChanges, raw: BillObject, ctx: OperationContext,
   if (changes.assetId !== undefined) raw.assetid = numeric(changes.assetId ?? '-1');
   if (changes.timeSec !== undefined) raw.time = changes.timeSec;
   if (changes.remark !== undefined) raw.remark = changes.remark;
+  if (changes.images !== undefined) raw.images = assertImageReferences(ctx, scope, changes.images, Array.isArray(raw.images) ? raw.images.filter((value): value is string => typeof value === 'string') : []);
   if (changes.tagIds !== undefined) extra.tags = [...new Set(changes.tagIds)];
   let flag = BigInt(numericText(extra.flag, '0'));
   if (changes.countInStatistics !== undefined) flag = changes.countInStatistics ? flag & ~1n : flag | 1n;

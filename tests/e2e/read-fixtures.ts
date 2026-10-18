@@ -23,6 +23,7 @@ export async function mockReadApp(page: Page, connected = true) {
       'ledger.calendar': ready({ days: Array.from({ length: 31 }, (_, i) => ({ date: `2026-01-${String(i + 1).padStart(2, '0')}`, count: i === 19 ? 1 : 0 })), nextCursor: null, complete: true, freshness, range: { startSec: 1767196800, endSec: 1769875199, zone: 'Asia/Shanghai' } }, freshness),
       'sync.start': ready({ id: 'sync1', state: 'succeeded', domain: 'ledger', mode: 'incremental', phase: 'complete', pages: 1, receivedRecords: 1, complete: true, error: null, coverage: 'ledger' }),
       'capabilities.list': ready([{ action: 'ledger.list', enabled: true, reason: null, kind: 'read', evidence: 'apk-static' }]),
+      'attachments.options': ready({ maxBillImages: 6, maxBytes: 8388608, countSource: 'qianji', uploadPage: '/attachments', freshness }), 'attachments.draft.get': ready(null),
     };
     await route.fulfill({ json: values[action] ?? ready(null) });
   });

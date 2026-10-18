@@ -12,6 +12,7 @@ import { projectBill } from '../sync/incremental';
 import { ResourceCache } from '../../storage/cache';
 import type { OperationContext } from '../../operations/contract';
 import { prepareDebtBills } from './bills';
+import { assertImageReferences } from '../attachments/references';
 export function createDebtBillMutationHandler(dependencies: { baseCurrency?: () => string; reconcileSource?: (ctx: OperationContext) => Promise<boolean> } = {}): MutationHandler {
   return createLedgerMutationHandler({ ...dependencies, prepare: (command, ctx) => prepareDebtBills(command, ctx, dependencies.baseCurrency?.() ?? 'CNY').prepared });
 }
@@ -25,7 +26,7 @@ export function createDebtMutationHandler(dependencies: { baseCurrency?: () => s
       const cash = debtCash(ctx, scope, input.aboutAssetId, base), signed = input.direction === 'borrow' ? subtractMoney('0', principal) : principal;
       const raw = { id: -1, userid: scope.uid, type: 5, stype: input.direction === 'borrow' ? 51 : 52, name: input.name, money: new LosslessNumber(signed), status: 0, sort: 0, incount: input.inCount ? 1 : 0, lastPayTime: 0,
         loan: { money: new LosslessNumber(signed), totalpay: 0, startdate: input.startDate, enddate: input.endDate ?? null } };
-      const extra = { bookid: new LosslessNumber(input.bookId), ...(input.aboutAssetId ? { accountId: new LosslessNumber(input.aboutAssetId) } : {}), ...(input.remark ? { remark: input.remark } : {}) };
+      const extra = { bookid: new LosslessNumber(input.bookId), ...(input.aboutAssetId ? { accountId: new LosslessNumber(input.aboutAssetId) } : {}), ...(input.remark ? { remark: input.remark } : {}), ...(input.images?.length ? { images: assertImageReferences(ctx, scope, input.images) } : {}) };
       const logicalId = `debt:${command.requestId}`, affectedIds = ['asset-catalog', ...(cash ? [`asset:${input.aboutAssetId}`] : [])], effects = cash ? [debtEffect(cash, debtCashDelta(input.direction, 'append', principal), base)] : [];
       return { payload: { scope: { ...scope }, logicalId, raw, extra, base, bookId: input.bookId, principal, direction: input.direction, cashId: input.aboutAssetId ?? null, remark: input.remark ?? '' }, items: [{ id: logicalId, affectedIds, assetEffects: effects }], affectedIds, affectedDomains: ['assets', 'ledger'] };
     },

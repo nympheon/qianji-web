@@ -15,6 +15,10 @@ function loginReply(id = uid, value = token): Response {
 afterEach(() => vi.restoreAllMocks());
 
 describe('personal Qianji connection', () => {
+  it('adopts official media configs without losing a previously returned limit on partial config updates', async () => {
+    const app = await createTestApp(); vi.spyOn(globalThis, 'fetch').mockImplementationOnce(async () => new Response(JSON.stringify({ ec: 200, data: { user: { id: uid }, token, configs: { max_bill_image: '9', bill_image_host: 'https://billimg.qianjiapp.com/' } } }))).mockImplementationOnce(async () => new Response(JSON.stringify({ ec: 200, data: { userinfo: { id: uid }, configs: { pub_image_host: 'https://assets.example.test/' } } })));
+    await app.repository(async (repository) => { const ctx = createActorContext(repository.storage, { QIANJI_CREDENTIAL_KEY: secret }); await ctx.connection.login(input); const scope = ctx.connection.scope()!; expect(ctx.imageConfiguration.read(scope)).toMatchObject({ maxBillImages: 9, source: 'qianji' }); await ctx.connection.check(); expect(ctx.imageConfiguration.read(scope)).toMatchObject({ maxBillImages: 9, source: 'qianji', publicHost: 'https://assets.example.test/' }); });
+  });
   it('adopts official userconfigs.basecur through login and client.init for all shared business services', async () => {
     const app = await createTestApp();
     vi.spyOn(globalThis, 'fetch').mockImplementationOnce(async () => new Response(`{"ec":200,"data":{"user":{"id":"${uid}","name":"test","viptype":1,"vipstart":1,"vipend":9999999999},"token":"${token}","books":[],"userconfigs":{"basecur":"USD"}}}`)).mockImplementationOnce(async () => new Response(`{"ec":200,"data":{"userinfo":{"id":"${uid}","name":"test","viptype":1,"vipstart":1,"vipend":9999999999},"books":[],"userconfigs":{"basecur":"EUR"}}}`)).mockImplementationOnce(async () => new Response('{"ec":200,"data":{"id":10,"type":1,"stype":11,"money":100,"status":0,"name":"test"}}'));

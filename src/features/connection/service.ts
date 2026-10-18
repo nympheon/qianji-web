@@ -18,7 +18,7 @@ import { isLosslessNumber } from 'lossless-json';
 import { ResourceCache } from '../../storage/cache';
 import type { ResourceRecord } from '../../storage/resources';
 
-export interface ConnectionDependencies { repository: Repository; client: QianjiClient; coordinator: Coordinator; vault: CredentialVault; clock: Clock; onUserConfig?: (scope: ActorScope, value: WireJson | undefined) => void }
+export interface ConnectionDependencies { repository: Repository; client: QianjiClient; coordinator: Coordinator; vault: CredentialVault; clock: Clock; onUserConfig?: (scope: ActorScope, value: WireJson | undefined) => void; onClientConfig?: (scope: ActorScope, value: WireJson | undefined) => void }
 type ConnectionRow = { uid: string | null; connection_epoch: string | null; token_cipher: string | null;
   credential_generation: number; route: string; state: string; profile_raw: string | null };
 interface StoredProfile { user: { id: string; name: string | null; vipType: string | null; vipStartSec: string | null; vipEndSec: string | null } | null; checkedAt: string | null; problem: Problem | null }
@@ -92,7 +92,7 @@ export class ConnectionService {
     return coordinator.changeConnection(async () => {
       const reply = await client.request('account.login', { v: parsed.data.account, pwd: passwordDigest(parsed.data.password) }, null);
       if (!object(reply.data) || typeof reply.data.token !== 'string' || reply.data.token.length === 0) throw new ProtocolError('QIANJI_RESPONSE_INVALID', '钱迹响应缺少登录凭证', 'protocol', 'unknown');
-      const account = user(reply.data.user), books = this.books(reply.data.books), userConfig = reply.data.userconfigs, previous = this.row();
+      const account = user(reply.data.user), books = this.books(reply.data.books), clientConfig = reply.data.configs, userConfig = reply.data.userconfigs, previous = this.row();
       const scope = { uid: account.id, connectionEpoch: previous.uid === account.id && previous.connection_epoch ? previous.connection_epoch : crypto.randomUUID() };
       const cipher = await vault.encrypt(reply.data.token, scope);
       const saved: StoredProfile = { user: account, checkedAt: clock.nowIso(), problem: null };
@@ -100,6 +100,7 @@ export class ConnectionService {
         repository.sql.exec("UPDATE connection SET uid=?,connection_epoch=?,token_cipher=?,credential_generation=credential_generation+1,state='connected',profile_raw=? WHERE singleton=1", scope.uid, scope.connectionEpoch, cipher, JSON.stringify(saved)).toArray();
         if (books.length) new ResourceCache(repository, clock).confirmResources(scope, 'books', books);
         this.dependencies.onUserConfig?.(scope, userConfig);
+        this.dependencies.onClientConfig?.(scope, clientConfig);
         repository.sql.exec('DELETE FROM instance_meta WHERE key=?', `bootstrap:${scope.uid}`).toArray();
         this.cancelSources('uid<>? OR connection_epoch<>?', [scope.uid, scope.connectionEpoch], { code: 'CONNECTION_CHANGED', message: '账号连接已变更，原同步任务已停止' });
       });
@@ -124,13 +125,14 @@ export class ConnectionService {
       if (!object(reply.data)) throw new ProtocolError('QIANJI_RESPONSE_INVALID', '钱迹响应缺少配置', 'protocol', 'unknown');
       const account = user(reply.data.userinfo);
       if (account.id !== scope.uid) throw new ProtocolError('QIANJI_RESPONSE_INVALID', '钱迹返回的账号不匹配', 'protocol', 'unknown');
-      const books = this.books(reply.data.books), userConfig = reply.data.userconfigs;
+      const books = this.books(reply.data.books), clientConfig = reply.data.configs, userConfig = reply.data.userconfigs;
       const saved: StoredProfile = { user: account, checkedAt: this.dependencies.clock.nowIso(), problem: null };
       this.dependencies.repository.transaction(() => {
         const updated = this.dependencies.repository.sql.exec('UPDATE connection SET profile_raw=? WHERE singleton=1 AND uid=? AND connection_epoch=? AND credential_generation=?', JSON.stringify(saved), scope.uid, scope.connectionEpoch, row.credential_generation);
         updated.toArray();
         if (updated.rowsWritten > 0 && books.length) new ResourceCache(this.dependencies.repository, this.dependencies.clock).confirmResources(scope, 'books', books);
         if (updated.rowsWritten > 0) this.dependencies.onUserConfig?.(scope, userConfig);
+        if (updated.rowsWritten > 0) this.dependencies.onClientConfig?.(scope, clientConfig);
       });
     } catch (error) {
       const current = this.row();

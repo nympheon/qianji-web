@@ -9,6 +9,7 @@ export const billChangesSchema = z.strictObject({
   bookId: bookIdSchema.optional(), type: z.union([z.literal(0), z.literal(1), z.literal(5)]).optional(), enteredMoney: money.optional(),
   fee: money.optional(), timeSec: z.int().min(0).max(253402300799).optional(), categoryId: id.optional(),
   assetId: id.nullable().optional(), remark: z.string().max(500).optional(), tagIds: z.array(z.string().min(1).max(200)).max(100).optional(),
+  images: z.array(z.string().min(1).max(2048)).max(200).optional(),
   countInStatistics: z.boolean().optional(), countInBudget: z.boolean().optional(),
 });
 export const newBillSchema = billChangesSchema.required({ bookId: true, type: true, enteredMoney: true, timeSec: true, categoryId: true });

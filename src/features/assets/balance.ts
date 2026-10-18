@@ -7,6 +7,7 @@ import { balanceAdjustmentSchema } from './contract';
 import { assetError, loadAsset } from './model';
 import { nativeInstallmentMoney } from './summary';
 import { assertNoUnsyncedBills } from '../ledger/pending';
+import { assertImageReferences } from '../attachments/references';
 export function prepareBalance(command: MutationCommand, ctx: OperationContext) {
   const input = balanceAdjustmentSchema.parse(restoreBillInput(command.input)), raw = { ...loadAsset(ctx, command.scope, input.id) };
   if (billVersion(raw) !== input.expectedVersion) return assetError('DRAFT_SOURCE_CHANGED', '资产已变化，请保留输入并重新查看');
@@ -22,8 +23,8 @@ export function prepareBalance(command: MutationCommand, ctx: OperationContext) 
   const params: BillObject = { uid: command.scope.uid, v: '' };
   if (input.recordDifference) {
     const difference = input.difference!;
-    if (difference.images?.length) return assetError('ATTACHMENT_UNVERIFIED', '差额图片需先完成附件上传验收');
     params.diffparams = { cateid: new LosslessNumber(difference.categoryId), billflag: (difference.countInStatistics ? 0 : 1) | (difference.countInBudget ? 0 : 2), ...(difference.remark ? { remark: difference.remark } : {}) };
+    if (difference.images?.length) params.diffparams.images = assertImageReferences(ctx, command.scope, difference.images);
   }
   return { input, raw, params, delta };
 }

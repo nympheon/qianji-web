@@ -9,6 +9,8 @@ import { parseWire, stringifyWire, type WireJson } from '../../src/shared/wire-j
 import { projectBill } from '../../src/features/sync/incremental';
 import type { MutationCommand } from '../../src/operations/contract';
 import { LedgerWriteService } from '../../src/features/ledger/write-service';
+import { ResourceCache } from '../../src/storage/cache';
+import { ImageConfiguration } from '../../src/features/attachments/configuration';
 
 const fixture = '{"id":1792000000123100001,"bookid":1,"type":0,"money":90,"time":1792000000,"updatetime":1792000000,"status":1,"userid":"user-A","assetid":-1,"cateid":2,"remark":"original","extra":{"transfee":-10,"flag":64,"future":{"long":9223372036854775801}},"serverFuture":{"keep":true}}';
 const version = (raw: WireJson) => createHash('sha256').update(stringifyWire(raw)).digest('hex');
@@ -39,6 +41,13 @@ async function scenario() {
 }
 
 describe('native bill writes', () => {
+  it('associates a newly confirmed bill image key and refuses a plain URL as new-upload proof', async () => {
+    const s = await scenario(), key = '_' + 'a'.repeat(32); await s.app.repository((repository) => new ResourceCache(repository, s.clock).confirmResources(s.app.scope, 'attachments', [{ id: key, kind: 'attachment', raw: { key, purpose: 'bill', proof: 'qiniu-receipt' } }]));
+    s.upstream.respond(async () => s.receipt(s.sent().at(-1)!.changed.map((bill) => numericText(bill.id, '')))); const accepted = await s.run((c) => c.submit(s.command('ledger.create', { bills: [s.newInput({ images: [key] })] }))); expect(accepted.state).toBe('succeeded'); expect(s.sent()[0]!.changed[0]!.images).toEqual([key]); const refused = await s.run((c) => c.submit(s.command('ledger.create', { bills: [s.newInput({ images: ['https://example.test/picture.jpg'] })] }))); expect(refused.error?.code).toBe('IMAGE_UPLOAD_REQUIRED'); expect(s.upstream.calls).toHaveLength(1);
+  });
+  it('takes the image count from current official configuration instead of the old default6', async () => {
+    const s = await scenario(), keys = ['a', 'b', 'c'].map((value) => '_' + value.repeat(32)); await s.app.repository((repository) => { new ImageConfiguration({ repository, clock: s.clock }).applyOfficial(s.app.scope, { max_bill_image: '2' }); new ResourceCache(repository, s.clock).confirmResources(s.app.scope, 'attachments', keys.map((key) => ({ id: key, kind: 'attachment', raw: { key, purpose: 'bill', proof: 'qiniu-receipt' } }))); }); const refused = await s.run((c) => c.submit(s.command('ledger.create', { bills: [s.newInput({ images: keys })] }))); expect(refused.error?.code).toBe('IMAGE_COUNT_LIMIT'); expect(s.upstream.calls).toHaveLength(0);
+  });
   it('saves entered100/coupon-10 as money90 exactly once with a native-range long numeric ID', async () => {
     const s = await scenario();
     s.upstream.respond(async () => s.receipt(s.sent().at(-1)!.changed.map((bill) => numericText(bill.id, ''))));

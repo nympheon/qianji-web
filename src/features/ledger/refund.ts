@@ -1,4 +1,5 @@
 import { DomainError } from '../../shared/errors';
+import { assertImageReferences } from '../attachments/references';
 import type { ExpectedAssetEffect, MutationHandler, OperationContext, PreparedMutation } from '../../operations/contract';
 import { asBillObject, billExtra, billLinks, moneyText, numericText, positiveBillId, type BillObject } from '../../shared/bill-wire';
 import { addMoney, compareMoney, subtractMoney } from '../../shared/numbers';
@@ -124,7 +125,7 @@ export function createRefundMutationHandler(dependencies: { baseCurrency?: () =>
       };
       preserve('remark', input.remark, rawOld?.remark); preserve('images', input.images, rawOld?.images); preserve('tags', input.tagIds, oldExtra.tags);
       for (const tag of input.tagIds ?? []) if (!repository.readResources(scope, 'tag', { domain: 'tags', ids: [tag] }).items.length) return fail('TAG_NOT_LOADED', '所选标签尚未载入');
-      if (input.images?.some((key) => !Array.isArray(rawOld?.images) || !rawOld.images.includes(key))) return fail('ATTACHMENT_UNVERIFIED', '新图片引用需要完成上传验收后使用');
+      if (input.images !== undefined) assertImageReferences(ctx, scope, input.images, Array.isArray(rawOld?.images) ? rawOld.images.filter((value): value is string => typeof value === 'string') : []);
       const logicalId = old?.id ?? `refund:${command.requestId}`, affectedIds = [source.id, ...(old ? [old.id] : []), ...ids.map((id) => `asset:${id}`)];
       return { payload: { scope: { ...scope }, source: rawSource, oldRefund: rawOld, wire, logicalId, preparedAt: String(ctx.clock.nowMs()), assetBases: assetBases.map((asset) => ({ ...asset })) },
         items: [{ id: logicalId, affectedIds }], affectedIds, affectedDomains: ids.length ? ['ledger', 'assets'] : ['ledger'] };

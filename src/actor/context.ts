@@ -27,6 +27,10 @@ import { AccountingConfiguration, createAccountingConfigurationHandler } from '.
 import { TagService } from '../features/tags/service';
 import { createTagMutationHandler } from '../features/tags/use-cases';
 import { tagWriteSchemas } from '../features/tags/contract';
+import { AttachmentService } from '../features/attachments/service';
+import { AttachmentRuntime, createAttachmentMutationHandler } from '../features/attachments/use-cases';
+import { OfficialImageTransport } from '../features/attachments/upload';
+import { ImageConfiguration } from '../features/attachments/configuration';
 import { BudgetService } from '../features/budget/service';
 import { createBudgetMutationHandler } from '../features/budget/use-cases';
 import { CategoryService } from '../features/categories/service';
@@ -37,6 +41,7 @@ export function createActorContext(storage: DurableObjectStorage, secrets: { QIA
   const repository = new Repository(storage);
   const clock: Clock = { nowMs: () => Date.now(), nowIso: () => new Date().toISOString() };
   const accounting = new AccountingConfiguration({ repository, clock });
+  const imageConfiguration = new ImageConfiguration({ repository, clock });
   const baseCurrency = () => { const current = connection.scope(); return current ? accounting.read(current).baseCurrency : 'CNY'; };
   const client = new QianjiClient({
     clock,
@@ -45,6 +50,8 @@ export function createActorContext(storage: DurableObjectStorage, secrets: { QIA
     session: (scope) => connection.session(scope),
     onSessionExpired: (scope, generation) => connection.expire(scope, generation),
   });
+  const imageTransport = new OfficialImageTransport({ client, clock, generation: () => repository.sql.exec<{ credential_generation: number }>('SELECT credential_generation FROM connection WHERE singleton=1').one().credential_generation });
+  const attachmentRuntime = new AttachmentRuntime({ clock, configuration: imageConfiguration, transport: imageTransport });
   const executionOptions = execution ? { background: (task: Promise<unknown>) => execution.waitUntil(task) } : undefined;
   const background = executionOptions ?? {};
   const reconcileSource = async () => {
@@ -57,10 +64,10 @@ export function createActorContext(storage: DurableObjectStorage, secrets: { QIA
   const reimbursementHandler = createReimbursementMutationHandler({ baseCurrency, reconcileSource: async (ctx, ids) => { if (!await reconcileSource()) return false; for (const id of ids) await assets.refreshInfo(id, ctx.client); return true; } });
   const assetHandler = createAssetMutationHandler({ reconcileLedger: reconcileSource }), groupHandler = createAssetGroupMutationHandler();
   const debtHandler = createDebtBillMutationHandler({ reconcileSource, baseCurrency }), bookHandler = createBookMutationHandler();
-  const coordinator = new Coordinator({ repository, client, clock }, new Map([['budget.submit', createBudgetMutationHandler()], ...Object.keys(tagWriteSchemas).map((action) => [action, createTagMutationHandler({ reconcileSource })] as const), ...Object.keys(categoryWriteSchemas).map((action) => [action, createCategoryMutationHandler({ reconcileSource })] as const), ['books.setBaseCurrency', createAccountingConfigurationHandler({ configuration: accounting, reconcileSource: async () => { const view = await connection.check(); return view.state === 'connected' && view.problem === null; } })], ...['books.submit', 'books.configure', 'books.delete', 'books.quit', 'books.setVisible', 'books.reorder'].map((action) => [action, bookHandler] as const), ['debt.create', createDebtMutationHandler({ baseCurrency })], ...['debt.appendPrincipal', 'debt.editPrincipal', 'debt.pay'].map((action) => [action, debtHandler] as const), ...['assets.submit', 'assets.adjustBalance', 'assets.setFinished', 'assets.setVisible', 'assets.reorder', 'assets.delete'].map((action) => [action, assetHandler] as const), ...['assets.groups.submit', 'assets.groups.delete', 'assets.groups.reorder', 'assets.groups.add', 'assets.groups.remove'].map((action) => [action, groupHandler] as const), ...['ledger.create', 'ledger.edit'].map((action) => [action, billHandler] as const), ...['ledger.transfer', 'ledger.repayCard'].map((action) => [action, transferHandler] as const), ...['ledger.reimburse', 'ledger.cancelReimbursement'].map((action) => [action, reimbursementHandler] as const), ['ledger.setReimbursable', createReimbursableMutationHandler({ reconcileSource })], ['ledger.refund', refundHandler], ['ledger.delete', deletionHandler]]), executionOptions);
+  const coordinator = new Coordinator({ repository, client, clock }, new Map([['attachments.upload', createAttachmentMutationHandler(attachmentRuntime)], ['budget.submit', createBudgetMutationHandler()], ...Object.keys(tagWriteSchemas).map((action) => [action, createTagMutationHandler({ reconcileSource })] as const), ...Object.keys(categoryWriteSchemas).map((action) => [action, createCategoryMutationHandler({ reconcileSource })] as const), ['books.setBaseCurrency', createAccountingConfigurationHandler({ configuration: accounting, reconcileSource: async () => { const view = await connection.check(); return view.state === 'connected' && view.problem === null; } })], ...['books.submit', 'books.configure', 'books.delete', 'books.quit', 'books.setVisible', 'books.reorder'].map((action) => [action, bookHandler] as const), ['debt.create', createDebtMutationHandler({ baseCurrency })], ...['debt.appendPrincipal', 'debt.editPrincipal', 'debt.pay'].map((action) => [action, debtHandler] as const), ...['assets.submit', 'assets.adjustBalance', 'assets.setFinished', 'assets.setVisible', 'assets.reorder', 'assets.delete'].map((action) => [action, assetHandler] as const), ...['assets.groups.submit', 'assets.groups.delete', 'assets.groups.reorder', 'assets.groups.add', 'assets.groups.remove'].map((action) => [action, groupHandler] as const), ...['ledger.create', 'ledger.edit'].map((action) => [action, billHandler] as const), ...['ledger.transfer', 'ledger.repayCard'].map((action) => [action, transferHandler] as const), ...['ledger.reimburse', 'ledger.cancelReimbursement'].map((action) => [action, reimbursementHandler] as const), ['ledger.setReimbursable', createReimbursableMutationHandler({ reconcileSource })], ['ledger.refund', refundHandler], ['ledger.delete', deletionHandler]]), executionOptions);
   const instanceId = repository.sql.exec<{ value: string }>("SELECT value FROM instance_meta WHERE key='instance_id'").one().value;
   const vault = new CredentialVault(secrets.QIANJI_CREDENTIAL_KEY, instanceId);
-  const connection = new ConnectionService({ repository, client, coordinator, clock, vault, onUserConfig: (scope, value) => accounting.applyOfficial(scope, value) });
+  const connection = new ConnectionService({ repository, client, coordinator, clock, vault, onUserConfig: (scope, value) => accounting.applyOfficial(scope, value), onClientConfig: (scope, value) => imageConfiguration.applyOfficial(scope, value) });
   const cache = new ResourceCache(repository, clock);
   const sync = new SyncService({ repository, client, coordinator, clock, connection, rebuild: (scope, domains) => rebuild.rebuild(scope, domains), ...background });
   const rebuild = new RebuildService({ repository, cache, client, coordinator, clock, connection, sync, ...background });
@@ -70,8 +77,9 @@ export function createActorContext(storage: DurableObjectStorage, secrets: { QIA
   const ledger = new LedgerService({ repository, connection, freshness, clock, writes: ledgerWrites, baseCurrency });
   const debt = new DebtService({ repository, cache, client, clock, connection, coordinator, ledgerWrites, baseCurrency });
   const books = new BookService({ repository, cache, client, clock, connection, coordinator, accounting, vipExpired: () => connection.isVipExpired() });
+  const attachments = new AttachmentService({ repository, cache, client, clock, connection, coordinator, configuration: imageConfiguration, runtime: attachmentRuntime });
   const budget = new BudgetService({ repository, cache, client, clock, connection, coordinator, ledger, baseCurrency });
   const tags = new TagService({ repository, cache, client, clock, connection, coordinator });
   const categories = new CategoryService({ repository, cache, client, clock, connection, coordinator });
-  return { repository, clock, client, coordinator, connection, sync, cache, rebuild, freshness, ledger, ledgerWrites, assets, debt, books, accounting, categories, tags, budget };
+  return { repository, clock, client, coordinator, connection, sync, cache, rebuild, freshness, ledger, ledgerWrites, assets, debt, books, accounting, categories, tags, budget, imageConfiguration, attachments };
 }

@@ -4,6 +4,7 @@ import syncSql from './sql/0003-sync.sql?raw';
 import cacheSql from './sql/0004-cache.sql?raw';
 import ledgerQuerySql from './sql/0005-ledger-query.sql?raw';
 import accountingConfigSql from './sql/0006-accounting-config.sql?raw';
+import mediaConfigSql from './sql/0007-media-config.sql?raw';
 import { DomainError } from '../shared/errors';
 
 export interface Migration { version: number; name: string; sql: string }
@@ -14,6 +15,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 4, name: 'cache', sql: cacheSql },
   { version: 5, name: 'ledger-query', sql: ledgerQuerySql },
   { version: 6, name: 'accounting-config', sql: accountingConfigSql },
+  { version: 7, name: 'media-config', sql: mediaConfigSql },
 ];
 
 /** Each schema step and its version marker commit together, including DDL. */

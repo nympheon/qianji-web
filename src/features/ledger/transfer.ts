@@ -8,6 +8,7 @@ import { asBillObject, billExtra, moneyText, numericText, type BillObject } from
 import { billVersion, createLedgerMutationHandler, ensureBillUnrelated, nextBillId, prepareBillEntries, restoreBillInput } from './write';
 import { LosslessNumber } from 'lossless-json';
 import type { ActorScope } from '../../shared/model';
+import { assertImageReferences } from '../attachments/references';
 
 const fail = (code: string, message: string): never => { throw new DomainError(code, message); };
 const abs = (money: string) => money.startsWith('-') ? money.slice(1) : money;
@@ -87,6 +88,7 @@ export function prepareTransfer(command: MutationCommand, ctx: Pick<OperationCon
     raw.id = new LosslessNumber(id); raw.bookid = new LosslessNumber(bookId); raw.money = new LosslessNumber(next.principal); raw.fromid = new LosslessNumber(fromAssetId); raw.targetid = new LosslessNumber(targetAssetId); raw.type = type; raw.time = next.timeSec; raw.userid = scope.uid; raw.status = 2; raw.updatetime = nowSec; raw.cateid = 0; raw.assetid = -1;
     raw.descinfo = `${from.name}->${target.name}`;
     if (changes.remark !== undefined) raw.remark = changes.remark;
+    if (changes.images !== undefined) raw.images = assertImageReferences(ctx, scope, changes.images, Array.isArray(raw.images) ? raw.images.filter((value): value is string => typeof value === 'string') : []);
     const extra: BillObject = { ...billExtra(raw), transfee: new LosslessNumber(fee) };
     let flag = BigInt(numericText(extra.flag, '0'));
     if (changes.countInStatistics !== undefined) flag = changes.countInStatistics ? flag & ~1n : flag | 1n;

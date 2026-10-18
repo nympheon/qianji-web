@@ -9,11 +9,13 @@ import { Input } from './ui/input';
 import { Textarea } from './ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { OperationStatus } from './OperationStatus';
+import { Attachments } from './Attachments';
 
 const labels: Record<AssetDraft['action'], string> = { 'assets.submit': '保存资产', 'assets.adjustBalance': '确认调整余额', 'assets.setFinished': '确认结清状态', 'assets.setVisible': '确认资产显隐', 'assets.reorder': '保存资产顺序', 'assets.delete': '确认删除资产', 'assets.groups.submit': '保存资产分组', 'assets.groups.delete': '确认删除分组', 'assets.groups.reorder': '保存分组顺序', 'assets.groups.add': '确认加入分组', 'assets.groups.remove': '确认解除分组' };
 export function AssetEditor({ initial, draftKey, allowed, asset, assets = [], groups, types = [], options, deletion, onComplete }: { initial: AssetDraft; draftKey: string; allowed: boolean; asset?: AssetView; assets?: AssetView[]; groups?: AssetGroupsView; types?: AssetTypeView[]; options?: LedgerOptions | null; deletion?: AssetDeleteCheckView; onComplete(): void }) {
   const [draft, setDraft] = useState(initial), [loaded, setLoaded] = useState(false), [saved, setSaved] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null), [notice, setNotice] = useState<string | null>(null);
   const [operationId, setOperationId] = useState<string | null>(null), [operation, setOperation] = useState<OperationView | null>(null);
+  const [imagesPending, setImagesPending] = useState(true);
   const queue = useRef<Promise<unknown>>(Promise.resolve()), mounted = useRef(true);
   const persist = (value: AssetDraft) => { const task = queue.current.then(() => api('assets.draft.save', { key: draftKey, draft: value })); queue.current = task; return task.then((reply) => { if (mounted.current) { setSaved(reply.status === 'ready'); if (reply.error) setError(reply.error.message); } return reply; }); };
   useEffect(() => { let active = true; mounted.current = true; void api('assets.draft.get', { key: draftKey }).then((reply) => { if (!active) return; if (reply.data) { if (reply.data.draft.action !== initial.action) { setError('草稿类型与本次操作不匹配，请保留原草稿'); return; } setDraft(reply.data.draft); setOperationId(reply.data.operationId); setSaved(true); } else if (reply.error) setError(reply.error.message); setLoaded(true); }); return () => { active = false; mounted.current = false; }; }, [draftKey]);
@@ -21,7 +23,7 @@ export function AssetEditor({ initial, draftKey, allowed, asset, assets = [], gr
   function patch(input: Record<string, unknown>) { const parsed = assetDraftSchema.safeParse({ ...draft, input: { ...draft.input, ...input } }); if (!parsed.success) { setError('输入超出草稿允许范围，请核对'); return; } setDraft(parsed.data); setError(null); setNotice(null); setSaved(false); }
   function fieldsPatch(fields: Record<string, unknown>) { if (draft.action !== 'assets.submit') return; if (draft.input.mode === 'create') patch({ fields: { ...draft.input.fields, ...fields } }); else patch({ changes: { ...draft.input.changes, ...fields } }); }
   async function submit(event: FormEvent) {
-    event.preventDefault(); if (!loaded || busy || operationId || !allowed || deletion?.blocked) return;
+    event.preventDefault(); if (!loaded || busy || operationId || !allowed || deletion?.blocked || (draft.action === 'assets.adjustBalance' && draft.input.recordDifference && imagesPending)) return;
     const parsed = assetWriteSchemas[draft.action].safeParse(draft.input); if (!parsed.success) { setError('请完整填写名称、金额及本次操作所需资料'); return; }
     setBusy(true); setError(null);
     try {
@@ -76,9 +78,10 @@ export function AssetEditor({ initial, draftKey, allowed, asset, assets = [], gr
     {draft.action === 'assets.groups.add' ? <><Field><FieldLabel>目标分组</FieldLabel><Select value={draft.input.groupId || undefined} disabled={disabled} onValueChange={(id) => patch({ groupId: id })}><SelectTrigger aria-label="目标资产分组"><SelectValue placeholder="选择分组" /></SelectTrigger><SelectContent>{groups?.items.map((group) => <SelectItem key={group.id} value={group.id}>{group.name}</SelectItem>)}</SelectContent></Select></Field><div className="flex flex-col gap-3">{assets.filter((item) => item.type !== 6).map((item) => <label className="flex items-center gap-3 text-sm" key={item.id}><input type="checkbox" className="size-4 shrink-0 accent-primary" checked={draft.input.assetIds.includes(item.id)} disabled={disabled} onChange={(event) => { if (draft.action === 'assets.groups.add') patch({ assetIds: event.target.checked ? [...draft.input.assetIds, item.id] : draft.input.assetIds.filter((id) => id !== item.id) }); }} />{item.name}</label>)}</div></> : null}
     {draft.action === 'assets.groups.remove' ? <p>仅解除指定分组的归属，保存前会读取最新资产。</p> : null}
     {notice ? <p role="status" className="muted-copy">{notice}</p> : null}{error ? <p role="alert">{error}</p> : null}
+    {loaded && draft.action === 'assets.adjustBalance' && draft.input.difference ? <Attachments references={draft.input.difference.images ?? []} draftKey={`assets:${draftKey}`} disabled={disabled} onPendingChange={setImagesPending} onChange={async (images) => { if (draft.action !== 'assets.adjustBalance' || !draft.input.difference) return false; const next = assetDraftSchema.parse({ ...draft, input: { ...draft.input, difference: { ...draft.input.difference, images } } }); setDraft(next); return (await persist(next)).status === 'ready'; }} /> : null}
     {operationId ? <OperationStatus operationId={operationId} initial={operation} onChange={(value) => { setOperation(value); if (value.state === 'succeeded') onComplete(); }} /> : <p className="muted-copy">{saved ? '草稿已保存' : '正在保存草稿…'}</p>}
     {!allowed ? <p className="muted-copy">此写入动作待专用测试资源验收后启用。</p> : null}
-    <Button type="submit" variant={draft.action.endsWith('.delete') ? 'destructive' : 'default'} disabled={disabled || !allowed || !!deletion?.blocked || draft.action === 'assets.delete' && !deletion}>{labels[draft.action]}</Button>
+    <Button type="submit" variant={draft.action.endsWith('.delete') ? 'destructive' : 'default'} disabled={disabled || (draft.action === 'assets.adjustBalance' && draft.input.recordDifference && imagesPending) || !allowed || !!deletion?.blocked || draft.action === 'assets.delete' && !deletion}>{labels[draft.action]}</Button>
     {operation && operationIsFinal(operation) ? <Button type="button" variant="outline" disabled={busy} onClick={() => { void renew(); }}>载入最新资料并建立新草稿</Button> : null}
   </FieldGroup></form>;
 }

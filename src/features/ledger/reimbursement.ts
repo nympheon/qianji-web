@@ -5,6 +5,7 @@ import { addMoney, compareMoney, divideMoney, multiplyMoney, subtractMoney } fro
 import { LosslessNumber } from 'lossless-json';
 import { stringifyWire } from '../../shared/wire-json';
 import { DomainError } from '../../shared/errors';
+import { assertImageReferences } from '../attachments/references';
 import { nativeRefundTotal } from './refund';
 import { billVersion, createLedgerMutationHandler, prepareBillEntries, restoreBillInput } from './write';
 import { cancelReimbursementInputSchema, reimburseInputSchema, reimbursableInputSchema } from './reimbursement-contract';
@@ -129,7 +130,7 @@ export function createReimbursementMutationHandler(dependencies: { baseCurrency?
         if (assetId) wire.did = assetId;
         if (value.remark) wire.remark = value.remark;
         if (value.tagIds?.length) { for (const id of value.tagIds) if (!repository.readResources(scope, 'tag', { domain: 'tags', ids: [id] }).items.length) return fail('TAG_NOT_LOADED', '所选标签尚未载入'); wire.tags = JSON.stringify(value.tagIds); }
-        if (value.images?.length) return fail('ATTACHMENT_UNVERIFIED', '图片上传完成验收后才能加入新报销');
+        if (value.images?.length) wire.images = JSON.stringify(assertImageReferences(ctx, scope, value.images));
       }
       const logicalId = `reimburse:${command.requestId}`, affectedIds = [...new Set([...sources.flatMap((source) => [numericText(source.id, ''), ...bxLinks(source).map((link) => link.targetId)]), ...[...assetIds].map((id) => `asset:${id}`)])];
       return { payload: { scope: { ...scope }, sources, allocation, wire, assetId, logicalId, preparedAt: String(ctx.clock.nowMs()), cancel }, items: [{ id: logicalId, affectedIds }], affectedIds, affectedDomains: assetIds.size ? ['ledger', 'assets'] : ['ledger'] };

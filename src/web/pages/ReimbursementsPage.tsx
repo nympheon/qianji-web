@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { DataStatus } from '../components/DataStatus';
 import { TaskStatus } from '../components/TaskStatus';
 import { OperationStatus } from '../components/OperationStatus';
+import { Attachments } from '../components/Attachments';
 import { EmptyState } from '../components/EmptyState';
 import { formatMoney } from '../components/Totals';
 
@@ -19,6 +20,7 @@ const key = 'reimbursements';
 const labels: Record<ReimbursementDraft['mode'], string> = { reimburse: '确认报销入账', cancel: '确认取消报销', mark: '标记为待报销', unmark: '取消待报销属性', delete: '确认删除所选到账记录' };
 function newDraft(): ReimbursementDraft { return { kind: 'reimbursement', requestId: crypto.randomUUID(), mode: 'reimburse', fields: { bills: [], money: '', assetId: null, timeSec: Math.floor(Date.now() / 1000), remark: '' } }; }
 export function ReimbursementsPage() {
+  const [imagesPending, setImagesPending] = useState(true);
   const [filter, setFilter] = useState<BillFilter>({ types: [5], limit: 50 }), [draft, setDraft] = useState<ReimbursementDraft>(newDraft), [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false), [selectionBusy, setSelectionBusy] = useState(false), [saved, setSaved] = useState(false), [error, setError] = useState<string | null>(null);
   const [operationId, setOperationId] = useState<string | null>(null), [operation, setOperation] = useState<OperationView | null>(null), [selected, setSelected] = useState<Record<string, BillDetail>>({});
@@ -81,7 +83,7 @@ export function ReimbursementsPage() {
     } finally { setSelectionBusy(false); }
   }
   async function submit(event: FormEvent) {
-    event.preventDefault(); if (disabled || selectionBusy || !allowed) return; setError(null);
+    event.preventDefault(); if (disabled || selectionBusy || !allowed || (draft.mode === 'reimburse' && imagesPending)) return; setError(null);
     const parsed = draft.mode === 'reimburse' ? reimburseInputSchema.safeParse(draft.fields) : cancelReimbursementInputSchema.safeParse({ bills: draft.fields.bills });
     if (!parsed.success) { setError('请选择真实账单，并核对金额、日期和历史币种资料'); return; }
     setBusy(true);
@@ -105,8 +107,9 @@ export function ReimbursementsPage() {
       {draft.mode === 'reimburse' ? <><p className="muted-copy">按源账单时间分配，末笔接收剩余金额。</p><div className="editor-grid"><Field><FieldLabel htmlFor="reimbursement-money">报销总额</FieldLabel><Input id="reimbursement-money" inputMode="decimal" value={draft.fields.money ?? ''} disabled={disabled} required onChange={(event) => update({ money: event.target.value })} /></Field><Field><FieldLabel>到账资产</FieldLabel><Select value={draft.fields.assetId ?? '-1'} disabled={disabled} onValueChange={(id) => update({ assetId: id === '-1' ? null : id })}><SelectTrigger aria-label="报销到账资产"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="-1">不关联资产</SelectItem>{assets.map((asset) => <SelectItem key={asset.id} value={asset.id}>{asset.name} · {asset.currency}</SelectItem>)}</SelectContent></Select></Field><Field className="col-span-full"><FieldLabel htmlFor="reimbursement-time">报销时间</FieldLabel><Input id="reimbursement-time" type="datetime-local" value={time} disabled={disabled} required onChange={(event) => { const ms = new Date(event.target.value).getTime(); if (Number.isFinite(ms)) update({ timeSec: Math.floor(ms / 1000) }); }} /></Field></div>
       {currency ? <div className="editor-grid"><Field><FieldLabel htmlFor="reimbursement-target">历史到账金额（{currency.targetSymbol}）</FieldLabel><Input id="reimbursement-target" value={currency.targetValue} inputMode="decimal" required disabled={disabled || currency.targetSymbol === currency.srcSymbol} onChange={(event) => update({ currency: { ...currency, targetValue: event.target.value } })} /></Field><Field><FieldLabel htmlFor="reimbursement-base">历史本位币金额（{base}）</FieldLabel><Input id="reimbursement-base" value={currency.baseValue} inputMode="decimal" required disabled={disabled || currency.srcSymbol === base} onChange={(event) => update({ currency: { ...currency, baseValue: event.target.value } })} /></Field></div> : null}
       <Field><FieldLabel htmlFor="reimbursement-remark">报销备注</FieldLabel><Textarea id="reimbursement-remark" maxLength={500} value={draft.fields.remark ?? ''} disabled={disabled} onChange={(event) => update({ remark: event.target.value })} /></Field></> : <p className="muted-copy">{draft.mode === 'cancel' ? '取消报销后保留待报销支出。源关系、到账记录和资产由只读同步核对。' : draft.mode === 'unmark' ? '已有报销记录的源账单将保留待报销属性。' : draft.mode === 'delete' ? '组合先展开真实成员，逐条保存删除结果并核对源关系。' : '仅改变待报销属性，保留退款和其他资料。'}</p>}
+      {loaded && draft.mode === 'reimburse' ? <Attachments references={draft.fields.images ?? []} draftKey={`bill:${key}`} disabled={disabled} onPendingChange={setImagesPending} onChange={async (images) => { const next = { ...draft, fields: { ...draft.fields, images } }; setDraft(next); return (await persist(next)).status === 'ready'; }} /> : null}
       {error ? <p role="alert">{error}</p> : null}{operationId ? <OperationStatus operationId={operationId} initial={operation} onChange={(value) => { setOperation(value); if (value.state === 'succeeded') query.refetch(); }} /> : <p className="muted-copy">{saved ? '草稿已保存' : '正在保存草稿…'}</p>}
-      {!allowed ? <p className="muted-copy">{capabilities.data?.find((item) => item.action === action)?.reason ?? '写入能力等待验证'}</p> : null}<Button type="submit" variant={draft.mode === 'delete' ? 'destructive' : 'default'} disabled={disabled || selectionBusy || !allowed || !draft.fields.bills.length}>{labels[draft.mode]}</Button>
+      {!allowed ? <p className="muted-copy">{capabilities.data?.find((item) => item.action === action)?.reason ?? '写入能力等待验证'}</p> : null}<Button type="submit" variant={draft.mode === 'delete' ? 'destructive' : 'default'} disabled={disabled || (draft.mode === 'reimburse' && imagesPending) || selectionBusy || !allowed || !draft.fields.bills.length}>{labels[draft.mode]}</Button>
       {operation && operationIsFinal(operation) ? <Button type="button" variant="outline" onClick={() => { setDraft(newDraft()); setSelected({}); setOperationId(null); setOperation(null); setFilter({ types: [5], limit: 50 }); setError(null); setSaved(false); query.refetch(); }}>建立新草稿</Button> : null}
     </FieldGroup></form></div>
   </div>;

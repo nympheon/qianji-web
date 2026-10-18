@@ -16,8 +16,12 @@ import { bookListSchema, bookIdSchema, bookSubmitSchema, bookConfigureSchema, bo
 import { categoryListSchema, categoryCheckSchema, categorySubmitSchema, categoryLevelSchema, categoryMoveSchema, categoryReorderSchema, categoryDeleteSchema, categoryDraftSchema, type CategoryDraftView, type CategoryListView, type CategoryDeleteCheckView } from '../features/categories/contract';
 import { tagListSchema, tagWriteSchemas, tagDraftSchema, type TagDraftView, type TagListView } from '../features/tags/contract';
 import { budgetQuerySchema, budgetChangesSchema, budgetDraftSchema, type BudgetDraftView, type BudgetView } from '../features/budget/contract';
+import { uploadImageSchema, imageReferenceSchema, uploadDraftSchema, type UploadDraftView, type AttachmentOptions, type UploadedImage, type ImageView } from '../features/attachments/contract';
 const route = z.strictObject({ route: z.enum(['main', 'backup', 'overseas']) });
 export const actionSchemas = {
+  'attachments.draft.applied': z.strictObject({ key: z.string().min(1).max(300), operationId: id }),
+  'attachments.draft.get': z.strictObject({ key: z.string().min(1).max(300) }), 'attachments.draft.save': z.strictObject({ key: z.string().min(1).max(300), draft: uploadDraftSchema }),
+  'attachments.options': empty, 'attachments.resolve': imageReferenceSchema, 'attachments.result': z.strictObject({ operationId: id }), 'attachments.upload': uploadImageSchema.extend({ requestId: id }),
   'budget.list': budgetQuerySchema, 'budget.submit': budgetChangesSchema.safeExtend({ requestId: id }),
   'budget.draft.get': z.strictObject({ key: z.string().min(1).max(300) }), 'budget.draft.save': z.strictObject({ key: z.string().min(1).max(300), draft: budgetDraftSchema }),
   'tags.list': tagListSchema,
@@ -63,6 +67,7 @@ export const actionSchemas = {
 export type ActionName = keyof typeof actionSchemas;
 export type ActionInput<A extends ActionName> = z.infer<typeof actionSchemas[A]>;
 export interface ActionOutputs {
+  'attachments.draft.applied': UploadDraftView; 'attachments.draft.get': UploadDraftView | null; 'attachments.draft.save': UploadDraftView; 'attachments.options': AttachmentOptions; 'attachments.resolve': ImageView; 'attachments.result': UploadedImage | null; 'attachments.upload': OperationView;
   'budget.list': BudgetView; 'budget.submit': OperationView; 'budget.draft.get': BudgetDraftView | null; 'budget.draft.save': BudgetDraftView;
   'tags.list': TagListView; 'tags.submitTag': OperationView; 'tags.submitGroup': OperationView; 'tags.reorderTags': OperationView; 'tags.reorderGroups': OperationView; 'tags.setArchived': OperationView; 'tags.deleteTag': OperationView; 'tags.deleteGroup': OperationView; 'tags.draft.get': TagDraftView | null; 'tags.draft.save': TagDraftView;
   'categories.submit': OperationView; 'categories.changeLevel': OperationView; 'categories.move': OperationView; 'categories.reorder': OperationView; 'categories.delete': OperationView; 'categories.draft.get': CategoryDraftView | null; 'categories.draft.save': CategoryDraftView;
@@ -98,6 +103,12 @@ export const actionDefinitions: Record<ActionName, ActionDefinition> = {
   'categories.delete': { ...write, destructive: true, title: '删除分类并处理本人账单', description: '先检查子项及官方本人count/其他成员other。明确保留账单、删除本人账单或迁移至指定分类；跨账本迁移必须显式newBookId。仅调用deletev2，不额外上传逐笔修改；分类整数回执与本人账单同步分别核验。复用requestId。' },
   'categories.draft.get': { ...read, evidence: 'local', title: '读取分类草稿', description: '读取本账号结构化分类草稿及原操作，不请求钱迹。' },
   'categories.draft.save': { ...read, readOnly: false, evidence: 'local', title: '保存分类草稿', description: '保存本地分类管理输入，未知原操作未核清时禁止更换请求键重复提交。' },
+  'attachments.draft.applied': { ...read, evidence: 'local', readOnly: false, title: '确认图片已保存到业务草稿', description: '只标记已成功的原上传，防止用户移除引用后重载重复添加；不修改或删除云端对象。' },
+  'attachments.draft.get': { ...read, evidence: 'local', title: '读取图片上传草稿', description: '按业务表单读取原图片请求键及操作，重载后不创建重复上传。' }, 'attachments.draft.save': { ...read, evidence: 'local', readOnly: false, title: '保存图片上传草稿', description: '仅保存文件摘要、用途和原请求键，不保存图片字节；未核清原操作时拒绝替换。' },
+  'attachments.options': { ...read, title: '图片上传选项', description: '读取官方max_bill_image及当前来源，原生fallback明确标记；不返回七牛token。闲置不刷新，过期配置按需检查。图片字节缺失时使用uploadPage网页入口。' },
+  'attachments.resolve': { ...read, title: '解析图片显示地址', description: '按账单、封面或分类用途及尺寸构造原生样式URL，支持_hg长图。普通URL仅作为显示引用，uploaded=false，不能证明上传成功或直接关联新账单。' },
+  'attachments.result': { ...read, evidence: 'local', title: '读取原图片上传结果', description: '按原operationId读取已确认对象key和purpose-specific associationValue；未知上传在只读证明前返回null，不换键重传。' },
+  'attachments.upload': { ...write, title: '上传官方钱迹图片', description: '提供已按APK处理的JPEG账单/封面或PNG图标base64，单张8MiB以内；无字节时前往网页上传入口。先确认官方区域和临近过期凭证，仅发送一次对象上传。日志只保存元数据，未知结果只读核查原对象；成功后用attachments.result取得已确认引用。必须复用requestId。' },
   'budget.list': { ...read, title: '查询预算与执行进度', description: '按账本、月/年日期、原生range及其时区分别缓存官方配置和daystats；执行计算复用APK预算口径，父子分类可重叠，总额独立，不叠加父子进度。标明副本完整性及历史退款依赖。闲置不请求。' },
   'budget.submit': { ...write, title: '设置总预算或分类预算', description: '按配置版本提交原生submitv2/changelist，金额0沿用原生取消预算语义；保留未知字段，应用官方返回预算集合而非复制输入。只支持已核对月度/年度及自定义月界，不推断独立季度预算或结转任务。复用requestId，未知结果只读核查。' },
   'budget.draft.get': { ...read, evidence: 'local', title: '读取预算草稿', description: '读取结构化本地预算输入与原操作，不请求钱迹。' }, 'budget.draft.save': { ...read, evidence: 'local', readOnly: false, title: '保存预算草稿', description: '保存原日期、账本与请求键，未知操作未核清时禁止覆盖重建。' },

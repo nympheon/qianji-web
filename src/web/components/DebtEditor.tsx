@@ -11,8 +11,10 @@ import { Input } from './ui/input';
 import { Textarea } from './ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { OperationStatus } from './OperationStatus';
+import { Attachments } from './Attachments';
 export function DebtEditor({ initial, draftKey, options, allowed, balance, direction, onComplete }: { initial: DebtDraft; draftKey: string; options: TransferOptions; allowed: boolean; balance?: string; direction: 'borrow' | 'lend'; onComplete(): void }) {
   const [draft, setDraft] = useState(initial), [loaded, setLoaded] = useState(false), [saved, setSaved] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null), [operationId, setOperationId] = useState<string | null>(null), [operation, setOperation] = useState<OperationView | null>(null);
+  const [imagesPending, setImagesPending] = useState(true);
   const queue = useRef<Promise<unknown>>(Promise.resolve()), mounted = useRef(true);
   const persist = (value: DebtDraft) => { const task = queue.current.then(() => api('debt.draft.save', { key: draftKey, draft: value })); queue.current = task; return task.then((reply) => { if (mounted.current) { setSaved(reply.status === 'ready'); if (reply.error) setError(reply.error.message); } return reply; }); };
   useEffect(() => { let active = true; mounted.current = true; void api('debt.draft.get', { key: draftKey }).then((reply) => { if (!active) return; if (reply.data) { if (reply.data.draft.action !== initial.action) { setError('原草稿类型不匹配，请保留原操作'); return; } setDraft(reply.data.draft); setOperationId(reply.data.operationId); setSaved(true); } else if (reply.error) setError(reply.error.message); setLoaded(true); }); return () => { active = false; mounted.current = false; }; }, [draftKey]);
@@ -23,7 +25,7 @@ export function DebtEditor({ initial, draftKey, options, allowed, balance, direc
     if (!next.success) { setError('输入超出草稿范围，请核对'); return; } setDraft(next.data); setSaved(false); setError(null);
   }
   async function submit(event: FormEvent) {
-    event.preventDefault(); if (!loaded || busy || operationId || !allowed) return;
+    event.preventDefault(); if (!loaded || busy || operationId || !allowed || imagesPending) return;
     const parsed = debtWriteSchemas[draft.action].safeParse(draft.input); if (!parsed.success) { setError('请完整填写本金、日期及本次操作所需资料'); return; }
     setBusy(true); setError(null);
     try {
@@ -62,8 +64,9 @@ export function DebtEditor({ initial, draftKey, options, allowed, balance, direc
     {creating && draft.action === 'debt.create' ? <><div className="editor-grid"><Field><FieldLabel htmlFor="debt-start">开始日期</FieldLabel><Input id="debt-start" type="date" required value={draft.input.startDate} disabled={disabled} onChange={(event) => { if (event.target.value) patch({ startDate: event.target.value }); }} /></Field><Field><FieldLabel htmlFor="debt-end">约定结束日期</FieldLabel><Input id="debt-end" type="date" value={draft.input.endDate ?? ''} disabled={disabled} onChange={(event) => patch({ endDate: event.target.value || null })} /></Field></div><label className="flex items-center gap-3 text-sm"><input type="checkbox" className="size-4 shrink-0 accent-primary" checked={draft.input.inCount} disabled={disabled} onChange={(event) => patch({ inCount: event.target.checked })} />计入资产汇总</label></> : <Field><FieldLabel htmlFor="debt-time">发生时间（上海）</FieldLabel><Input id="debt-time" type="datetime-local" value={timeSec === undefined ? '' : new Date(timeSec * 1000 + 8 * 3600_000).toISOString().slice(0, 16)} required disabled={disabled} onChange={(event) => { const time = Date.parse(`${event.target.value}:00+08:00`); if (Number.isFinite(time)) patch({ timeSec: Math.floor(time / 1000) }); }} /></Field>}
     <Field><FieldLabel htmlFor="debt-remark">操作备注</FieldLabel><Textarea id="debt-remark" value={fields.remark ?? ''} maxLength={500} disabled={disabled} onChange={(event) => patch({ remark: event.target.value })} /></Field>
     {draft.action === 'debt.pay' ? <p className="muted-copy">本金和利息分别保存并跟踪结果；还款后以钱迹返回的余额为准。</p> : null}
+    {loaded ? <Attachments references={fields.images ?? []} draftKey={`debt:${draftKey}`} disabled={disabled} onPendingChange={setImagesPending} onChange={async (images) => { const input = draft.action === 'debt.editPrincipal' ? { ...draft.input, changes: { ...draft.input.changes, images } } : { ...draft.input, images }; const next = debtDraftSchema.parse({ ...draft, input }); setDraft(next); return (await persist(next)).status === 'ready'; }} /> : null}
     {error ? <p role="alert">{error}</p> : null}{operationId ? <OperationStatus operationId={operationId} initial={operation} onChange={(value) => { setOperation(value); if (value.state === 'succeeded') onComplete(); }} /> : <p className="muted-copy">{saved ? '草稿已保存' : '正在保存草稿…'}</p>}
-    {!allowed ? <p className="muted-copy">此写入动作待专用测试资源验收后启用。</p> : null}<Button type="submit" disabled={disabled || !allowed}>{label}</Button>
+    {!allowed ? <p className="muted-copy">此写入动作待专用测试资源验收后启用。</p> : null}<Button type="submit" disabled={disabled || !allowed || imagesPending}>{label}</Button>
     {operation && operationIsFinal(operation) ? <Button type="button" variant="outline" disabled={busy} onClick={() => { void renew(); }}>载入最新资料并建立新草稿</Button> : null}
   </FieldGroup></form>;
 }

@@ -12,7 +12,7 @@ export const historicalCurrencySchema = z.strictObject({
 export const transferFieldsSchema = z.strictObject({
   bookId: bookIdSchema, fromAssetId: id, targetAssetId: id, enteredMoney: money, fee: money, timeSec: z.int().min(0).max(253402300799),
   remark: z.string().max(500).optional(), currency: historicalCurrencySchema.nullable().optional(), tagIds: z.array(z.string().min(1).max(200)).max(100).optional(),
-  countInStatistics: z.boolean().optional(), countInBudget: z.boolean().optional(),
+  countInStatistics: z.boolean().optional(), countInBudget: z.boolean().optional(), images: z.array(z.string().min(1).max(2048)).max(200).optional(),
 });
 const create = transferFieldsSchema.extend({ mode: z.literal('create'), fee: money.default('0') });
 const edit = z.strictObject({ mode: z.literal('edit'), id, expectedVersion: z.string().length(64), changes: transferFieldsSchema.partial().refine((value) => Object.keys(value).length > 0) });

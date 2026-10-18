@@ -7,6 +7,7 @@ import { appendPrincipalSchema, debtPaymentSchema, editPrincipalSchema, type Deb
 import { billVersion, ensureBillUnrelated, nextBillId, prepareBillEntries, restoreBillInput, type BillMutationEntry } from '../ledger/write';
 import { debtAmount, debtCashDelta, paymentState, principalState, splitDebtPayment } from './accounting';
 import { debtCash, debtEffect, debtState } from './model';
+import { assertImageReferences } from '../attachments/references';
 const num = (value: string | null | undefined) => new LosslessNumber(value ?? '-1');
 export function debtIds(raw: BillObject) {
   const type = numericText(raw.type, '');
@@ -33,6 +34,8 @@ export function prepareDebtBills(command: MutationCommand, ctx: Pick<OperationCo
   const cash = debtCash(ctx, scope, cashId, base), entered = changes.principal ?? previous!.money;
   const split = pay ? splitDebtPayment(state.balance, entered, payment?.interest ?? '0') : { principal: debtAmount(entered), interest: '0', overflow: false };
   if (compareMoney(split.principal, '0') <= 0 && (!pay || compareMoney(split.interest, '0') <= 0)) return assetError('DEBT_AMOUNT_INVALID', pay ? '本金或利息至少一项大于零' : '本金必须大于零');
+  if (compareMoney(split.principal, '0') === 0 && changes.images?.length) return assetError('DEBT_INTEREST_IMAGES_UNSUPPORTED', '原生还款图片属于本金记录，纯利息请先移除图片');
+  const images = changes.images === undefined ? undefined : assertImageReferences(ctx, scope, changes.images, Array.isArray(old?.images) ? old.images.filter((value): value is string => typeof value === 'string') : []);
   const oldPrincipal = previous?.money ?? '0', sameDebt = priorIds?.debtId === debtId;
   const expectedState = pay ? paymentState(state, split.principal) : principalState(state, split.principal, sameDebt ? oldPrincipal : '0');
   const principalEffects = [debtEffect(rawDebt, subtractMoney(expectedState.balance, state.balance), base)];
@@ -52,6 +55,7 @@ export function prepareDebtBills(command: MutationCommand, ctx: Pick<OperationCo
     raw.type = type; raw.money = num(amount); raw.bookid = num(bookId); raw.time = timeSec; raw.userid = scope.uid; raw.status = 2; raw.updatetime = nowSec; raw.cateid = 0;
     raw.assetid = num(interest ? cashId : debtId); raw.fromid = num(interest ? debtId : [7, 9].includes(type) ? cashId : null); raw.targetid = num([6, 4].includes(type) ? cashId : null);
     raw.remark = changes.remark ?? (previousRaw?.remark ?? (interest ? '借贷利息' : '')); raw.descinfo = typeof rawDebt.name === 'string' ? rawDebt.name : '';
+    if (!interest && images !== undefined) raw.images = images;
     for (const key of ['category', 'fromact', 'targetact', 'paytype', 'bookname']) delete raw[key]; return raw;
   };
   if (compareMoney(split.principal, '0') > 0) { const type = pay ? state.direction === 'borrow' ? 9 : 4 : state.direction === 'borrow' ? 6 : 7, wire = build(type, split.principal, old ?? undefined); entries.push({ logicalId: numericText(wire.id, ''), mode: edit ? 'edit' : 'create', wire, done: false, assetEffects: merged }); }
