@@ -1,4 +1,5 @@
 import { isLosslessNumber } from 'lossless-json';
+import { Decimal } from 'decimal.js';
 import { DomainError } from './errors';
 import { parseWire, wireId, type WireJson } from './wire-json';
 import type { Money } from './model';
@@ -21,8 +22,14 @@ export function numericText(value: WireJson | undefined, fallback: string): stri
 }
 export function moneyText(value: WireJson | undefined, fallback: Money = '0'): Money {
   const text = numericText(value, fallback);
-  if (!/^-?(0|[1-9]\d*)(\.\d+)?$/.test(text)) throw new DomainError('BILL_MONEY_UNSUPPORTED', '账单金额编码需要核验');
-  return text;
+  if (/^-?(0|[1-9]\d*)(\.\d+)?$/.test(text)) return text;
+  // JSON permits exponent notation; normalize only the projection, never the raw payload.
+  const exponent = /^-?(0|[1-9]\d*)(\.\d+)?[eE]([+-]?\d+)$/.exec(text);
+  if (exponent && text.length <= 200 && Math.abs(Number(exponent[3])) <= 100) {
+    const value = new Decimal(text);
+    if (value.isFinite() && value.decimalPlaces() <= 100) return value.toFixed();
+  }
+  throw new DomainError('BILL_MONEY_UNSUPPORTED', '账单金额编码需要核验');
 }
 export function positiveBillId(value: WireJson | undefined): string | null {
   const text = numericText(value, '-1');

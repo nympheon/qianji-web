@@ -1,0 +1,25 @@
+{
+  "version": "4.5.4/1234",
+  "provenance": "Independent decimal expectations from BillStatItem.Companion.fromBill, Bill.getValueFromCurrency/getTransFeeForStat, and dbhelper/p.processBudgetWithBills; not captured personal account data.",
+  "cases": [
+    {"name":"saved discount already net", "bill":{"money":"90","extra":{"transfee":"-10"}},"expected":{"spend":"90","coupon":"10","totalSpend":"90"}},
+    {"name":"transfer fee only", "bill":{"type":2,"money":"100","extra":{"transfee":"3"}},"expected":{"transfer":"100","transferFee":"3","totalSpend":"3"}},
+    {"name":"repayment principal excluded", "bill":{"type":3,"money":"100"},"expected":{"creditHuankuan":"100","totalSpend":"0"}},
+    {"name":"unpaid reimbursement", "bill":{"type":5,"money":"100","extra":{"flag":3}},"expected":{"notBxedValue":"100","totalSpend":"0","totalFlagCount":"0","totalFlagBudget":"0"}},
+    {"name":"debt principal excluded", "bill":{"type":6,"money":"100"},"expected":{"totalSpend":"0","totalIncome":"0"}},
+    {"name":"interest counted once", "bill":{"type":10,"money":"8.123"},"expected":{"spend":"8.123","interestSpend":"8.123","totalSpend":"8.123","balance":"-8.12"}},
+    {"name":"spend refund flag uses residual", "bill":{"money":"100","extra":{"flag":1,"rfds":{"2":"30"}}},"refunds":[{"id":"2","type":20,"money":"30"}],"expected":{"spend":"0","totalFlagCount":"70"}},
+    {"name":"income refund flag uses original", "bill":{"type":1,"money":"100","extra":{"flag":1,"rfds":{"2":"30"}}},"refunds":[{"id":"2","type":20,"money":"30"}],"expected":{"income":"0","totalFlagCount":"100"}},
+    {"name":"spend overrefund exclusion asymmetry", "bill":{"money":"100","extra":{"flag":1,"rfds":{"2":"130"}}},"refunds":[{"id":"2","type":20,"money":"130"}],"expected":{"refundIncome":"30","totalIncome":"30","totalFlagCount":"0"}},
+    {"name":"income overrefund excluded", "bill":{"type":1,"money":"100","extra":{"flag":1,"rfds":{"2":"130"}}},"refunds":[{"id":"2","type":20,"money":"130"}],"expected":{"refundSpend":"0","totalSpend":"0","totalFlagCount":"100"}},
+    {"name":"partial reimbursement and refund", "bill":{"type":5,"money":"100","extra":{"rfds":{"2":"20"},"bxs":{"3":"70"}}},"refunds":[{"id":"2","type":20,"money":"20"}],"reimbursements":[{"id":"3","type":21,"money":"70"}],"expected":{"bxValue":"80","bxValueOriginal":"100","hasBxedValue":"70","bxSpend":"10","totalSpend":"10"}},
+    {"name":"excess reimbursement excluded flag", "bill":{"type":5,"money":"100","extra":{"flag":3,"bxs":{"3":"120"}}},"reimbursements":[{"id":"3","type":21,"money":"120"}],"expected":{"bxIncome":"0","totalFlagBudget":"20","totalFlagCount":"20"}},
+    {"name":"legacy reimbursement not a fabricated child", "bill":{"type":5,"money":"100","extra":{"baoxiaoed":1,"baoxiaov":"-1"}},"expected":{"hasBxedValue":"0","bxSpend":"100","totalSpend":"100"}},
+    {"name":"historical source currency", "currency":"USD", "bill":{"money":"630","extra":{"transfee":"-10","curr":{"ss":"USD","sv":"100","ts":"CNY","tv":"630","bs":"CNY","bv":"630"}}},"expected":{"spend":"90","coupon":"10","totalSpend":"90"}},
+    {"name":"historical target currency", "bill":{"money":"630","extra":{"transfee":"-10","curr":{"ss":"USD","sv":"100","ts":"CNY","tv":"630","bs":"CNY","bv":"630"}}},"expected":{"spend":"630","coupon":"63","totalSpend":"630"}},
+    {"name":"budget fee null currency", "mode":"budget", "bill":{"money":"630","extra":{"transfee":"-10","curr":{"ss":"USD","sv":"100","ts":"CNY","tv":"630","bs":"CNY","bv":"630"}}},"expected":{"spend":"630","coupon":"10","totalSpend":"630"}},
+    {"name":"same currency source has priority", "bill":{"money":"90","extra":{"transfee":"-10","curr":{"ss":"CNY","sv":"100","ts":"CNY","tv":"777","bs":"CNY","bv":"888"}}},"expected":{"spend":"90","coupon":"10"}},
+    {"name":"same currency positive source fee", "bill":{"money":"103","extra":{"transfee":"3","curr":{"ss":"CNY","sv":"100","ts":"CNY","tv":"777","bs":"CNY","bv":"888"}}},"expected":{"spend":"97","transferFee":"3","totalSpend":"100"}},
+    {"name":"ten place division before fee multiplication", "bill":{"type":2,"money":"1","extra":{"transfee":"3","curr":{"ss":"USD","sv":"3","ts":"CNY","tv":"1","bs":"CNY","bv":"1"}}},"expected":{"transferFee":"0.9999999999","totalSpend":"0.9999999999"}}
+  ]
+}

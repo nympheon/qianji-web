@@ -225,12 +225,12 @@ cache.ts导出`CacheKey { domain:SyncDomain; queryKey:string }`、`CacheReadStam
 **Files:** Create `src/features/ledger/statistics.ts`、`src/features/budget/{contract,calculate}.ts`、`fixtures/apk-454/statistics.json`、`tests/unit/statistics.test.ts`、`tests/workers/statistics-read.test.ts`；Modify ledger.contract/service。
 **Interfaces:** Consumes BillDetail/数字日期函数/分层缓存规则；Produces `toStatItem(bill:BillDetail,mode:'statistics'|'budget',currency:Id):StatItem`、`aggregate(items:Iterable<StatItem>):StatSummary`、`calculateBudget(input:BudgetCalculationInput):BudgetProgress`及`LedgerService.statistics(input:StatisticsInput):Promise<StatisticsView>`。StatisticsInput含BillFilter、目标币种、按日/月/年趋势、分类层级/标签/成员/资产维度及可选同期范围；View区分总额、分组、趋势、比较及不完整原因。查询键包含相关域修订、规范化筛选、实际业务日期/范围、时区和币种，资产债务汇总由任务16接入。
 
-- [ ] 写失败断言：已保存money90/transfee-10得到支出90/优惠10，不再扣到80；一月支出100二月退款30令一月70、二月退款独列30；待报销100无入账总支出0；本金不算收支，双flag独立，父子预算总额只算一次。
-- [ ] Run `pnpm test -- tests/unit/statistics.test.ts tests/workers/statistics-read.test.ts`；预期FAIL于统计模型未实现。
-- [ ] 按BillStatItem/StatSet与研究公式实现逐类型槽位，补历史src/target/base优先级、费用和舍入；有界补载/汇总，不用SQL浮点SUM或现汇重算。不完整数据、缺关联及异常超额flag组合明确标状态。
-- [ ] 增加缓存行为断言：源远端检查无变化不重复aggregate；源revision不变但跨过业务日/月起日边界时，“今天”、同期范围与预算日均可用正确换键；退款改变源历史期时对应缓存失效，不主动重算未被访问的无关期。不以60秒计时器重算全部统计。
-- [ ] 重跑完整研究向量，包含旧字段优先级、退款超额、三币种余数、同币种匹配优先级、闰年/合法自定义周期；正常组装type22不重复入统计。同一过滤结果的日/月趋势合计一致，分类层级/标签/成员/资产分组和同期比较仍使用同一StatItem口径；多标签分组允许重叠但总额不重复相加，PASS。
-- [ ] 提交：`feat: reproduce APK accounting and budget calculations`。
+- [x] 写失败断言：已保存money90/transfee-10得到支出90/优惠10，不再扣到80；一月支出100二月退款30令一月70、二月退款独列30；待报销100无入账总支出0；本金不算收支，双flag独立，父子预算总额只算一次。
+- [x] Run `pnpm test -- tests/unit/statistics.test.ts tests/workers/statistics-read.test.ts`；预期FAIL于统计模型未实现。
+- [x] 按BillStatItem/StatSet与研究公式实现逐类型槽位，补历史src/target/base优先级、费用和舍入；有界补载/汇总，不用SQL浮点SUM或现汇重算。不完整数据、缺关联及异常超额flag组合明确标状态。
+- [x] 增加缓存行为断言：源远端检查无变化不重复aggregate；源revision不变但跨过业务日/月起日边界时，“今天”、同期范围与预算日均可用正确换键；退款改变源历史期时对应缓存失效，不主动重算未被访问的无关期。不以60秒计时器重算全部统计。
+- [x] 重跑完整研究向量，包含旧字段优先级、退款超额、三币种余数、同币种匹配优先级、闰年/合法自定义周期；正常组装type22不重复入统计。同一过滤结果的日/月趋势合计一致，分类层级/标签/成员/资产分组和同期比较仍使用同一StatItem口径；多标签分组允许重叠但总额不重复相加，PASS。
+- [x] 提交：`feat: reproduce APK accounting and budget calculations`。
 
 ### Task 11：网页与MCP的只读纵向闭环
 

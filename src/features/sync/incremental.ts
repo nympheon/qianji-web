@@ -5,7 +5,7 @@ import type { WireObject } from '../../protocol/signer';
 import type { BillRecord } from '../../storage/mirror';
 import type { ResourceRecord } from '../../storage/resources';
 import type { SyncCheckpoint } from './contract';
-import { billLinks } from '../../shared/bill-wire';
+import { billLinks, moneyText } from '../../shared/bill-wire';
 
 export function invalidSync(): never { throw new DomainError('SYNC_RESPONSE_INVALID', '同步响应结构发生变化，保留现有数据及成功游标'); }
 export function wireObject(value: WireJson | undefined): WireObject {
@@ -29,7 +29,8 @@ function list(value: WireJson | undefined): WireJson[] {
 function id(value: WireJson | undefined): string { try { return wireId(value ?? null); } catch { return invalidSync(); } }
 export function projectBill(value: WireJson): BillRecord {
   const raw = wireObject(value);
-  const money = typeof raw.money === 'string' ? raw.money : isLosslessNumber(raw.money) ? raw.money.value : typeof raw.money === 'number' && Number.isSafeInteger(raw.money) ? String(raw.money) : invalidSync();
+  if (raw.money === undefined || raw.money === null) return invalidSync();
+  const money = moneyText(raw.money);
   return { id: id(raw.id), bookId: integerText(raw.bookid), type: safeInteger(raw.type), timeSec: safeInteger(raw.time), money, raw: value, relations: billLinks(raw) };
 }
 export interface LedgerPage {

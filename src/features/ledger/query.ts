@@ -107,14 +107,14 @@ export function createQueryPlan(repository: Repository, scope: ActorScope, input
   return { filter, datasetId: dataset?.id ?? null, revision, range, zone, limit, order, fingerprint, prefix, where: clauses.join(' AND '), bindings };
 }
 
-export function scanBillPage(repository: Repository, scope: ActorScope, plan: QueryPlan, cursor: LedgerCursor | null) {
+export function scanBillPage(repository: Repository, scope: ActorScope, plan: QueryPlan, cursor: LedgerCursor | null, scanLimit = 5000) {
   if (cursor && (cursor.dataset !== plan.datasetId || cursor.revision !== plan.revision || cursor.filter !== plan.fingerprint)) throw new DomainError('PAGE_CHANGED', '列表资料或筛选已变化，请重新读取第一页');
   const items: BillSummary[] = [], positions: { time: number; key: string }[] = [];
   let position = cursor ? { time: cursor.time, key: cursor.key } : null;
   let scanned = 0, ended = plan.datasetId === null;
   const direction = plan.order === 'asc' ? 'ASC' : 'DESC', comparison = plan.order === 'asc' ? '>' : '<';
-  while (!ended && scanned < 5000 && items.length <= plan.limit) {
-    const budget = Math.min(256, 5000 - scanned), conditions = position ? ` AND (b.time_sec${comparison}? OR (b.time_sec=? AND b.id_sort_key${comparison}?))` : '';
+  while (!ended && scanned < scanLimit && items.length <= plan.limit) {
+    const budget = Math.min(256, scanLimit - scanned), conditions = position ? ` AND (b.time_sec${comparison}? OR (b.time_sec=? AND b.id_sort_key${comparison}?))` : '';
     const rows: QueryRow[] = repository.sql.exec<QueryRow>(`${plan.prefix}SELECT b.id,b.id_sort_key,b.book_id,b.type,b.time_sec,b.money,b.raw FROM bills b WHERE ${plan.where}${conditions} ORDER BY b.time_sec ${direction},b.id_sort_key ${direction} LIMIT ?`, ...plan.bindings, ...(position ? [position.time, position.time, position.key] : []), budget).toArray();
     if (rows.length === 0) { ended = true; break; }
     for (const row of rows) {
@@ -135,7 +135,7 @@ export function scanBillPage(repository: Repository, scope: ActorScope, plan: Qu
   const last = items.at(-1);
   const nextCursor = hasMore && nextPosition && plan.datasetId ? encodeCursor({ v: 1, uid: scope.uid, epoch: scope.connectionEpoch, dataset: plan.datasetId, revision: plan.revision, filter: plan.fingerprint,
     time: nextPosition.time, key: nextPosition.key, lastPack: last?.packId ?? cursor?.lastPack ?? null, lastType: last?.type ?? cursor?.lastType ?? null }) : null;
-  return { items, lookahead, nextCursor, continuationReason: !hasMore ? null : lookahead ? 'page-limit' as const : 'scan-limit' as const };
+  return { items, lookahead, nextCursor, scanned, continuationReason: !hasMore ? null : lookahead ? 'page-limit' as const : 'scan-limit' as const };
 }
 
 export function billRows(items: BillSummary[], enabled: boolean, cursor: LedgerCursor | null, lookahead: BillSummary | null): BillRow[] {

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { Freshness, Id, Money, TimeRange } from '../../shared/model';
+import type { StatSummary } from './statistics';
 
 const id = z.string().min(1).max(200), ids = z.array(id).max(100);
 const money = z.string().max(80).regex(/^-?(0|[1-9]\d*)(\.\d+)?$/);
@@ -45,4 +46,17 @@ export interface BillPage {
 export interface CalendarInput { year: number; month: number; filter?: BillFilter; cursor?: string }
 export interface CalendarView {
   days: { date: string; count: number }[]; nextCursor: string | null; complete: boolean; freshness: Freshness; range: TimeRange;
+}
+export const statisticsInputSchema = z.strictObject({
+  filter: billFilterSchema.omit({ cursor: true, limit: true, order: true, groupReimbursements: true }).optional(),
+  currency: z.string().min(1).max(20), trend: z.enum(['day', 'month', 'year']).optional(),
+  dimensions: z.array(z.enum(['category', 'category-tree', 'tag', 'member', 'asset', 'book'])).max(6).optional(), comparison: dateFilterSchema.optional(),
+});
+export type StatisticsInput = z.infer<typeof statisticsInputSchema>;
+export interface StatisticsView {
+  currency: Id; range: TimeRange | null; totals: StatSummary;
+  groups: { dimension: NonNullable<StatisticsInput['dimensions']>[number]; overlapping: boolean; items: { key: Id; parentId: Id | null; totals: StatSummary }[] }[];
+  trend: { period: string; totals: StatSummary }[];
+  comparison: { range: TimeRange | null; totals: StatSummary } | null;
+  freshness: Freshness; incompleteReasons: string[];
 }
