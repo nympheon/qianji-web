@@ -161,7 +161,7 @@ export function createLedgerMutationHandler(dependencies: { reconcileSource?: (c
           const changes = 'changes' in bill ? billChangesSchema.parse(bill.changes) : null;
           if (changes) {
             const links = billLinks(raw);
-            if (links.some((link) => link.kind.startsWith('reimbursement')) || numericText(billExtra(raw).baoxiaoed, '0') === '1') return fail('RELATED_BILL_WRITE_UNAVAILABLE', '有关联报销的账单请使用对应操作');
+            if ((links.some((link) => link.kind.startsWith('reimbursement')) || numericText(billExtra(raw).baoxiaoed, '0') === '1') && changes.type !== undefined && changes.type !== record.type) return fail('REIMBURSEMENT_SOURCE_TYPE_LOCKED', '已有报销记录的源账单保留待报销类型');
             if (links.some((link) => link.kind === 'refund') && changes.type !== undefined && changes.type !== record.type) return fail('REFUND_SOURCE_TYPE_LOCKED', '已有退款的源账单不能切换类型');
           } else ensureBillUnrelated(raw);
           const affectedAssetIds = assetIds(raw);

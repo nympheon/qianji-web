@@ -2,6 +2,8 @@
 
 当前仅登记已核对的固定操作：account/login、account/refreshtoken、account/logout、client/init、syncv2/pull、bill/syncall、tag/syncall。新增领域操作必须先补对应APK构造/解析证据，再扩展`operations.ts`；不接受调用者传任意URL。
 
+后续领域扩展：bill/refund2、baoxiao/baoxiao、baoxiao/cancelbaoxiao，均为普通构造器；载荷、回执、关系处理及合成测试向量见[报销与关联写入契约](reimbursement.md)。
+
 client/init的本样本构造器位于`Ljf/a;`（不是按包名猜测的network/api/client/a），含vvmark/newinstall/upgradealert及普通请求构造；其具体初始化资料解析在连接/同步任务中实现。
 
 - 方法为POST，普通表单编码；空参数按APK `params(name,null)`省略，空字符串是否发送由该业务构造器决定。对象/集合明确编码为无损JSON表单值，JSON字符串不自动二次解析。

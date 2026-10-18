@@ -9,9 +9,6 @@ import type { BillRecord } from '../../storage/mirror';
 import type { WireJson } from '../../shared/wire-json';
 
 const fail = (code: string, message: string): never => { throw new DomainError(code, message); };
-function hasReimbursement(raw: BillObject): boolean {
-  return billLinks(raw).some((link) => link.kind.startsWith('reimbursement')) || numericText(billExtra(raw).baoxiaoed, '0') === '1';
-}
 function deleteRefundIds(raw: BillObject): string[] {
   const extra = billExtra(raw), current = extra.rfds == null ? [] : Object.keys(asBillObject(extra.rfds)), legacy = positiveBillId(extra.refundid);
   return [...new Set([...current, ...(legacy && compareMoney(moneyText(extra.refundv), '0') > 0 ? [legacy] : [])])];
@@ -20,12 +17,16 @@ function deletionEffect(record: BillRecord, context: OperationContext, scope: { 
   const raw = asBillObject(record.raw), assetId = positiveBillId(raw.assetid); if (!assetId) return [];
   const asset = loadTransferAsset(context, scope, assetId, baseCurrency);
   let amount = record.money;
-  if (record.type === 20) {
+  if ([20, 21].includes(record.type)) {
     const curr = billExtra(raw).curr, extra = curr == null ? null : asBillObject(curr);
     if (extra && asset.currency !== extra.ss && typeof extra.ts === 'string' && extra.ts && compareMoney(moneyText(extra.tv), '0') > 0) amount = moneyText(extra.tv);
   }
-  const delta = [0, 5].includes(record.type) ? amount : subtractMoney('0', amount);
-  return [{ assetId, currency: asset.currency, delta, balanceBefore: asset.money, expectedBalance: addMoney(asset.money, delta), confirmation: 'expected' }];
+  const deltas = new Map([[assetId, [0, 5].includes(record.type) ? amount : subtractMoney('0', amount)]]), extra = billExtra(raw);
+  if (record.type === 5 && numericText(extra.baoxiaoed, '0') === '1') {
+    const oldAsset = positiveBillId(extra.baoxiaoasset), value = moneyText(extra.baoxiaov, '-1'), oldMoney = compareMoney(value, '0') >= 0 ? value : record.money;
+    if (oldAsset) deltas.set(oldAsset, subtractMoney(deltas.get(oldAsset) ?? '0', oldMoney));
+  }
+  return [...deltas].map(([id, delta]) => { const value = id === assetId ? asset : loadTransferAsset(context, scope, id, baseCurrency); return { assetId: id, currency: value.currency, delta, balanceBefore: value.money, expectedBalance: addMoney(value.money, delta), confirmation: 'expected' }; });
 }
 export function createLedgerDeletionHandler(dependencies: { baseCurrency?: () => string; reconcileSource?: (ctx: OperationContext) => Promise<boolean> } = {}): MutationHandler {
   const base = createLedgerMutationHandler({ prepare: async (command, ctx) => {
@@ -41,8 +42,7 @@ export function createLedgerDeletionHandler(dependencies: { baseCurrency?: () =>
     const checks = new Map<string, Set<string>>(), sourceIds = new Set<string>();
     for (const record of records.values()) {
       const raw = asBillObject(record.raw);
-      if (![0, 1, 5, 20].includes(record.type)) return fail('BILL_TYPE_UNSUPPORTED', '该记录需要对应类型的专用删除操作');
-      if (hasReimbursement(raw)) return fail('RELATED_BILL_WRITE_UNAVAILABLE', '有关联报销的账单需在报销操作完成后删除');
+      if (![0, 1, 5, 20, 21].includes(record.type)) return fail('BILL_TYPE_UNSUPPORTED', '该记录需要对应类型的专用删除操作');
       if ([0, 5].includes(record.type)) {
         for (const id of deleteRefundIds(raw)) {
           if (records.has(id)) continue;
@@ -51,10 +51,17 @@ export function createLedgerDeletionHandler(dependencies: { baseCurrency?: () =>
           if (records.size >= 1000) return fail('DELETE_BATCH_LIMIT', '展开关联记录后超过单次1000条上限');
           records.set(id, child);
         }
+        for (const link of billLinks(raw).filter((link) => link.kind === 'reimbursement')) {
+          if (records.has(link.targetId)) continue;
+          const child = repository.readBill(scope, link.targetId);
+          if (!child || child.type !== 21 || positiveBillId(billExtra(asBillObject(child.raw)).bxsid) !== record.id) return fail('RELATED_BILL_MISSING', '关联报销尚未完整载入或关系不匹配，请先同步');
+          if (records.size >= 1000) return fail('DELETE_BATCH_LIMIT', '展开关联记录后超过单次1000条上限');
+          records.set(child.id, child);
+        }
       }
-      if (record.type === 20) {
-        const sourceId = positiveBillId(billExtra(raw).refundsid);
-        if (!sourceId) return fail('REFUND_SOURCE_MISSING', '退款记录缺少可核对的源ID');
+      if ([20, 21].includes(record.type)) {
+        const sourceId = positiveBillId(billExtra(raw)[record.type === 20 ? 'refundsid' : 'bxsid']);
+        if (!sourceId) return fail('RELATED_SOURCE_MISSING', '子记录缺少可核对的源ID');
         sourceIds.add(sourceId);
         if (!records.has(sourceId) && repository.readBill(scope, sourceId)) {
           const ids = checks.get(sourceId) ?? new Set<string>(); ids.add(record.id); checks.set(sourceId, ids);
@@ -82,7 +89,7 @@ export function createLedgerDeletionHandler(dependencies: { baseCurrency?: () =>
       const sourceId = item.id.slice(10), check = (payload.verifySources as WireJson[]).map(asBillObject).find((check) => check.sourceId === sourceId);
       if (!check || !Array.isArray(check.removedIds)) continue;
       const ids = check.removedIds.map((id) => numericText(id, '')), source = ctx.repository.readBill(operation.scope, sourceId);
-      const linked = source ? new Set(billLinks(asBillObject(source.raw)).filter((link) => link.kind === 'refund').map((link) => link.targetId)) : new Set<string>();
+      const linked = source ? new Set(billLinks(asBillObject(source.raw)).filter((link) => ['refund', 'reimbursement'].includes(link.kind)).map((link) => link.targetId)) : new Set<string>();
       if (ids.every((id) => !linked.has(id) && !ctx.repository.readBill(operation.scope, id))) items.push({ id: item.id, state: 'succeeded' });
     }
     return { items };

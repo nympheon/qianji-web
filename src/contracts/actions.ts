@@ -8,6 +8,7 @@ import type { CapabilityView } from './capabilities';
 import { ledgerDraftSchema, createBillsSchema, deleteBillsSchema, editBillsSchema, type BillDraftView } from '../features/ledger/write-contract';
 import { transferActionSchema, transferInputSchema, type TransferOptions, type TransferPreview } from '../features/ledger/transfer-contract';
 import { refundInputSchema } from '../features/ledger/refund-contract';
+import { cancelReimbursementInputSchema, reimburseInputSchema, reimbursableInputSchema, type ReimbursementMembers } from '../features/ledger/reimbursement-contract';
 const empty = z.strictObject({}), id = z.string().min(1).max(200);
 const route = z.strictObject({ route: z.enum(['main', 'backup', 'overseas']) });
 export const actionSchemas = {
@@ -21,6 +22,8 @@ export const actionSchemas = {
   'ledger.draft.get': z.strictObject({ key: z.string().min(1).max(100) }), 'ledger.draft.save': z.strictObject({ key: z.string().min(1).max(100), draft: ledgerDraftSchema }),
   'ledger.transfer': transferActionSchema, 'ledger.repayCard': transferActionSchema,
   'ledger.refund': refundInputSchema.safeExtend({ requestId: id }),
+  'ledger.reimburse': reimburseInputSchema.extend({ requestId: id }), 'ledger.cancelReimbursement': cancelReimbursementInputSchema.extend({ requestId: id }),
+  'ledger.setReimbursable': reimbursableInputSchema.extend({ requestId: id }), 'ledger.reimbursement.members': z.strictObject({ packId: z.string().regex(/^[1-9]\d{0,24}$/) }),
   'ledger.transfer.options': empty, 'ledger.transfer.preview': z.strictObject({ kind: z.enum(['transfer', 'repay-card']), input: transferInputSchema }),
 } as const;
 export type ActionName = keyof typeof actionSchemas;
@@ -33,6 +36,7 @@ export interface ActionOutputs {
   'ledger.create': OperationView; 'ledger.edit': OperationView; 'ledger.delete': OperationView; 'ledger.draft.get': BillDraftView | null; 'ledger.draft.save': BillDraftView;
   'ledger.transfer': OperationView; 'ledger.repayCard': OperationView; 'ledger.transfer.preview': TransferPreview; 'ledger.transfer.options': TransferOptions;
   'ledger.refund': OperationView;
+  'ledger.reimburse': OperationView; 'ledger.cancelReimbursement': OperationView; 'ledger.setReimbursable': OperationView; 'ledger.reimbursement.members': ReimbursementMembers;
 }
 export interface ActionDefinition { title: string; description: string; kind: CapabilityView['kind']; evidence: CapabilityView['evidence']; requiresAccount: boolean; readOnly: boolean; destructive: boolean; unavailable?: { code: string; reason: string } }
 const read = { kind: 'read', evidence: 'apk-static', requiresAccount: true, readOnly: true, destructive: false } as const;
@@ -60,6 +64,10 @@ export const actionDefinitions: Record<ActionName, ActionDefinition> = {
   'ledger.transfer.preview': { ...read, evidence: 'native-vector', title: '预览转账或还款', description: '使用已载入资料计算本金、转出/转入金额、合并资产预期变动。预览不上传账单，预期余额不代表上游确认；无币种资料时不擅自按当前汇率换算。' },
   'ledger.transfer.options': { ...read, title: '转账资产与账本选项', description: '读取已载入的资产名称、类型、币种、确认余额和账本选项，不额外请求钱迹。' },
   'ledger.refund': { ...write, title: '新增或编辑退款', description: '调用官方refund2并同时应用源与子账单。billId为源ID，编辑另带refundBillId和对应版本；有退款源不能换类型，新增保留原生25次限制。money省略时新退款采用原生剩余金额；显式正数不自行加上剩余额度上限。清空字段尚未验证时明确不可用。复用requestId，未知结果只核查原operationId。' },
+  'ledger.reimburse': { ...write, title: '报销入账', description: '按源时间与长ID升序分配，末笔承接余数，可超过剩余本金。一次返回源与真实type21子记录，官方资产余额仅保存一次。不同源币种不可混算，多币种需提供历史三币种金额。必须复用requestId，未知结果仅核查原operationId。' },
+  'ledger.cancelReimbursement': { ...write, destructive: true, title: '取消报销', description: '按源账单版本调用取消报销，保留type5待报销属性。成功码后仍只读核对源关系、真实子记录和资产；不自动发送额外子删除，不自动升级旧报销数据。必须复用requestId。' },
+  'ledger.setReimbursable': { ...write, title: '设置待报销属性', description: '按详情版本将普通支出标记为待报销，或在没有新版/旧版报销时取消该属性；保留退款和其他字段。与取消报销分开，复用requestId。' },
+  'ledger.reimbursement.members': { ...read, title: '读取报销组合成员', description: '按packId读取完整副本中的真实type21成员及版本，最多200条；complete=false时禁止把当前页冒充整组。虚拟type22不会产生云端ID或额外统计。' },
   'ledger.draft.get': { ...read, evidence: 'local', title: '读取账单草稿', description: '读取本账号的本地账单草稿和同一请求键已产生的operationId，不请求钱迹。' },
   'ledger.draft.save': { ...read, readOnly: false, evidence: 'local', title: '保存账单草稿', description: '只保存结构化本地草稿，不上传账单。已有未核清操作时不能替换草稿或请求键。' },
   'operations.get': { ...read, kind: 'reconciliation', title: '查看写操作结果', description: '读取操作日志、逐项结果及确定性，不发送写入。' },

@@ -21,6 +21,8 @@ export const OPERATIONS = {
   'syncv2.pull': op('syncv2', 'pull', 'sync-string', true, 'object', true),
   'bill.syncall': op('bill', 'syncall', 'sync-string'),
   'bill.refund': op('bill', 'refund2', 'normal', true, 'array'),
+  'bill.reimburse': op('baoxiao', 'baoxiao', 'normal'),
+  'bill.cancelReimbursement': op('baoxiao', 'cancelbaoxiao', 'normal', true, 'optional'),
   'tag.syncall': op('tag', 'syncall', 'sync-string'),
   'tag.pull': op('tag', 'syncall', 'sync-string', true, 'object', true),
   'tag.list': op('tag', 'list', 'sync-string', true, 'array', true),

@@ -25,6 +25,10 @@ const handlers: Record<ActionName, UseCase> = {
   'ledger.transfer': useCase('ledger.transfer', (ctx, { requestId, ...input }) => ctx.ledger.transfer(input, { requestId })),
   'ledger.repayCard': useCase('ledger.repayCard', (ctx, { requestId, ...input }) => ctx.ledger.repayCard(input, { requestId })),
   'ledger.refund': useCase('ledger.refund', (ctx, { requestId, ...input }) => ctx.ledger.refund(input, { requestId })),
+  'ledger.reimburse': useCase('ledger.reimburse', (ctx, { requestId, ...input }) => ctx.ledger.reimburse(input, { requestId })),
+  'ledger.cancelReimbursement': useCase('ledger.cancelReimbursement', (ctx, { requestId, ...input }) => ctx.ledger.cancelReimbursement(input, { requestId })),
+  'ledger.setReimbursable': useCase('ledger.setReimbursable', (ctx, { requestId, ...input }) => ctx.ledger.setReimbursable(input, { requestId })),
+  'ledger.reimbursement.members': useCase('ledger.reimbursement.members', (ctx, input) => ctx.ledger.reimbursementMembers(input.packId)),
   'ledger.transfer.preview': useCase('ledger.transfer.preview', (ctx, input) => ctx.ledgerWrites.previewTransfer(input.kind, input.input)),
   'ledger.transfer.options': useCase('ledger.transfer.options', (ctx) => ctx.ledgerWrites.transferOptions()),
   'ledger.draft.get': useCase('ledger.draft.get', (ctx, input) => ctx.ledgerWrites.getDraft(input.key)),
@@ -59,7 +63,7 @@ export class AppRegistry {
         const job = data as Awaited<ReturnType<UseCaseContext['sync']['start']>> | null;
         return { status: job?.state === 'running' ? 'running' : job?.state === 'failed' ? 'error' : job?.state === 'truncated' ? 'partial' : 'ready', data, freshness: null, ...(job ? { jobId: job.id, ...(job.error ? { error: job.error } : {}) } : {}) };
       }
-      if ((action.startsWith('operations.') || ['ledger.create', 'ledger.edit', 'ledger.delete', 'ledger.transfer', 'ledger.repayCard', 'ledger.refund'].includes(action)) && data) {
+      if ((action.startsWith('operations.') || ['ledger.create', 'ledger.edit', 'ledger.delete', 'ledger.transfer', 'ledger.repayCard', 'ledger.refund', 'ledger.reimburse', 'ledger.cancelReimbursement', 'ledger.setReimbursable'].includes(action)) && data) {
         const operation = data as NonNullable<ReturnType<UseCaseContext['coordinator']['getOperation']>>;
         return { status: ['queued', 'sending', 'verifying'].includes(operation.state) ? 'running' : operation.state === 'uncertain' ? 'uncertain' : operation.state === 'partial' ? 'partial' : operation.state === 'failed' ? 'error' : 'ready', data, freshness: null, operationId: operation.id, ...(operation.error ? { error: operation.error } : {}) };
       }

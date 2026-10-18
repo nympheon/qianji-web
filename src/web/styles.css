@@ -300,4 +300,6 @@ dt { color: var(--muted-foreground); } dd { overflow-wrap: anywhere; }
 .transfer-amounts dd { text-align: right; font-variant-numeric: tabular-nums; }
 .operation-items { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; font-size: 12px; }
 .operation-items li { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--border); padding-top: 12px; overflow-wrap: anywhere; }
+.reimbursement-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; align-items: start; }
+@media (max-width: 900px) { .reimbursement-layout { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 400px) { .editor-grid { grid-template-columns: minmax(0, 1fr); gap: 12px; } }

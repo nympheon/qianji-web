@@ -283,18 +283,19 @@ cache.ts导出`CacheKey { domain:SyncDomain; queryKey:string }`、`CacheReadStam
 - [x] 实现refund2的did/v、嵌套currency编码及编辑旧退款ID；使用回执和资产差额算法。源删除/子删除按APK关联处理、回滚预期和逐项删除状态，日志记录全部关联ID。APK未上传源关系修改，故单独删退款后另保留源关系只读核查项，不臆造源changelist。
 - [x] 重跑24/25次、旧/新退款字段优先级、跨币种/换资产、超额输入与未知回执向量，PASS；备注/图片/标签清空尚未证实，明确拒绝并列入真实核验，不能自定全部refund≤remaining。
 - [ ] 第16/18步准备新测试资产与账本后，真实验证回执、空值清理和关联删除；第27步统一回归。公开写入继续门控。
-- [ ] 提交：`feat: manage refunds and source bill relationships`。
+- [x] 提交：`feat: manage refunds and source bill relationships`（sanitized-history；真实验收另列）。
 
 ### Task 15：报销分配、取消与组合显示
 
 **Files:** Create `src/features/ledger/reimbursement.ts`、`src/web/pages/ReimbursementsPage.tsx`、`tests/workers/reimbursement.test.ts`；Modify ledger域、BillsPage、关联删除和registry。
 **Interfaces:** Consumes任务14；Produces `LedgerService.reimburse(input:ReimburseInput,meta)`、`cancelReimbursement(input:CancelReimbursementInput,meta)`；输入源ID集合、入账资产、总额/币种/日期，输出跟踪真实源/子ID。
 
-- [ ] 写失败断言：按源时间升序、末笔接余数；两个剩余各50、入账120的本地分配为50/70而非均分；官方inAsset只应用一次；取消保留type5；type22不生成云端ID或重复统计。
-- [ ] Run `pnpm test -- tests/workers/reimbursement.test.ts`；预期FAIL于报销用例缺失。
-- [ ] 实现baoxiao专用载荷、三币种分配/余数及整组回执；取消与“取消待报销属性”分开。批量修改/删除组合行先展开真实21成员，必要时按packId读取成员；保留旧字段兼容，不自动upgradev2或复制硬编码特例账号。
-- [ ] 重跑新旧混存、取消子记录/源关系/资产、超过本金及多币种余数、缺失关联不可伪装完整统计，PASS；真实核查旧数据升级影响仅在明确请求下进行。
-- [ ] 提交：`feat: support reimbursements with APK allocation semantics`。
+- [x] 写失败断言：按源时间升序、末笔接余数；两个剩余各50、入账120的本地分配为50/70而非均分；官方inAsset只应用一次；取消保留type5；type22不生成云端ID或重复统计。
+- [x] Run `pnpm test -- tests/workers/reimbursement.test.ts`；预期FAIL于报销用例缺失。
+- [x] 实现baoxiao专用载荷、三币种分配/余数及整组回执；取消与“取消待报销属性”分开。批量修改/删除组合行先展开真实21成员，必要时按packId读取成员；保留旧字段兼容，不自动upgradev2或复制硬编码特例账号。
+- [x] 重跑新旧混存、取消子记录/源关系/资产、超过本金及多币种余数、缺失关联不可伪装完整统计，PASS；真实核查旧数据升级影响仅在明确请求下进行。
+- [ ] 第16/18步准备专用测试资产与账本后真实核验报销回执、取消源子关系及资产变化；第27步统一回归。公开写入继续门控。
+- [x] 提交：`feat: support reimbursements with APK allocation semantics`。
 
 ### Task 16：资产资料、分组、余额差额和结清
 

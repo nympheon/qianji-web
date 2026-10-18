@@ -14,6 +14,7 @@ import { createLedgerMutationHandler } from '../features/ledger/write';
 import { LedgerWriteService } from '../features/ledger/write-service';
 import { createTransferMutationHandler } from '../features/ledger/transfer';
 import { createRefundMutationHandler } from '../features/ledger/refund';
+import { createReimbursementMutationHandler, createReimbursableMutationHandler } from '../features/ledger/reimbursement';
 import { createLedgerDeletionHandler } from '../features/ledger/deletion';
 
 export function createActorContext(storage: DurableObjectStorage, secrets: { QIANJI_CREDENTIAL_KEY?: string } = {}, execution?: { waitUntil(task: Promise<unknown>): void }) {
@@ -35,7 +36,8 @@ export function createActorContext(storage: DurableObjectStorage, secrets: { QIA
   };
   const billHandler = createLedgerMutationHandler({ reconcileSource }), transferHandler = createTransferMutationHandler({ reconcileSource });
   const refundHandler = createRefundMutationHandler({ reconcileSource }), deletionHandler = createLedgerDeletionHandler({ reconcileSource });
-  const coordinator = new Coordinator({ repository, client, clock }, new Map([...['ledger.create', 'ledger.edit'].map((action) => [action, billHandler] as const), ...['ledger.transfer', 'ledger.repayCard'].map((action) => [action, transferHandler] as const), ['ledger.refund', refundHandler], ['ledger.delete', deletionHandler]]), executionOptions);
+  const reimbursementHandler = createReimbursementMutationHandler({ reconcileSource });
+  const coordinator = new Coordinator({ repository, client, clock }, new Map([...['ledger.create', 'ledger.edit'].map((action) => [action, billHandler] as const), ...['ledger.transfer', 'ledger.repayCard'].map((action) => [action, transferHandler] as const), ...['ledger.reimburse', 'ledger.cancelReimbursement'].map((action) => [action, reimbursementHandler] as const), ['ledger.setReimbursable', createReimbursableMutationHandler({ reconcileSource })], ['ledger.refund', refundHandler], ['ledger.delete', deletionHandler]]), executionOptions);
   const instanceId = repository.sql.exec<{ value: string }>("SELECT value FROM instance_meta WHERE key='instance_id'").one().value;
   const vault = new CredentialVault(secrets.QIANJI_CREDENTIAL_KEY, instanceId);
   const connection = new ConnectionService({ repository, client, coordinator, clock, vault });

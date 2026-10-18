@@ -20,6 +20,18 @@ export async function seedActions() {
 }
 export const action = (name: string, input: unknown = {}) => exports.default.fetch('https://test/api/actions', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: name, input }) });
 describe('shared HTTP actions', () => {
+  it('provides real reimbursement pack members and gates all unverified reimbursement mutations', async () => {
+    await seedActions();
+    const a = '1792000000123100021', b = '1792000000123100022', pack = '1792000000123100099', source = '1792000000123100001';
+    await runInDurableObject(env.QIANJI_STATE.getByName('personal'), (_actor, state) => {
+      const ctx = createActorContext(state.storage), scope = ctx.connection.scope()!;
+      ctx.repository.applyPage(scope, 'dataset', page({ upserts: [projectBill(parseWire(`{"id":${a},"bookid":10,"type":21,"time":100,"money":10,"packid":${pack},"extra":{"bxsid":${source}}}`)), projectBill(parseWire(`{"id":${b},"bookid":10,"type":21,"time":200,"money":20,"packid":${pack},"extra":{"bxsid":${source}}}`)), projectBill(parseWire('{"id":1792000000123100023,"bookid":10,"type":21,"time":300,"money":30,"packid":999}'))] }));
+    });
+    expect(await (await action('ledger.reimbursement.members', { packId: pack })).json()).toMatchObject({ data: { packId: pack, items: [{ id: a, editVersion: expect.any(String) }, { id: b, editVersion: expect.any(String) }], complete: true } });
+    const bills = [{ id: source, expectedVersion: 'a'.repeat(64) }];
+    for (const [name, input] of [['ledger.reimburse', { bills, money: '120', assetId: null, timeSec: 200 }], ['ledger.cancelReimbursement', { bills }], ['ledger.setReimbursable', { bills, reimbursable: true }]] as const) expect(await (await action(name, { ...input, requestId: name })).json()).toMatchObject({ status: 'unavailable', error: { code: 'WRITE_LIVE_UNVERIFIED' } });
+    expect(await (await action('ledger.reimbursement.members', { packId: '0' })).json()).toMatchObject({ status: 'error', error: { code: 'INVALID_ACTION_INPUT' } });
+  });
   it('keeps unverified writes gated, and saves typed local drafts without contacting Qianji', async () => {
     await seedActions();
     const input = { requestId: 'write-key', bills: [{ bookId: '10', categoryId: '50', type: 0, enteredMoney: '1', timeSec: 1768000000 }] };

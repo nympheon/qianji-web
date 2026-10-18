@@ -17,6 +17,7 @@ import type { LedgerWriteService } from './write-service';
 import type { CreateBillsInput, DeleteBillsInput, EditBillsInput } from './write-contract';
 import type { TransferInput } from './transfer-contract';
 import type { RefundInput } from './refund-contract';
+import type { CancelReimbursementInput, ReimburseInput, ReimbursableInput, ReimbursementMembers } from './reimbursement-contract';
 
 export interface LedgerDependencies { repository: Repository; connection: ConnectionService; freshness: FreshnessService; clock: Clock; baseCurrency?: () => Id; writes?: LedgerWriteService }
 function hydrateBill(bill: BillSummary, read: (id: Id) => BillSummary | null, freshness: Freshness): BillDetail {
@@ -38,6 +39,17 @@ export class LedgerService {
   transfer(input: TransferInput, meta: { requestId: string }) { return this.writes().transfer(input, meta); }
   repayCard(input: TransferInput, meta: { requestId: string }) { return this.writes().repayCard(input, meta); }
   refund(input: RefundInput, meta: { requestId: string }) { return this.writes().refund(input, meta); }
+  reimburse(input: ReimburseInput, meta: { requestId: string }) { return this.writes().reimburse(input, meta); }
+  cancelReimbursement(input: CancelReimbursementInput, meta: { requestId: string }) { return this.writes().cancelReimbursement(input, meta); }
+  setReimbursable(input: ReimbursableInput, meta: { requestId: string }) { return this.writes().setReimbursable(input, meta); }
+  async reimbursementMembers(packId: string): Promise<ReimbursementMembers> {
+    if (!/^[1-9]\d{0,24}$/.test(packId)) throw new DomainError('INVALID_PACK_ID', '报销分组 ID 无效');
+    const scope = this.scope(), fresh = await this.dependencies.freshness.ensureFresh(scope, ['ledger'], 'normal'), repo = this.dependencies.repository, dataset = repo.dataset(scope, 'ledger');
+    const rows = repo.sql.exec<{ id: string }>("SELECT id FROM bills WHERE uid=? AND domain='ledger' AND dataset_id=? AND type=21 AND status_code<>0 AND (CASE WHEN json_type(raw,'$.packid')='text' THEN json_extract(raw,'$.packid') ELSE raw -> '$.packid' END)=? ORDER BY time_sec,id_sort_key LIMIT 201", scope.uid, dataset?.id ?? 'unloaded', packId).toArray();
+    const items = rows.slice(0, 200).map(({ id }) => { const record = repo.readBill(scope, id)!; return { ...hydrateBill(summarizeBill(record), (id) => { const row = repo.readBill(scope, id); return row ? summarizeBill(row) : null; }, fresh.freshness), editVersion: billVersion(record.raw) }; });
+    const complete = fresh.freshness.complete && rows.length <= 200 && items.every((item) => item.freshness.complete);
+    return { packId, items, complete, freshness: { ...fresh.freshness, complete, stale: fresh.freshness.stale || !complete } };
+  }
   async statistics(input: StatisticsInput): Promise<StatisticsView> {
     const parsed = statisticsInputSchema.safeParse(input);
     if (!parsed.success) throw new DomainError('INVALID_STATISTICS_INPUT', '统计筛选参数无效');
