@@ -17,11 +17,11 @@ export function RefundEditor({ source, refund, options, onComplete }: { source: 
   const [currentSource, setCurrentSource] = useState(source), [currentRefund, setCurrentRefund] = useState(refund);
   const key = `refund:${source.id}:${refund?.id ?? 'new'}`, base = options?.baseCurrency ?? 'CNY', assets = options?.assets.filter((asset) => ![5, 6].includes(asset.type)) ?? [];
   function currencyFields(fields: RefundDraft['fields'], sourceBill = currentSource): RefundDraft['fields'] {
-    const sourceSymbol = sourceBill.currency?.srcSymbol ?? base, targetSymbol = assets.find((asset) => asset.id === fields.assetId)?.currency ?? base;
-    if (!sourceBill.currency && targetSymbol === base) { const { currency: _old, ...rest } = fields; return rest; }
+    const sourceSymbol = sourceBill.currency?.srcSymbol ?? base, targetSymbol = fields.assetId?assets.find((asset) => asset.id === fields.assetId)?.currency ?? base:null;
+    if (!sourceBill.currency && (targetSymbol === null || targetSymbol === base)) { const { currency: _old, ...rest } = fields; return rest; }
     const previous = fields.currency, money = fields.money ?? '';
     return { ...fields, currency: { srcSymbol: sourceSymbol, srcValue: money, targetSymbol,
-      targetValue: targetSymbol === sourceSymbol ? money : previous?.targetSymbol === targetSymbol ? previous.targetValue : '',
+      targetValue: targetSymbol === null ? '0' : targetSymbol === sourceSymbol ? money : previous?.targetSymbol === targetSymbol ? previous.targetValue : '',
       baseSymbol: base, baseValue: sourceSymbol === base ? money : previous?.baseValue ?? '' } };
   }
   function initial(sourceBill = currentSource, refundBill = currentRefund): RefundDraft {
@@ -29,7 +29,7 @@ export function RefundEditor({ source, refund, options, onComplete }: { source: 
     const fields: RefundDraft['fields'] = currencyFields({ money: currency?.srcValue ?? refundBill?.money ?? '', timeSec: refundBill?.timeSec ?? Math.floor(Date.now() / 1000),
       assetId: refundBill?.assetId && /^[1-9]\d*$/.test(refundBill.assetId) ? refundBill.assetId : null, remark: refundBill?.remark ?? '',
       ...(refundBill?.images.length ? { images: refundBill.images } : {}), ...(refundBill?.tagIds.length ? { tagIds: refundBill.tagIds } : {}),
-      ...(currency?.srcSymbol && currency.targetSymbol && currency.baseSymbol ? { currency: { ...currency, srcSymbol: currency.srcSymbol, targetSymbol: currency.targetSymbol, baseSymbol: currency.baseSymbol } } : {}) }, sourceBill);
+      ...(currency?.srcSymbol && currency.baseSymbol ? { currency: { ...currency, srcSymbol: currency.srcSymbol, targetSymbol: currency.targetSymbol, baseSymbol: currency.baseSymbol } } : {}) }, sourceBill);
     return { kind: 'refund', requestId: crypto.randomUUID(), billId: sourceBill.id, expectedVersion: sourceBill.editVersion ?? '', fields,
       ...(refundBill ? { refundBillId: refundBill.id, refundExpectedVersion: refundBill.editVersion } : {}) };
   }
@@ -91,7 +91,7 @@ export function RefundEditor({ source, refund, options, onComplete }: { source: 
     <div className="editor-grid"><Field><FieldLabel htmlFor="refund-money">退款金额</FieldLabel><Input id="refund-money" inputMode="decimal" value={draft.fields.money ?? ''} placeholder={currentRefund ? '本次退款金额' : '留空退剩余金额'} disabled={disabled} onChange={(event) => change({ money: event.target.value })} /></Field>
     <Field><FieldLabel>到账资产</FieldLabel><Select value={draft.fields.assetId ?? '-1'} disabled={disabled} onValueChange={(id) => change({ assetId: id === '-1' ? null : id })}><SelectTrigger aria-label="退款到账资产"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="-1">不关联资产</SelectItem>{assets.map((asset) => <SelectItem key={asset.id} value={asset.id}>{asset.name} · {asset.currency}</SelectItem>)}</SelectContent></Select></Field>
     <Field className="col-span-full"><FieldLabel htmlFor="refund-time">退款时间</FieldLabel><Input id="refund-time" type="datetime-local" value={time} disabled={disabled} required onChange={(event) => { const ms = new Date(event.target.value).getTime(); if (Number.isFinite(ms)) change({ timeSec: Math.floor(ms / 1000) }); }} /></Field></div>
-    {currency ? <div className="editor-grid"><Field><FieldLabel htmlFor="refund-target">历史到账金额（{currency.targetSymbol}）</FieldLabel><Input id="refund-target" inputMode="decimal" value={currency.targetValue} disabled={disabled || currency.targetSymbol === currency.srcSymbol} onChange={(event) => change({ currency: { ...currency, targetValue: event.target.value } })} required /></Field><Field><FieldLabel htmlFor="refund-base">历史本位币金额（{base}）</FieldLabel><Input id="refund-base" inputMode="decimal" value={currency.baseValue} disabled={disabled || currency.srcSymbol === base} onChange={(event) => change({ currency: { ...currency, baseValue: event.target.value } })} required /></Field></div> : null}
+    {currency ? <div className="editor-grid">{currency.targetSymbol ? <Field><FieldLabel htmlFor="refund-target">历史到账金额（{currency.targetSymbol}）</FieldLabel><Input id="refund-target" inputMode="decimal" value={currency.targetValue} disabled={disabled || currency.targetSymbol === currency.srcSymbol} onChange={(event) => change({ currency: { ...currency, targetValue: event.target.value } })} required /></Field> : <p className="muted-copy">未关联到账资产，只记录原币和本位币金额。</p>}<Field><FieldLabel htmlFor="refund-base">历史本位币金额（{base}）</FieldLabel><Input id="refund-base" inputMode="decimal" value={currency.baseValue} disabled={disabled || currency.srcSymbol === base} onChange={(event) => change({ currency: { ...currency, baseValue: event.target.value } })} required /></Field></div> : null}
     <Field><FieldLabel htmlFor="refund-remark">退款备注</FieldLabel><Textarea id="refund-remark" value={draft.fields.remark ?? ''} maxLength={500} disabled={disabled} onChange={(event) => change({ remark: event.target.value })} /></Field>
     {notice ? <p role="status" className="muted-copy">{notice}</p> : null}{error ? <p role="alert">{error}</p> : null}{!loaded && error ? <Button type="button" variant="outline" onClick={() => setLoadAttempt(value => value + 1)}>重新读取草稿</Button> : null}
     {operationId ? <OperationStatus operationId={operationId} initial={operation} onChange={(value) => { setOperation(value); if (value.state === 'succeeded') onComplete(); }} /> : <p className="muted-copy">{saved ? '草稿已保存' : '正在保存草稿…'}</p>}

@@ -16,7 +16,7 @@ export interface AssetListView { items: AssetView[]; groups: { id: string; name:
 export const assetListSchema = z.strictObject({ status: z.union([z.literal(0), z.literal(2)]).default(0), includeInstallments: z.boolean().default(true), limit: z.int().min(1).max(200).default(100), cursor: z.string().max(4096).optional() });
 export type AssetListInput = z.input<typeof assetListSchema>;
 export const assetCreditSchema = z.strictObject({ statementDay: z.int().min(1).max(31).optional(), paymentDay: z.int().min(1).max(31).optional(), limit: money.optional(), statementIncludesPrevious: z.boolean().optional(), sharedLimitAssetId: assetIdSchema.nullable().optional() });
-export const assetMetadataSchema = z.strictObject({ name: z.string().min(1).max(100).optional(), remark: z.string().max(500).optional(), inCount: z.boolean().optional(), icon: z.string().max(500).optional(), color: z.string().max(50).optional(), credit: assetCreditSchema.optional() });
+export const assetMetadataSchema = z.strictObject({ name: z.string().min(1).max(32).optional(), remark: z.string().max(500).optional(), inCount: z.boolean().optional(), icon: z.string().max(500).optional(), color: z.string().max(50).optional(), credit: assetCreditSchema.optional() });
 export const assetSubmitSchema = z.discriminatedUnion('mode', [
   z.strictObject({ mode: z.literal('create'), fields: assetMetadataSchema.required({ name: true, inCount: true }).extend({ type: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]), subtype: z.int().min(1).max(10000), currency: z.string().min(1).max(20), money }) }),
   z.strictObject({ mode: z.literal('edit'), id: assetIdSchema, expectedVersion: z.string().length(64), changes: assetMetadataSchema.refine((fields) => Object.keys(fields).length > 0) }),

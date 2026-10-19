@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {assetMatchesIntent} from '../../src/features/assets/submit';
+import {assetSubmitSchema} from '../../src/features/assets/contract';
+it('rejects ordinary asset names exceeding the official 32-character limit',()=>{
+ expect(assetSubmitSchema.safeParse({mode:'create',fields:{name:'一'.repeat(33),type:1,subtype:11,currency:'CNY',money:'0',inCount:false}}).success).toBe(false);
+});
+it('returns the known created asset ID but fails an exactly truncated legacy asset name',async()=>{
+ const s=await setup();await s.app.repository(repository=>{const name='a'.repeat(33),raw={...asset('30'),name:name.slice(0,32)},prepared={payload:{scope:{...s.app.scope},id:'-1',logicalId:'old-long-asset',kind:'submit',create:true,raw:{...raw,id:-1,name},params:{}},items:[{id:'old-long-asset',affectedIds:[]}],affectedIds:[]};const result=createAssetMutationHandler().applyReceipt(prepared,{ec:'200',httpStatus:200,data:{asset:raw}},{repository,clock:s.clock,client:s.upstream.client});expect(result.items[0]).toMatchObject({state:'failed',error:{code:'ASSET_NAME_TRUNCATED'}});expect(Object.values(result.idMap??{})).toEqual(['30']);});
+});
 it('recognizes an omitted official shared credit ID as the requested unlink, retaining positive-ID checks',()=>{
  const common={id:'20',type:2,money:'0',credit:{statedate:2,paydate2:'12',limit:'200',statein:1}};
  expect(assetMatchesIntent(common,{...common,credit:{...common.credit,shareid:-1}})).toBe(true);

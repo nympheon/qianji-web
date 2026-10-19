@@ -447,10 +447,10 @@ cache.ts导出`CacheKey { domain:SyncDomain; queryKey:string }`、`CacheReadStam
 - [x] 实现`pnpm acceptance -- <case>`，在独立本地/预览环境复用生产实现并注入限定测试能力，生产不开放任意写入开关或原始请求接口。测试账户、账本和命名资源未明确时只准备好用例后询问；已有授权直接沿用。登录仍在网页输入，不从聊天收密码。
 - [ ] M1起逐域执行相应用例：真实签名/三线路/只读同步；普通写回执→回拉→官方客户端；长ID/币种/跨期/删除/差额/本金利息/储蓄/计划/图片；手机离线的计划执行；多端同/异字段修改、删改交叉、ID冲突、响应丢失。记录提交顺序、实际响应、查回及客户端结果，既定测试对象清理也逐项记录，不自动清空账本。
 - [ ] 记录缓存真实向量：手机修改后普通查询在源校验过期时按需获取、显式增量绕过60秒但不清游标；空预算/空计划重复读取请求数、写回执后新增请求数、无变化检查与统计重算数。注明60秒是检查策略，没有闲置轮询或跨设备即时推送保证。
-- [ ] 对未确认的标签窗口、旧报销升级、images疑点、random/resetCount入口等逐条关闭证据或保留具体不可用原因；修复后运行对应回归与真实用例，验收矩阵每个范围都有结果。实际接口/权限限制须报告，不用mock通过替代，也不无声删功能。
+- [x] 对未确认的标签窗口、旧报销升级、images疑点、random/resetCount入口等逐条关闭证据或保留具体不可用原因；修复后运行对应回归与真实用例，验收矩阵每个范围都有结果。实际接口/权限限制须报告，不用mock通过替代，也不无声删功能。
 - [x] 提交脱敏证据/修复及能力更新：`test: verify Qianji workflows against real upstream results`。真实个人数据和凭证不提交。
 
-已完成的真实场景与具体边界已写入验收矩阵；官方手机显示、离线计划执行、实际手机并发仍未完成。正式放行被自动审批以授权范围不足拒绝，等待用户明确答复，全部正式写入继续关闭。不能因已完成多数场景而勾选整项验收。
+当前：提供范围内的原生业务补验完成，见live-matrix.md与protocol-gaps.md。用户已在早期审批拒绝之后明确“全部验收后全部启用”；正式Web/MCP写入现已统一启用，不再等待授权。原生不支持及未明确输入有具体限制，本位币修改、全局排序与成员操作按用户要求不提供。手机普通净额已确认；手机离线执行、实际手机并发和真实ID冲突未观察，所以不勾选包含这些要求的复合验收项。
 
 ### Task 28：部署、ChatGPT联调、升级与恢复交付
 
@@ -464,7 +464,7 @@ cache.ts导出`CacheKey { domain:SyncDomain; queryKey:string }`、`CacheReadStam
 - [ ] 从实际入口验证网页/手机号或邮箱登录/MCP协议与工具调用；按用户Cloudflare保护规则测试ChatGPT可达、只读与受控写入、10秒任务返回/状态跟踪。完成在途任务后真实观察至少10分钟，上游请求计数不再增长；保存实际URL/版本/验收结论，不把dry-run当部署成功。
 - [ ] 提交：`docs: deliver Cloudflare deployment and verified operations guide`。只有真实部署和ChatGPT验证完成才标记M4交付；缺少外部账号权限时说明具体缺项，继续完成不依赖该项的本地交付。
 
-本地维护实现、隔离预览构建、生产 dry-run、运维文档与一次整支独立审查均已完成；四项 P2 已分别复现并修复，详见 `docs/acceptance/final-review.md`。本地持续10分钟闲置计数0增量通过。Cloudflare账号和目标未就绪，未部署、未实际连接ChatGPT、未进行远端PITR演练或生产观察，M4仍未交付。
+本地维护实现、隔离预览构建、生产 dry-run、运维文档与一次整支独立审查均已完成；四项 P2 已分别复现并修复，详见 `docs/acceptance/final-review.md`。本地持续10分钟闲置计数0增量通过。用户已明确本次暂不部署，只完成代码、审查和部署文档。本地验证及部署预检已通过；生产URL、实际ChatGPT、远端PITR与生产观察留待部署，原计划M4生产验收未执行。
 
 ## 依赖、验收和执行交接
 
@@ -518,3 +518,7 @@ cache.ts导出`CacheKey { domain:SyncDomain; queryKey:string }`、`CacheReadStam
 - [Cloudflare Vite集成](https://developers.cloudflare.com/workers/vite-plugin/)、[Workers测试](https://developers.cloudflare.com/workers/testing/vitest-integration/)、[SQLite DO API](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/)。
 - [MCP SDK v2](https://github.com/modelcontextprotocol/typescript-sdk)、[无状态与兼容HTTP handler](https://ts.sdk.modelcontextprotocol.io/v2/api/%40modelcontextprotocol/server/server/createMcpHandler.html)、[Vite运行要求](https://vite.dev/guide/)。执行时复核实际锁定版本，不照抄会变化的在线main接口。
 - [Tailwind CSS Vite安装](https://tailwindcss.com/docs/installation/using-vite)、[shadcn Vite安装](https://ui.shadcn.com/docs/installation/vite)、[Tailwind v4兼容](https://ui.shadcn.com/docs/tailwind-v4)、[shadcn CLI](https://ui.shadcn.com/docs/cli)。2026-10-18核对Tailwind文档标示4.3；具体patch和组件CLI在实际安装时锁定。
+
+## 2026-10-19 本地交付范围更新
+
+依用户后续决定：本位币修改、全局排序、账本成员功能不提供；Cloudflare真实部署暂不执行。任务12–25原生业务已在新建测试资源上补验，具体限制保留，不以未勾选的早期复合条目误示仍等待用户权限。任务27的手机离线未来执行/真实手机竞争与任务28的生产验收继续明确列为未执行，不属于本次代码与文档交付。统一开放后的严格类型、467后端测试、116桌面/手机页面测试、构建及dry-run通过。最终整支独立审查覆盖后续原生修复，结果见docs/acceptance/final-review.md。

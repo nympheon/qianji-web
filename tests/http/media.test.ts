@@ -15,7 +15,7 @@ it('bounds MCP image JSON before the SDK parses base64', async () => {
 });
 it('accepts a bounded multipart image through the same shared write gate and rejects unsupported forms', async () => {
   const body = new FormData(); body.set('purpose', 'category'); body.set('requestId', 'multipart-image'); body.set('file', new Blob([new Uint8Array([137, 80, 78, 71])], { type: 'image/png' }), 'icon.png');
-  const response = await exports.default.fetch('https://test/api/uploads', { method: 'POST', body }); expect(await response.json()).toMatchObject({ status: 'unavailable', error: { code: 'WRITE_LIVE_UNVERIFIED' } }); expect((await exports.default.fetch('https://test/api/uploads')).status).toBe(405); expect((await exports.default.fetch('https://test/api/uploads', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })).status).toBe(415);
+  const response = await exports.default.fetch('https://test/api/uploads', { method: 'POST', body }); expect(await response.json()).toMatchObject({ status: 'error', error: { code: 'IMAGE_FORMAT_INVALID' } }); expect((await exports.default.fetch('https://test/api/uploads')).status).toBe(405); expect((await exports.default.fetch('https://test/api/uploads', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })).status).toBe(415);
 });
 it('bounds the upload body before parsing it as multipart', async () => {
   const response = await exports.default.fetch('https://test/api/uploads', { method: 'POST', headers: { 'content-type': 'multipart/form-data; boundary=x' }, body: new Uint8Array(8 * 1024 * 1024 + 65537) }); expect(response.status).toBe(413);

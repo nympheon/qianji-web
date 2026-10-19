@@ -1,6 +1,8 @@
 import { expect,it } from 'vitest';
 import { AcceptanceScope } from '../../tools/acceptance/scope.mts';
 import { actionDefinitions } from '../../src/contracts/actions';
+import {isPublicAction} from '../../src/contracts/scope';
+import {vi} from 'vitest';
 import { DomainError } from '../../src/shared/errors';
 import { createTestApp } from '../support/app';
 import { TestClock,createUpstream } from '../support/upstream';
@@ -20,8 +22,8 @@ it('removes excluded account, member and global ordering operations from discove
   for(const action of removed){expect(await registry.invoke(action,{})).toMatchObject({status:'error',error:{code:'ACTION_NOT_FOUND'}});expect(await new AppRegistry(context,()=>{}).invoke(action,{})).toMatchObject({status:'error',error:{code:'ACTION_NOT_FOUND'}});}
  });
 });
-it('keeps every unverified production write closed',()=>{
-  for(const definition of Object.values(actionDefinitions))if(definition.kind==='write'&&definition.evidence!=='live-verified')expect(definition.unavailable?.code).toBe('WRITE_LIVE_UNVERIFIED');
+it('enables every provided production write together after acceptance',()=>{
+ for(const [name,definition] of Object.entries(actionDefinitions))if(isPublicAction(name)&&definition.kind==='write'){expect(definition.evidence,name).toBe('live-verified');expect(definition.unavailable,name).toBeUndefined();}
 });
 it('permits only a named test book bootstrap and explicit test references',()=>{
   const scope=new AcceptanceScope(manifest);expect(()=>scope.authorize('test-user','books.submit',{mode:'create',name:manifest.prefix+'账本',type:0,requestId:manifest.prefix+'book'})).not.toThrow();
@@ -41,8 +43,8 @@ it('checks the bounded test policy again before a queued mutation can prepare or
   const app=await createTestApp(),clock=new TestClock(),upstream=createUpstream(clock,app.scope);let prepared=0,sent=0;
   await app.repository(async repository=>{repository.sql.exec("UPDATE connection SET state='connected' WHERE singleton=1").toArray();const coordinator=new Coordinator({repository,clock,client:upstream.client,authorizeMutation:()=>{throw new DomainError('ACCEPTANCE_SCOPE_DENIED','not a test resource');}},new Map([['ledger.edit',{prepare:async()=>{prepared++;return {payload:{},items:[{id:'personal',affectedIds:['bill:personal']}],affectedIds:['bill:personal']};},send:async()=>{sent++;return {ec:'200',data:null,httpStatus:200};},applyReceipt:()=>({items:[{id:'personal',state:'succeeded'}]}),reconcile:async()=>({items:[]})}]]));const result=await coordinator.submit({action:'ledger.edit',scope:app.scope,requestId:'queued-before-policy',input:{}});expect(result.error?.code).toBe('ACCEPTANCE_SCOPE_DENIED');expect(prepared).toBe(0);expect(sent).toBe(0);});
 });
-it('keeps the shared public action closed unless the private test authorizer accepts its exact input',async()=>{
- const app=await createTestApp();await app.repository(async(_repository,storage)=>{const context=createActorContext(storage),input={requestId:manifest.prefix+'book',mode:'create',name:'隔离测试账本',type:-1};expect(await new AppRegistry(context).invoke('books.submit',input)).toMatchObject({status:'unavailable',error:{code:'WRITE_LIVE_UNVERIFIED'}});expect(await new AppRegistry(context,()=>{throw new DomainError('ACCEPTANCE_SCOPE_DENIED','outside test scope');}).invoke('books.submit',input)).toMatchObject({status:'error',error:{code:'ACCEPTANCE_SCOPE_DENIED'}});});
+it('invokes the released shared use case publicly while the private test authorizer remains restrictive',async()=>{
+ const app=await createTestApp();await app.repository(async(_repository,storage)=>{const context=createActorContext(storage),input={requestId:manifest.prefix+'book',mode:'create' as const,name:'隔离测试账本',type:-1},run=vi.spyOn(context.books,'submit').mockResolvedValue({id:'released-operation',state:'queued'} as never);expect(await new AppRegistry(context).invoke('books.submit',input)).toMatchObject({status:'running',operationId:'released-operation'});expect(run).toHaveBeenCalledOnce();expect(await new AppRegistry(context,()=>{throw new DomainError('ACCEPTANCE_SCOPE_DENIED','outside test scope');}).invoke('books.submit',input)).toMatchObject({status:'error',error:{code:'ACCEPTANCE_SCOPE_DENIED'}});expect(run).toHaveBeenCalledOnce();});
 });
 it('checks all nested category ordering IDs instead of trusting a scoped book alone',()=>{
  const scope=new AcceptanceScope({...manifest,actions:['categories.reorder']});expect(()=>scope.authorize('test-user','categories.reorder',{bookId:'100',type:0,groups:[['300','personal-category']],requestId:manifest.prefix+'sort'})).toThrow('ACCEPTANCE_SCOPE_DENIED');

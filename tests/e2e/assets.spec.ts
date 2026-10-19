@@ -17,7 +17,7 @@ test('creates an asset with a persistent request key and restores the same unkno
     await route.fallback();
   });
   await page.goto('/assets'); await expect(page.getByRole('heading', { name: '资产', exact: true })).toBeVisible(); await page.getByRole('button', { name: '新增资产', exact: true }).click();
-  await page.getByLabel('资产名称').fill('专用测试现金'); await page.getByLabel('初始余额').fill('50');
+  await expect(page.getByLabel('资产名称')).toHaveAttribute('maxlength','32'); await page.getByLabel('资产名称').fill('专用测试现金'); await page.getByLabel('初始余额').fill('50');
   if (process.env.QIANJI_VISUAL_DIR) await page.screenshot({ path: join(process.env.QIANJI_VISUAL_DIR, `${testInfo.project.name}-asset-editor.png`), animations: 'disabled' });
   await page.getByRole('button', { name: '保存资产', exact: true }).click(); await expect(page.getByText('结果待核查', { exact: true })).toBeVisible(); expect(received).toMatchObject({ mode: 'create', fields: { name: '专用测试现金', money: '50', type: 1, subtype: 11, currency: 'CNY' } });
   await page.reload(); await page.getByRole('button', { name: '新增资产', exact: true }).click(); await expect(page.getByText('asset-original', { exact: true })).toBeVisible(); await expect(page.getByRole('button', { name: '保存资产', exact: true })).toBeDisabled(); expect(sent).toBe(1);

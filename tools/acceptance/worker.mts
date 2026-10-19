@@ -6,7 +6,7 @@ import type { Env } from '../../src/worker/env';
 import type { PasswordLoginInput } from '../../src/features/connection/contract';
 import type { ImageReferenceInput } from '../../src/features/attachments/contract';
 import { restoreBillInput } from '../../src/features/ledger/write';
-import { asBillObject,numericText } from '../../src/shared/bill-wire';
+import { asBillObject,billExtra,numericText } from '../../src/shared/bill-wire';
 import { DomainError } from '../../src/shared/errors';
 import { ProtocolError } from '../../src/protocol/errors';
 import type { ActionName,ActionInput,ActionOutputs } from '../../src/contracts/actions';
@@ -83,6 +83,18 @@ export class QianjiState extends DurableObject<Env>{
    if(!manifest){manifest={uid:account.uid,prefix:'验261019A',actions:[...testActions],resources:{},aliases:{},intents:{}};this.save(manifest);}
    if(manifest.uid!==account.uid)throw new DomainError('ACCEPTANCE_SCOPE_DENIED','当前账号与测试范围不同');
    manifest.actions=[...testActions];this.save(manifest);
+   if(name==='prepay-card-inspect'){
+    const operation=this.context.coordinator.store.find(account,manifest.prefix+':installment-fx-prepay-card-create'),reply=operation?.prepared?.received?.reply,raw=asBillObject(asBillObject(reply?.data).asset),expected=asBillObject(asBillObject(operation?.prepared?.payload).raw);
+    if(numericText(raw.userid,'')!==account.uid||!String(raw.name).startsWith(manifest.prefix)||!String(expected.name).startsWith(manifest.prefix))throw new DomainError('ACCEPTANCE_SCOPE_DENIED','仅允许检查新提前还款测试卡');
+    return {state:'ready',expected:assetView(expected),actual:assetView(raw),expectedNameLength:String(expected.name).length,actualNameLength:String(raw.name).length};
+   }
+   if(name==='refund-native-none-inspect'){
+    const operation=this.context.coordinator.store.find(account,manifest.prefix+':refund-fx-native-none'),reply=operation?.prepared?.received?.reply,rows=reply?.data;
+    if(!Array.isArray(rows))throw new DomainError('ACCEPTANCE_SCOPE_DENIED','缺少已保存测试回执');
+    const native=rows.map(asBillObject).find(row=>numericText(row.type,'')==='20'&&String(row.remark)===manifest.prefix+'refund-fxnative-none');
+    if(!native||numericText(native.bookid,'')!==manifest.aliases.book)throw new DomainError('ACCEPTANCE_SCOPE_DENIED','回执不在测试范围');
+    const extra=billExtra(native),curr=extra.curr==null?{}:asBillObject(extra.curr);return {state:'ready',currency:{ss:curr.ss??null,ts:curr.ts??null,bs:curr.bs??null,sv:numericText(curr.sv,'absent'),tv:numericText(curr.tv,'absent'),bv:numericText(curr.bv,'absent')},extraKeys:Object.keys(extra),keys:Object.keys(curr),images:native.images,remark:native.remark};
+   }
    if(name==='book-template-inspect'){
     const step=Object.keys(manifest.intents).find(key=>key.startsWith('book-template-')&&key.endsWith('-create'));
     const operation=step?this.context.coordinator.store.find(account,manifest.prefix+':'+step):null,reply=operation?.prepared?.received?.reply,raw=asBillObject(reply?.data);
@@ -137,7 +149,7 @@ export class QianjiState extends DurableObject<Env>{
    const known=(alias:string)=>{const id=current.aliases[alias];if(!id)throw new DomainError('ACCEPTANCE_PREREQUISITE',`先完成测试资源：${alias}`);return id;};
    const remember=(alias:string,kind:TestResource,id:string)=>{
     if(current.aliases[alias]&&current.aliases[alias]!==id)throw new DomainError('ACCEPTANCE_ALIAS_CHANGED','原测试资源不能被替换');
-    const fromReceipt=operations.some(op=>Object.values(op.idMap??{}).includes(id)||kind==='bill'&&(['ledger.create','ledger.transfer','ledger.repayCard'].includes(op.action)&&op.items.some(item=>item.id===id&&item.state==='succeeded')||op.action==='assets.adjustBalance'&&op.state==='succeeded'&&op.affectedIds.includes(id)));
+    const fromReceipt=operations.some(op=>Object.values(op.idMap??{}).includes(id)||kind==='bill'&&(['ledger.create','ledger.transfer','ledger.repayCard'].includes(op.action)&&op.items.some(item=>item.id===id&&item.state==='succeeded')||['assets.adjustBalance','installments.create','repeat.submit'].includes(op.action)&&op.state==='succeeded'&&op.affectedIds.includes(id)));
     if(kind==='bill'){const row=this.context.repository.readBill(account,id);if(!row||!current.resources.book?.includes(row.bookId))throw new DomainError('ACCEPTANCE_SCOPE_DENIED','账单不在专用测试账本中');}
     const category=kind==='category'?this.context.repository.readResources(account,'category',{domain:'ledger',ids:[id]}).items[0]:null;
     const fromTestBook=category&&current.resources.book?.includes(numericText(asBillObject(category.raw).bookid,''));

@@ -20,50 +20,50 @@ export async function seedActions() {
 }
 export const action = (name: string, input: unknown = {}) => exports.default.fetch('https://test/api/actions', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: name, input }) });
 describe('shared HTTP actions', () => {
-  it('exposes the category icon catalog and a typed batch draft without enabling unverified creation',async()=>{
-    await seedActions();expect(await(await action('categories.icons')).json()).toMatchObject({status:'partial',data:{items:[]}});expect(await(await action('categories.submitMany',{bookId:'10',type:0,parentId:null,items:[{name:'吃饭',icon:'food-01'}],requestId:'batch'})).json()).toMatchObject({status:'unavailable',error:{code:'WRITE_LIVE_UNVERIFIED'}});const draft={requestId:'batch-draft',input:{bookId:'10',type:0,parentId:null,items:[]}};expect(await(await action('categories.batch.draft.save',{key:'new',draft})).json()).toMatchObject({status:'ready',data:{draft,operationId:null}});
+  it('exposes the category icon catalog and a typed batch draft with released creation queued until login',async()=>{
+    await seedActions();expect(await(await action('categories.icons')).json()).toMatchObject({status:'partial',data:{items:[]}});expect(await(await action('categories.submitMany',{bookId:'10',type:0,parentId:null,items:[{name:'吃饭',icon:'food-01'}],requestId:'batch'})).json()).toMatchObject({status:'running',data:{state:'queued'}});const draft={requestId:'batch-draft',input:{bookId:'10',type:0,parentId:null,items:[]}};expect(await(await action('categories.batch.draft.save',{key:'new',draft})).json()).toMatchObject({status:'ready',data:{draft,operationId:null}});
   });
-  it('shares savings projections, opaque IDs and empty drafts while gating unverified writes', async () => {
+  it('shares savings projections, opaque IDs and empty drafts with writes queued until login', async () => {
     await seedActions();expect(await(await action('savings.list')).json()).toMatchObject({status:'partial',data:{items:[]}});
     expect(await(await action('savings.project',{rule:{mode:'custom',total:'1000',startDate:'2026-01-01'}})).json()).toMatchObject({status:'ready',data:{rows:[],totalAmount:'1000',kind:'flexible-target'}});
     const draft={action:'savings.submit',requestId:'saving-draft',input:{mode:'create',fields:{name:'',rule:{mode:'fixedAmount',amount:'',startDate:''}}}};expect(await(await action('savings.draft.save',{key:'new',draft})).json()).toMatchObject({status:'ready',data:{draft,operationId:null}});
-    expect(await(await action('savings.delete',{planId:'opaque-plan',deleteBills:false,requestId:'delete'})).json()).toMatchObject({status:'unavailable',error:{code:'WRITE_LIVE_UNVERIFIED'}});
+    expect(await(await action('savings.delete',{planId:'opaque-plan',deleteBills:false,requestId:'delete'})).json()).toMatchObject({status:'running',data:{state:'queued'}});
   });
-  it('shares native installment previews and durable drafts while requiring live write acceptance', async () => {
+  it('shares native installment previews and durable drafts and queues accepted writes until login', async () => {
     await seedActions();
     expect(await (await action('installments.list')).json()).toMatchObject({ status: 'partial', data: { items: [] } });
     expect(await (await action('installments.preview', { totalMoney: '100', totalFee: '3', totalCount: 3, firstDate: '2026-01-31', limit: 3 })).json()).toMatchObject({ status: 'ready', data: { rows: [{ date: '2026-01-31', principal: '33.34', fee: '1' }, { date: '2026-03-03' }, { date: '2026-03-31' }], currency: 'CNY' } });
     const draft = { action: 'installments.create', requestId: 'installment-draft', input: { name: '', totalMoney: '', firstDate: '' } };
     expect(await (await action('installments.draft.save', { key: 'new', draft })).json()).toMatchObject({ status: 'ready', data: { draft, operationId: null } });
-    expect(await (await action('installments.configure', { id: '100', expectedVersion: 'a'.repeat(64), inCount: false, feeInCount: false, requestId: 'configure' })).json()).toMatchObject({ status: 'unavailable', error: { code: 'WRITE_LIVE_UNVERIFIED' } });
+    expect(await (await action('installments.configure', { id: '100', expectedVersion: 'a'.repeat(64), inCount: false, feeInCount: false, requestId: 'configure' })).json()).toMatchObject({ status: 'running', data: { state: 'queued' } });
   });
-  it('exposes recurring previews and typed drafts while protecting unverified native writes', async () => {
+  it('exposes recurring previews and typed drafts with native writes queued until login', async () => {
     await seedActions(); expect(await (await action('repeat.list')).json()).toMatchObject({ status: 'partial', data: { items: [] } });
-    expect(await (await action('repeat.setPaused', { id: '100', paused: true, requestId: 'pause-target' })).json()).toMatchObject({ status: 'unavailable', error: { code: 'WRITE_LIVE_UNVERIFIED' } });
+    expect(await (await action('repeat.setPaused', { id: '100', paused: true, requestId: 'pause-target' })).json()).toMatchObject({ status: 'running', data: { state: 'queued' } });
     const fields = { type: 0, bookId: '10', categoryId: '2', enteredMoney: '10', startDate: '2026-01-31', repeat: { type: 'month', values: ['32'] } };
     expect(await (await action('repeat.preview', { fields, limit: 2 })).json()).toMatchObject({ status: 'ready', data: [{ date: '2026-01-31' }, { date: '2026-02-28' }] });
     const draft = { action: 'repeat.submit', requestId: 'repeat-draft', input: { mode: 'create', fields: { ...fields, enteredMoney: '' } } }; expect(await (await action('repeat.draft.save', { key: 'new', draft })).json()).toMatchObject({ status: 'ready', data: { draft, operationId: null } });
   });
   it('exposes media options and source URLs without treating URL text as uploaded proof', async () => {
-    await seedActions(); expect(await (await action('attachments.options')).json()).toMatchObject({ status: 'partial', data: { maxBillImages: 6, countSource: 'apk-default', uploadPage: '/attachments' } }); expect(await (await action('attachments.resolve', { reference: 'https://example.test/picture.jpg' })).json()).toMatchObject({ data: { url: 'https://example.test/picture.jpg', uploaded: false, source: 'external-url' } }); expect(await (await action('attachments.upload', { purpose: 'bill', mime: 'image/jpeg', requestId: 'image-upload' })).json()).toMatchObject({ status: 'unavailable', error: { code: 'WRITE_LIVE_UNVERIFIED' } });
+    await seedActions(); expect(await (await action('attachments.options')).json()).toMatchObject({ status: 'partial', data: { maxBillImages: 6, countSource: 'apk-default', uploadPage: '/attachments' } }); expect(await (await action('attachments.resolve', { reference: 'https://example.test/picture.jpg' })).json()).toMatchObject({ data: { url: 'https://example.test/picture.jpg', uploaded: false, source: 'external-url' } }); expect(await (await action('attachments.upload', { purpose: 'bill', mime: 'image/jpeg', requestId: 'image-upload' })).json()).toMatchObject({ status: 'error', error: {code:'IMAGE_BYTES_REQUIRED'} });
   });
-  it('exposes budget progress and typed drafts while retaining the live write gate', async () => {
+  it('exposes budget progress and typed drafts with writes queued until login', async () => {
     await seedActions(); const input = { bookId: '10', date: { kind: 'month', year: 2026, month: 10 }, range: '', zone: 'Asia/Shanghai' };
     expect(await (await action('budget.list', input)).json()).toMatchObject({ status: 'partial', data: { configurations: [], query: input, incompleteReasons: expect.arrayContaining(['BUDGET_SOURCE_INCOMPLETE']) } });
-    expect(await (await action('budget.submit', { ...input, expectedVersion: 'a'.repeat(64), changes: [{ categoryId: null, limit: '1000' }], requestId: 'budget-new' })).json()).toMatchObject({ status: 'unavailable', error: { code: 'WRITE_LIVE_UNVERIFIED' } });
+    expect(await (await action('budget.submit', { ...input, expectedVersion: 'a'.repeat(64), changes: [{ categoryId: null, limit: '1000' }], requestId: 'budget-new' })).json()).toMatchObject({ status: 'running', data: { state: 'queued' } });
     const draft = { kind: 'budget', requestId: 'budget-draft', input: { ...input, expectedVersion: 'a'.repeat(64), changes: [{ categoryId: null, limit: '' }] } }; expect(await (await action('budget.draft.save', { key: '10:month:2026:10', draft })).json()).toMatchObject({ status: 'ready', data: { draft, operationId: null } });
   });
-  it('shares typed tag actions and history metadata without enabling unverified writes', async () => {
+  it('shares typed tag actions and history metadata with writes queued until login', async () => {
     await seedActions(); expect(await (await action('tags.list', { includeArchived: true })).json()).toMatchObject({ status: 'partial', data: { items: [], groups: [], freshness: { complete: false } } });
-    expect(await (await action('tags.setArchived', { id: 'tag-opaque', archived: true, requestId: 'archive' })).json()).toMatchObject({ status: 'unavailable', error: { code: 'WRITE_LIVE_UNVERIFIED' } });
+    expect(await (await action('tags.setArchived', { id: 'tag-opaque', archived: true, requestId: 'archive' })).json()).toMatchObject({ status: 'running', data: { state: 'queued' } });
     const draft = { kind: 'tag', action: 'tags.submitTag', requestId: 'tag-draft', input: { mode: 'create', name: '', groupId: null, color: '3792FA' } }; expect(await (await action('tags.draft.save', { key: 'new', draft })).json()).toMatchObject({ status: 'ready', data: { draft, operationId: null } });
     await runInDurableObject(env.QIANJI_STATE.getByName('personal'), (_actor, state) => { const ctx = createActorContext(state.storage), scope = ctx.connection.scope()!; ctx.cache.confirmResources(scope, 'tags', [{ id: 'archive-tag', kind: 'tag', raw: { id: 'archive-tag', name: '历史', status: 2 } }]); });
     expect(await (await action('ledger.options')).json()).toMatchObject({ data: { tags: [{ id: 'archive-tag', archived: true }] } });
   });
-  it('registers typed category writes behind live acceptance and persists scoped empty drafts', async () => {
+  it('registers typed category accepted writes and persists scoped empty drafts', async () => {
     await seedActions();
     const input = { mode: 'create', bookId: '10', type: 0, name: '测试分类', parentId: null, requestId: 'category-new' };
-    expect(await (await action('categories.submit', input)).json()).toMatchObject({ status: 'unavailable', error: { code: 'WRITE_LIVE_UNVERIFIED' } });
+    expect(await (await action('categories.submit', input)).json()).toMatchObject({ status: 'running', data: { state: 'queued' } });
     const draft = { kind: 'category', action: 'categories.submit', requestId: 'category-draft', input: { mode: 'create', bookId: '10', type: 0, name: '', parentId: null } };
     expect(await (await action('categories.draft.save', { key: '10:0:new', draft })).json()).toMatchObject({ status: 'ready', data: { draft, operationId: null } });
     expect(await (await action('categories.draft.get', { key: '10:0:new' })).json()).toMatchObject({ data: { draft } });
@@ -71,29 +71,29 @@ describe('shared HTTP actions', () => {
   it('exposes category catalog reads through the shared action boundary with honest incomplete source state', async () => {
     await seedActions(); expect(await (await action('categories.list', { bookId: '10', type: 0 })).json()).toMatchObject({ status: 'partial', data: { items: [], bookId: '10', type: 0, freshness: { complete: false } } });
   });
-  it('registers native book actions, retains write gates and saves typed book drafts', async () => {
-    await seedActions(); expect(await (await action('books.submit', { mode: 'create', type: 1, name: '专用测试账本', requestId: 'new-book' })).json()).toMatchObject({ status: 'unavailable', error: { code: 'WRITE_LIVE_UNVERIFIED' } });
+  it('registers native book actions, queues writes until login and saves typed book drafts', async () => {
+    await seedActions(); expect(await (await action('books.submit', { mode: 'create', type: 1, name: '专用测试账本', requestId: 'new-book' })).json()).toMatchObject({ status: 'running', data: { state: 'queued' } });
     const draft = { kind: 'book', action: 'books.submit', requestId: 'book-draft', input: { mode: 'create', type: 1, name: '', cover: null, range: '' } };
     expect(await (await action('books.draft.save', { key: 'new', draft })).json()).toMatchObject({ status: 'ready', data: { draft, operationId: null } }); expect(await (await action('books.draft.get', { key: 'new' })).json()).toMatchObject({ status: 'ready', data: { draft } });
     expect(await (await action('books.accounting', {})).json()).toMatchObject({ status: 'partial', data: { baseCurrency: 'CNY', source: 'default' } });
   });
-  it('keeps unverified debt writes gated and persists an empty typed creation draft', async () => {
+  it('queues accepted debt writes until login and persists an empty typed creation draft', async () => {
     await seedActions(); const input = { direction: 'borrow', name: '专用测试借入', principal: '100', bookId: '10', aboutAssetId: null, startDate: '2026-01-01', inCount: true, requestId: 'debt-create' };
-    expect(await (await action('debt.create', input)).json()).toMatchObject({ status: 'unavailable', error: { code: 'WRITE_LIVE_UNVERIFIED' } });
+    expect(await (await action('debt.create', input)).json()).toMatchObject({ status: 'running', data: { state: 'queued' } });
     const { requestId: _requestId, ...fields } = input, draft = { kind: 'debt', action: 'debt.create', requestId: 'debt-draft', input: { ...fields, name: '', principal: '' } };
     expect(await (await action('debt.draft.save', { key: 'new:borrow', draft })).json()).toMatchObject({ status: 'ready', data: { draft, operationId: null } });
     expect(await (await action('debt.draft.get', { key: 'new:borrow' })).json()).toMatchObject({ status: 'ready', data: { draft } });
     expect(await (await action('debt.list', { direction: 'borrow', finished: false })).json()).toMatchObject({ status: 'partial', data: { items: [], freshness: { complete: false } } });
   });
-  it('keeps asset writes unavailable and persists a typed empty asset draft', async () => {
+  it('queues asset writes until login and persists a typed empty asset draft', async () => {
     await seedActions();
     const input = { mode: 'create', fields: { type: 1, subtype: 11, name: '测试现金', money: '0', currency: 'CNY', inCount: true }, requestId: 'new-asset' };
-    expect(await (await action('assets.submit', input)).json()).toMatchObject({ status: 'unavailable', error: { code: 'WRITE_LIVE_UNVERIFIED' } });
+    expect(await (await action('assets.submit', input)).json()).toMatchObject({ status: 'running', data: { state: 'queued' } });
     const draft = { kind: 'asset', action: 'assets.submit', requestId: 'asset-draft', input: { mode: 'create', fields: { type: 1, subtype: 11, name: '', money: '', currency: 'CNY', inCount: true } } };
     expect(await (await action('assets.draft.save', { key: 'new', draft })).json()).toMatchObject({ status: 'ready', data: { draft, operationId: null } });
     expect(await (await action('assets.draft.get', { key: 'new' })).json()).toMatchObject({ status: 'ready', data: { draft } });
   });
-  it('provides real reimbursement pack members and gates all unverified reimbursement mutations', async () => {
+  it('provides real reimbursement pack members and queues reimbursement mutations until login', async () => {
     await seedActions();
     const a = '1792000000123100021', b = '1792000000123100022', pack = '1792000000123100099', source = '1792000000123100001';
     await runInDurableObject(env.QIANJI_STATE.getByName('personal'), (_actor, state) => {
@@ -102,17 +102,17 @@ describe('shared HTTP actions', () => {
     });
     expect(await (await action('ledger.reimbursement.members', { packId: pack })).json()).toMatchObject({ data: { packId: pack, items: [{ id: a, editVersion: expect.any(String) }, { id: b, editVersion: expect.any(String) }], complete: true } });
     const bills = [{ id: source, expectedVersion: 'a'.repeat(64) }];
-    for (const [name, input] of [['ledger.reimburse', { bills, money: '120', assetId: null, timeSec: 200 }], ['ledger.cancelReimbursement', { bills }], ['ledger.setReimbursable', { bills, reimbursable: true }]] as const) expect(await (await action(name, { ...input, requestId: name })).json()).toMatchObject({ status: 'unavailable', error: { code: 'WRITE_LIVE_UNVERIFIED' } });
+    for (const [name, input] of [['ledger.reimburse', { bills, money: '120', assetId: null, timeSec: 200 }], ['ledger.cancelReimbursement', { bills }], ['ledger.setReimbursable', { bills, reimbursable: true }]] as const) expect(await (await action(name, { ...input, requestId: name })).json()).toMatchObject({ status: 'running', data: { state: 'queued' } });
     expect(await (await action('ledger.reimbursement.members', { packId: '0' })).json()).toMatchObject({ status: 'error', error: { code: 'INVALID_ACTION_INPUT' } });
   });
-  it('keeps unverified writes gated, and saves typed local drafts without contacting Qianji', async () => {
+  it('queues writes until login, and saves typed local drafts without contacting Qianji', async () => {
     await seedActions();
     const input = { requestId: 'write-key', bills: [{ bookId: '10', categoryId: '50', type: 0, enteredMoney: '1', timeSec: 1768000000 }] };
-    expect(await (await action('ledger.create', input)).json()).toMatchObject({ status: 'unavailable', error: { code: 'WRITE_LIVE_UNVERIFIED' } });
+    expect(await (await action('ledger.create', input)).json()).toMatchObject({ status: 'running', data: { state: 'queued' } });
     expect(await (await action('ledger.draft.save', { key: 'new', draft: { kind: 'create', requestId: 'draft-key', fields: { enteredMoney: '1', type: 0 } } })).json()).toMatchObject({ status: 'ready', data: { draft: { requestId: 'draft-key' }, operationId: null } });
     expect(await (await action('ledger.draft.get', { key: 'new' })).json()).toMatchObject({ data: { draft: { fields: { type: 0, enteredMoney: '1' } } } });
   });
-  it('offers typed local transfer previews and keeps both transfer write actions unverified', async () => {
+  it('offers typed local transfer previews and queues both accepted transfer writes until login', async () => {
     await seedActions();
     await runInDurableObject(env.QIANJI_STATE.getByName('personal'), (_actor, state) => {
       const ctx = createActorContext(state.storage), scope = ctx.connection.scope()!;
@@ -122,8 +122,8 @@ describe('shared HTTP actions', () => {
     const input = { mode: 'create', bookId: '10', fromAssetId: '1', targetAssetId: '2', enteredMoney: '103', fee: '3', timeSec: 200 };
     expect(await (await action('ledger.transfer.options')).json()).toMatchObject({ data: { assets: [{ id: '1', money: '1000' }, { id: '2', money: '0' }] } });
     expect(await (await action('ledger.transfer.preview', { kind: 'transfer', input })).json()).toMatchObject({ data: { principal: '100', fromAmount: '103', targetAmount: '100', effects: [{ delta: '-103', confirmation: 'expected' }, { delta: '100', confirmation: 'expected' }], stale: true } });
-    for (const name of ['ledger.transfer', 'ledger.repayCard']) expect(await (await action(name, { ...input, requestId: 'stable-key' })).json()).toMatchObject({ status: 'unavailable', error: { code: 'WRITE_LIVE_UNVERIFIED' } });
-    expect(await (await action('ledger.refund', { billId: '1792000000123100001', expectedVersion: 'a'.repeat(64), money: '1', timeSec: 200, assetId: null, requestId: 'refund-key' })).json()).toMatchObject({ status: 'unavailable', error: { code: 'WRITE_LIVE_UNVERIFIED' } });
+    for (const name of ['ledger.transfer', 'ledger.repayCard']) expect(await (await action(name, { ...input, requestId: 'stable-key-'+name })).json()).toMatchObject({ status: 'running', data: { state: 'queued' } });
+    expect(await (await action('ledger.refund', { billId: '1792000000123100001', expectedVersion: 'a'.repeat(64), money: '1', timeSec: 200, assetId: null, requestId: 'refund-key' })).json()).toMatchObject({ status: 'running', data: { state: 'queued' } });
   });
   it('returns exact canonical query values with no-store freshness', async () => {
     await seedActions(); const response = await action('ledger.list');

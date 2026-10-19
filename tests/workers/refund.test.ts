@@ -15,6 +15,18 @@ import { addMoney } from '../../src/shared/numbers';
 import { calculateBudget } from '../../src/features/budget/calculate';
 
 const sourceId = '1792000000123100001', childId = '1792000000123100010';
+it('uses a null zero target for a foreign refund without an associated asset',async()=>{
+ const s=await setup(),raw=asBillObject(source());raw.extra={curr:{ss:'USD',sv:100,ts:'CNY',tv:700,bs:'CNY',bv:700}};
+ await s.app.repository(async repository=>{repository.applyPage(s.app.scope,'ledger',{upserts:[projectBill(raw)],deletes:[],resources:[],pageState:null});const handler=createRefundMutationHandler(),ctx={repository,clock:s.clock,client:s.upstream.client},command=s.command({expectedVersion:billVersion(raw),currency:{srcSymbol:'USD',srcValue:'30',targetSymbol:null,targetValue:'0',baseSymbol:'CNY',baseValue:'210'}});const prepared=await handler.prepare(command,ctx);expect(parseWire(String(asBillObject(asBillObject(prepared.payload).wire).currency))).toMatchObject({ss:'USD',ts:null});await expect(handler.prepare(s.command({expectedVersion:billVersion(raw),currency:{srcSymbol:'USD',srcValue:'30',targetSymbol:null,targetValue:'210',baseSymbol:'CNY',baseValue:'210'}}),ctx)).rejects.toMatchObject({code:'REFUND_CURRENCY_INVALID'});});
+});
+it('does not confirm a foreign refund receipt whose base amount differs from the request',async()=>{
+ const s=await setup();s.upstream.respond(async()=>new Response(stringifyWire({ec:200,data:{list:[s.updated,{...asBillObject(child()),extra:{refundsid:sourceId,curr:{ss:'CNY',sv:30,ts:null,tv:0,bs:'CNY',bv:29}}}]}})));
+ const op=await s.run(c=>c.submit(s.command({currency:{srcSymbol:'CNY',srcValue:'30',targetSymbol:null,targetValue:'0',baseSymbol:'CNY',baseValue:'30'}})));expect(op.state).toBe('uncertain');
+});
+it('accepts the native omission of an unassigned currency target while keeping source and base values',async()=>{
+ const s=await setup();s.upstream.respond(async()=>new Response(stringifyWire({ec:200,data:{list:[s.updated,{...asBillObject(child()),extra:{refundsid:sourceId,curr:{ss:'CNY',sv:30,bs:'CNY',bv:30}}}]}})));
+ const op=await s.run(c=>c.submit(s.command({currency:{srcSymbol:'CNY',srcValue:'30',targetSymbol:null,targetValue:'0',baseSymbol:'CNY',baseValue:'30'}})));expect(op.state).toBe('succeeded');
+});
 const source = () => parseWire(`{"id":${sourceId},"bookid":1,"type":0,"money":100,"time":1768000000,"userid":"user-A","cateid":2,"extra":{"unknown":true}}`);
 function child(money = '30', assetId = '-1') { return parseWire(`{"id":${childId},"bookid":1,"type":20,"money":${money},"time":1770000000,"userid":"user-A","cateid":2,"assetid":${assetId},"extra":{"refundsid":${sourceId}}}`); }
 async function setup() {

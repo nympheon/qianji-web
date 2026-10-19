@@ -2,6 +2,11 @@ import { expect, test } from '@playwright/test';
 import { detail, freshness, mockReadApp, ready } from './read-fixtures';
 import { join } from 'node:path';
 const source = { ...detail, editVersion: 'a'.repeat(64) }, childId = '1792000000123100044';
+test('saves a foreign refund without an asset using only source and base currency amounts',async({page})=>{
+ await mockReadApp(page);let received:unknown;const foreign={...source,currency:{srcSymbol:'USD',srcValue:'1',targetSymbol:'CNY',targetValue:'7',baseSymbol:'CNY',baseValue:'7'}};
+ await page.route('**/api/actions',async route=>{const {action,input}=route.request().postDataJSON();if(action==='capabilities.list')return route.fulfill({json:ready([{action:'ledger.refund',enabled:true}])});if(action==='ledger.detail')return route.fulfill({json:ready(foreign,freshness)});if(action==='ledger.transfer.options')return route.fulfill({json:ready({assets:[],books:[],baseCurrency:'CNY',complete:true,freshness})});if(action==='ledger.draft.get')return route.fulfill({json:ready(null)});if(action==='ledger.draft.save')return route.fulfill({json:ready({draft:input.draft,operationId:null})});if(action==='ledger.refund'){received=input;return route.fulfill({json:ready({id:'foreign-null-refund',state:'succeeded',items:[],error:null})});}await route.fallback();});
+ await page.goto('/bills');await page.getByRole('button',{name:/查看.*午餐/}).first().click();await page.getByRole('button',{name:'新增退款',exact:true}).click();await expect(page.getByLabel('历史本位币金额（CNY）')).toBeVisible();await expect(page.locator('#refund-target')).toHaveCount(0);await page.getByLabel('退款金额',{exact:true}).fill('0.1');await page.getByLabel('历史本位币金额（CNY）').fill('0.7');await page.getByRole('button',{name:'保存退款',exact:true}).click();await expect.poll(()=>received).toMatchObject({assetId:null,money:'0.1',currency:{srcSymbol:'USD',srcValue:'0.1',targetSymbol:null,targetValue:'0',baseSymbol:'CNY',baseValue:'0.7'}});
+});
 
 test('creates a dedicated refund and recovers the same source-scoped draft after an unknown result', async ({ page }, testInfo) => {
   await mockReadApp(page); let saved: unknown = null, sent = 0, received: unknown = null;

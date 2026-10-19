@@ -45,7 +45,7 @@ function matchesIntent(raw: BillObject, wire: BillObject): boolean {
   if (typeof wire.currency === 'string') {
     try {
       const expected = asBillObject(parseWire(wire.currency)), actual = asBillObject(extra.curr);
-      if (!['ss', 'ts', 'bs'].every((key) => actual[key] === expected[key]) || !['sv', 'tv', 'bv'].every((key) => compareMoney(moneyText(actual[key]), moneyText(expected[key])) === 0)) return false;
+      if (!['ss', 'ts', 'bs'].every((key) => (actual[key]??null) === (expected[key]??null)) || !['sv', 'tv', 'bv'].every((key) => compareMoney(moneyText(actual[key]), moneyText(expected[key])) === 0)) return false;
     } catch { return false; }
   }
   return true;
@@ -79,7 +79,7 @@ function parseGroup(prepared: PreparedMutation, reply: ProtocolReply) {
     || new Set(records.map((record) => record.id)).size !== records.length
     || records.some((record) => record.id !== sourceId && positiveBillId(billExtra(asBillObject(record.raw)).refundsid) !== sourceId)) return fail('REFUND_RECEIPT_INVALID', '退款回执的源子关联无法核对');
   if (!payload.oldRefund && billLinks(payload.source).some((link) => link.kind === 'refund' && link.targetId === child.id)) return fail('REFUND_RECEIPT_INVALID', '新增退款回执复用了已有子记录');
-  if (numericText(payload.wire.assetid, '-1') !== numericText(asBillObject(child.raw).assetid, '-1') || compareMoney(sourceAmount(asBillObject(child.raw)), moneyText(payload.wire.money)) !== 0) return fail('REFUND_RECEIPT_INVALID', '退款回执的金额或资产与本次输入不匹配');
+  if (!matchesIntent(asBillObject(child.raw),payload.wire)) return fail('REFUND_RECEIPT_INVALID', '退款回执的金额、资产、币种或附加资料与本次输入不匹配');
   return { payload, records, source, child };
 }
 export function createRefundMutationHandler(dependencies: { baseCurrency?: () => string; reconcileSource?: (ctx: OperationContext) => Promise<boolean> } = {}): MutationHandler {
@@ -112,8 +112,8 @@ export function createRefundMutationHandler(dependencies: { baseCurrency?: () =>
       if (input.assetId) wire.assetid = numeric(input.assetId);
       if (input.currency) {
         const c = input.currency, sourceSymbol = sourceCurr == null ? baseCurrency : asBillObject(sourceCurr).ss;
-        const targetSymbol = assetBases.find((asset) => asset.assetId === input.assetId)?.currency ?? baseCurrency;
-        if (c.srcSymbol !== sourceSymbol || c.targetSymbol !== targetSymbol || c.baseSymbol !== baseCurrency || compareMoney(c.srcValue, amount) !== 0 || compareMoney(c.targetValue, '0') < 0 || compareMoney(c.baseValue, '0') < 0) return fail('REFUND_CURRENCY_INVALID', '退款历史币种与源金额、资产或本位币不匹配');
+        const targetSymbol = assetBases.find((asset) => asset.assetId === input.assetId)?.currency ?? null;
+        if (c.srcSymbol !== sourceSymbol || c.targetSymbol !== targetSymbol || c.baseSymbol !== baseCurrency || compareMoney(c.srcValue, amount) !== 0 || compareMoney(c.targetValue, '0') < 0 || targetSymbol===null&&compareMoney(c.targetValue,'0')!==0 || compareMoney(c.baseValue, '0') < 0) return fail('REFUND_CURRENCY_INVALID', '退款历史币种与源金额、资产或本位币不匹配');
         wire.currency = stringifyWire({ ss: c.srcSymbol, sv: numeric(c.srcValue), ts: c.targetSymbol, tv: numeric(c.targetValue), bs: c.baseSymbol, bv: numeric(c.baseValue), srcFee: 0 });
       }
       const oldExtra = rawOld ? billExtra(rawOld) : {};

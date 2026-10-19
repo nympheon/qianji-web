@@ -118,8 +118,8 @@ export interface ActionOutputs {
 export interface ActionDefinition { title: string; description: string; kind: CapabilityView['kind']; evidence: CapabilityView['evidence']; requiresAccount: boolean; readOnly: boolean; destructive: boolean; unavailable?: { code: string; reason: string } }
 const read = { kind: 'read', evidence: 'apk-static', requiresAccount: true, readOnly: true, destructive: false } as const;
 const connection = { ...read, kind: 'connection', requiresAccount: false } as const;
-const write = { ...read, kind: 'write', readOnly: false, unavailable: { code: 'WRITE_LIVE_UNVERIFIED', reason: '账单写入已完成契约与模拟测试，待专用测试账本真实验收后启用' } } as const;
-const assetWrite = { ...write, unavailable: { code: 'WRITE_LIVE_UNVERIFIED', reason: '资产写入待命名测试资产真实验收后启用' } } as const;
+const write = { ...read, kind: 'write', evidence: 'live-verified', readOnly: false } as const;
+const assetWrite = write;
 export const actionDefinitions: Record<ActionName, ActionDefinition> = {
   'categories.icons':{...read,title:'查询官方分类图标',description:'读取原生图标分组和名称、图标标识，按需60秒来源缓存。图标目录与个人分类集合分开；group项不会当成待创建分类。'},
   'categories.submitMany':{...write,title:'批量新增分类',description:'在明确账本、收支类型和可选一级父分类下，按原生submitmultiple一次提交名称/图标列表。每个新分类分别核对官方ID，部分或未知不重发，不按同名认领。复用requestId。'},
@@ -127,8 +127,8 @@ export const actionDefinitions: Record<ActionName, ActionDefinition> = {
   'categories.batch.draft.save':{...read,readOnly:false,evidence:'local',title:'保存批量分类草稿',description:'保存结构化批量分类草稿，未核清原操作时禁止换键重新创建。'},
   'savings.list': { ...read, title: '查询存钱计划', description: '完整官方目录、实际transactions和进度；planId/transId原样字符串，不转为数字。按需60秒来源缓存，闲置不请求。' },
   'savings.project': { ...read, title: '预览存钱规则', description: '七种原生创建规则：定额、12月、36月、365天、52周、逆向52周、灵活目标。计划行不是实际存入，无交易ID，不自动写账。随机新建入口尚未确认。' },
-  'savings.submit': { ...write, title: '新增或编辑存钱计划', description: '按原生分字段提交名称、币种、图标、颜色、备注与规则。编辑保留原模式，不修改历史交易；已有存入的币种变更待专项核验。未知新建不按同名认领，复用requestId。' },
-  'savings.deposit': { ...write, title: '存入计划', description: 'amount以计划/转入资产币种计。无billInfo只记录进度；可选bookId/outAssetId/inAssetId与历史币种、图片、标签，让钱迹一次生成关联转账。只采用官方transaction/bill，不另补转账；未知沿原操作查询。' },
+  'savings.submit': { ...write, title: '新增或编辑存钱计划', description: '按原生分字段提交名称、币种、图标、颜色、备注与规则。编辑保留原模式，不修改历史交易；已有存入的币种变更不支持。未知新建不按同名认领，复用requestId。' },
+  'savings.deposit': { ...write, title: '存入计划', description: 'amount以计划/转入资产币种计。无billInfo只记录进度；可选bookId/outAssetId/inAssetId与历史币种、图片、标签，让钱迹一次生成关联转账；该原生接口不接受转账手续费。只采用官方transaction/bill，不另补转账；未知沿原操作查询。' },
   'savings.cancelDeposit': { ...write, destructive: true, title: '撤销一笔存入', description: '按原样transId及版本撤销实际存入；计划交易移除与关联billId删除分别确认，不发送额外账单删除。未知只读核对，不重发。' },
   'savings.delete': { ...write, destructive: true, title: '删除存钱计划', description: '必须明确deleteBills，false保留已有账单，true核对关联账单删除与资产回拉。计划管理对象删除和账单影响分别跟踪，不自动清空其他数据。' },
   'savings.reorder': { ...write, title: '排序存钱计划', description: '提交完整且不重复的原样planId数组，通过只读目录核对顺序，不改交易或预览规则。复用requestId。' },

@@ -9,6 +9,8 @@ export const historicalCurrencySchema = z.strictObject({
   srcSymbol: z.string().min(1).max(20), srcValue: money, targetSymbol: z.string().min(1).max(20), targetValue: money,
   baseSymbol: z.string().min(1).max(20), baseValue: money,
 });
+/** A refund with no asset has a null target symbol and zero target value. */
+export const optionalAssetCurrencySchema=historicalCurrencySchema.extend({targetSymbol:historicalCurrencySchema.shape.targetSymbol.nullable()});
 export const transferFieldsSchema = z.strictObject({
   bookId: bookIdSchema, fromAssetId: id, targetAssetId: id, enteredMoney: money, fee: money, timeSec: z.int().min(0).max(253402300799),
   remark: z.string().max(500).optional(), currency: historicalCurrencySchema.nullable().optional(), tagIds: z.array(z.string().min(1).max(200)).max(100).optional(),

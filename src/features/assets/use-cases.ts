@@ -83,11 +83,12 @@ export function createAssetMutationHandler(dependencies: { reconcileLedger?: (ct
       }
       const data = asBillObject(reply.data), raw = validateAsset(asBillObject(data.asset), p.scope, p.create ? undefined : p.id);
       if (p.kind === 'submit') {
-        if (!assetMatchesIntent(raw, p.raw) || data.bill != null) return assetError('ASSET_RECEIPT_INVALID', '资产资料回执与本次修改不一致');
+        const nameTruncated=typeof p.raw.name==='string'&&p.raw.name.length>32&&raw.name===p.raw.name.slice(0,32)&&assetMatchesIntent(raw,{...p.raw,name:raw.name});
+        if (!assetMatchesIntent(raw, p.raw)&&!nameTruncated || data.bill != null) return assetError('ASSET_RECEIPT_INVALID', '资产资料回执与本次修改不一致');
         const id = positiveBillId(raw.id)!;
         if (p.create && resourceExisted(prepared,ctx.repository,p.scope,'assets','asset',id,ctx.validatingHistoricalReceipt)) return assetError('ASSET_NEW_ID_CONFLICT', '新增回执复用了已有资产ID，请核查原操作');
         cache.confirmResources(p.scope, 'assets', [{ id, kind: 'asset', raw }]);
-        const affectedIds = [`asset:${id}`]; return { items: [{ id: p.logicalId, state: 'succeeded', affectedIds }], affectedIds, ...(p.create ? { idMap: { [p.logicalId]: id } } : {}) };
+        const affectedIds = [`asset:${id}`]; return { items: [{ id: p.logicalId, state: nameTruncated?'failed':'succeeded', affectedIds, ...(nameTruncated?{error:{code:'ASSET_NAME_TRUNCATED',message:'钱迹已保存资产，但名称被截短；请查看返回资产，不要重新创建'}}:{}) }], affectedIds, ...(p.create ? { idMap: { [p.logicalId]: id } } : {}) };
       }
       if (compareMoney(moneyText(raw.money), moneyText(p.raw.money)) !== 0) return assetError('ASSET_RECEIPT_INVALID', '官方余额与本次目标不匹配');
       const bill = data.bill == null ? null : projectBill(data.bill);

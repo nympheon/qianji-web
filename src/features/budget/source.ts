@@ -8,7 +8,7 @@ import { assetError } from '../assets/model';
 import { addMoney } from '../../shared/numbers';
 import { businessRange } from '../../shared/dates';
 import type { BudgetQuery, BudgetConfiguration, BudgetDay } from './contract';
-export function budgetRange(input: BudgetQuery) { if (input.range === 'q' || input.range === 'all') return assetError('BUDGET_RANGE_UNVERIFIED', '此账本周期的独立预算口径尚未核对，请使用已确认的月度或年度预算周期'); const day = /^m(\d+)$/.exec(input.range); return businessRange(input.date, { monthStartDay: day ? Number(day[1]) : 1 }, input.zone); }
+export function budgetRange(input: BudgetQuery) { const day = /^m(\d+)$/.exec(input.range); return businessRange(input.date, { monthStartDay: day ? Number(day[1]) : 1 }, input.zone); }
 export function budgetTypeInfo(input: BudgetQuery) { return input.date.kind === 'month' ? `${input.date.year},${input.date.month}` : String(input.date.year); }
 export function budgetParams(scope: ActorScope, input: BudgetQuery): BillObject { budgetRange(input); return { uid: scope.uid, bookid: input.bookId, flts: JSON.stringify({ [input.date.kind]: budgetTypeInfo(input) }), ...(input.range ? { range: input.range } : {}) }; }
 export function budgetKey(input: BudgetQuery): CacheKey { const hash = createHash('sha256').update(JSON.stringify([input.bookId, input.date.kind, budgetTypeInfo(input), input.range, input.zone])).digest('hex'); return { domain: 'budget', queryKey: `budget:${hash}`, resourceKind: 'budget' }; }

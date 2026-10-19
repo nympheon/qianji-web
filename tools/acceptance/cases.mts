@@ -1,3 +1,6 @@
+import {inspectInstallmentPrepay,runInstallmentHistory,runInstallmentForeignPrepay} from './installments-extended.mts';
+import {runBudgetBookRanges,runBudgetExtended} from './budget-extended.mts';
+import {inspectSavingsForeign,inspectForeignRefund,runRefundForeign,runReimburseForeign,runSavingsForeign} from './linked-financial.mts';
 import {runAssetTypesAndBalance,runCreditMetadata,runBookTemplates,runBookRanges,runSavingsMetadata} from './remaining-management.mts';
 import {runRepeatNativeCurrency,runRepeatExtended,runPlanBinding,runInstallmentModes} from './plans-extended.mts';
 import {runLedgerExtended} from './ledger-extended.mts';
@@ -47,6 +50,19 @@ function created(operation:OperationView):string{
  return ids[0]!;
 }
 export async function runCase(name:CaseName,e:CaseEnvironment){
+ if(name==='installment-prepay-inspect')return inspectInstallmentPrepay(e);
+ if(name==='installment-history')return runInstallmentHistory(e);
+ if(name==='installment-prepay-array')return runInstallmentForeignPrepay(e,'array');
+ if(name==='installment-foreign-prepay')return runInstallmentForeignPrepay(e);
+ if(name==='budget-native-extended')return runBudgetExtended(e,true);
+ if(name==='budget-book-ranges')return runBudgetBookRanges(e);
+ if(name==='budget-extended')return runBudgetExtended(e);
+ if(name==='refund-foreign-inspect')return inspectForeignRefund(e);
+ if(name==='refund-foreign')return runRefundForeign(e);
+ if(name==='reimburse-foreign')return runReimburseForeign(e);
+ if(name==='savings-foreign-inspect')return inspectSavingsForeign(e);
+ if(name==='savings-native-foreign')return runSavingsForeign(e,true);
+ if(name==='savings-foreign')return runSavingsForeign(e);
  if(name==='asset-types-balance')return runAssetTypesAndBalance(e);
  if(name==='credit-metadata')return runCreditMetadata(e);
  if(name==='book-templates')return runBookTemplates(e);

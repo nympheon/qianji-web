@@ -13,6 +13,10 @@ import { businessRange } from '../../src/shared/dates';
 import type { BillDetail } from '../../src/features/ledger/contract';
 import { createActorContext } from '../../src/actor/context';
 import { calculateBudget } from '../../src/features/budget/calculate';
+import {budgetRange} from '../../src/features/budget/source';
+it('keeps monthly and yearly budget filters independent of a quarter or all-time book display range',()=>{
+ for(const range of ['q','all']){expect(budgetRange({...query,range})).toEqual(businessRange(query.date,{monthStartDay:1},query.zone));expect(budgetRange({...query,date:{kind:'year',year:2026},range})).toEqual(businessRange({kind:'year',year:2026},{monthStartDay:1},query.zone));}
+});
 const query = { bookId: '1', date: { kind: 'month' as const, year: 2026, month: 10 }, range: 'm10', zone: 'Asia/Shanghai' }, config = { budgetid: '9001', bookid: '1', type: 1, typeinfo: '2026,10', flag: 1, cateid: -1, money: '1000', used: '0', count: 0 };
 async function setup() {
   const app = await createTestApp(), clock = new TestClock(Date.UTC(2026, 9, 18)), upstream = createUpstream(clock, app.scope), data = { list: [structuredClone(config)], daystats: [{ datetime: 1791590400, spend: '100', totalspend: '100' }] };
@@ -24,6 +28,19 @@ async function setup() {
   return { app, clock, upstream, data, source, service, run };
 }
 describe('native budget configuration and progress', () => {
+  it('rejects an effective zero total before sending after confirming the native API rejects that collection',async()=>{
+    const s=await setup(),before=await s.service(v=>v.list(query));await s.app.repository(async repository=>{await expect(createBudgetMutationHandler().prepare({action:'budget.submit',scope:s.app.scope,requestId:'native-total-zero',input:{...query,expectedVersion:before.editVersion,changes:[{categoryId:null,limit:'0'}]}},{repository,clock:s.clock,client:s.upstream.client})).rejects.toMatchObject({code:'BUDGET_TOTAL_ZERO_UNSUPPORTED'});});expect(s.upstream.calls.some(call=>call.url.includes('/submitv2'))).toBe(false);
+  });
+  it('raises an existing parent and total to cover child limits without double counting children',async()=>{
+    const s=await setup();s.data.list[0]!.money='2';s.data.list.push({...config,budgetid:'9002',flag:2,cateid:10,money:'2'},{...config,budgetid:'9003',flag:2,cateid:11,money:'3'});
+    await s.app.repository(repository=>repository.applyPage(s.app.scope,'ledger',{upserts:[],deletes:[],resources:[{id:'12',kind:'category',raw:{id:'12',bookid:'1',type:0,parentid:'10'}}],pageState:null}));const before=await s.service(v=>v.list(query));
+    await s.app.repository(async repository=>{const prepared=await createBudgetMutationHandler().prepare({action:'budget.submit',scope:s.app.scope,requestId:'parent-floor',input:{...query,expectedVersion:before.editVersion,changes:[{categoryId:'11',limit:'4'},{categoryId:'12',limit:'5'}]}},{repository,clock:s.clock,client:s.upstream.client}),rows=parseWire(String(asBillObject(asBillObject(prepared.payload).params).changelist)) as import('../../src/shared/wire-json').WireJson[];
+      expect(Object.fromEntries(rows.map(row=>{const raw=asBillObject(row);return [numericText(raw.flag,'')==='1'?'total':numericText(raw.cateid,''),numericText(raw.money,'')];}))).toEqual({total:'9','10':'9','11':'4','12':'5'});});
+  });
+  it('keeps an independently budgeted child without inventing a parent budget and raises only the total',async()=>{
+    const s=await setup();s.data.list[0]!.money='1';const before=await s.service(v=>v.list(query));await s.app.repository(async repository=>{const prepared=await createBudgetMutationHandler().prepare({action:'budget.submit',scope:s.app.scope,requestId:'standalone-child',input:{...query,expectedVersion:before.editVersion,changes:[{categoryId:'11',limit:'3'}]}},{repository,clock:s.clock,client:s.upstream.client}),rows=parseWire(String(asBillObject(asBillObject(prepared.payload).params).changelist)) as import('../../src/shared/wire-json').WireJson[];
+      expect(rows.map(row=>{const raw=asBillObject(row);return [numericText(raw.flag,'')==='1'?'total':numericText(raw.cateid,''),numericText(raw.money,'')];})).toEqual([['total','3'],['11','3']]);});
+  });
   it('submits the complete native budget collection and removes zero goals instead of posting zero money',async()=>{
     const s=await setup();s.data.list.push({...config,budgetid:'9002',flag:2,cateid:10,money:'100'});let saved:ReturnType<typeof asBillObject>[]=[];
     s.upstream.respond(async()=>{const call=s.upstream.calls.at(-1)!;if(call.url.endsWith('/submitv2')){saved=(parseWire(new URLSearchParams(call.body).get('changelist')!) as import('../../src/shared/wire-json').WireJson[]).map(asBillObject);return new Response(stringifyWire({ec:200,data:{list:saved}}));}return new Response(stringifyWire({ec:200,data:s.data}));});
@@ -56,7 +73,9 @@ describe('native budget configuration and progress', () => {
     const bill = summarizeBill(projectBill({ id: '1001', bookid: 1, type: 0, money: '100', time: 1792272000, cateid: '11', extra: { flag: 1 } })); s.source.bills.push({ ...bill, missingRelatedIds: [], sources: [], incompleteReasons: [], refunds: [], reimbursements: [], freshness: s.source.freshness, editVersion: 'a'.repeat(64) });
     const value = await s.service((v) => v.list(query)); expect(value.progress.used).toBe('100'); expect(value.progress.rows.map((row) => row.used)).toEqual(['100', '100', '100']); s.source.bills[0]!.flags = 2; const excluded = await s.service((v) => v.list(query)); expect(excluded.progress.used).toBe('0'); expect(excluded.progress.totalNotBudget).toBe('100');
   });
-  it('keeps unsupported total cancellation unsent after the actual upstream rejection', async () => {
-    const s = await setup(), prior = await s.service(v=>v.list(query));const op=await s.run(c=>c.submit({action:'budget.submit',scope:s.app.scope,requestId:'budget-zero',input:{...query,expectedVersion:prior.editVersion,changes:[{categoryId:null,limit:'0'}]}}));expect(op.error?.code).toBe('BUDGET_TOTAL_CANCEL_UNVERIFIED');expect(s.upstream.calls.some(call=>call.url.includes('/submitv2'))).toBe(false);
+  it('recovers a lost normalized budget write against the effective limits without resending',async()=>{
+    const s=await setup();s.data.list[0]!.money='1';s.data.list.push({...config,budgetid:'9002',flag:2,cateid:10,money:'2'},{...config,budgetid:'9003',flag:2,cateid:11,money:'3'});const before=await s.service(v=>v.list(query));let posts=0;
+    s.upstream.respond(async()=>{if(s.upstream.calls.at(-1)!.url.includes('/submitv2')){posts++;s.data.list.forEach(row=>{row.money='5';});throw new Error('lost normalized budget receipt');}return new Response(stringifyWire({ec:200,data:s.data}));});
+    await s.run(async coordinator=>{const op=await coordinator.submit({action:'budget.submit',scope:s.app.scope,requestId:'normalized-lost',input:{...query,expectedVersion:before.editVersion,changes:[{categoryId:null,limit:'0'},{categoryId:'10',limit:'1'},{categoryId:'11',limit:'5'}]}});expect(op.state).toBe('uncertain');expect((await coordinator.reconcileOperation(s.app.scope,op.id)).state).toBe('succeeded');});expect(posts).toBe(1);
   });
 });
