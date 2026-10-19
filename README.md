@@ -67,6 +67,8 @@
 
 需要 **Node.js 24** 和 **pnpm 11**。
 
+将下面的 `YOUR_USERNAME` 替换为自己的仓库所有者。公开配置不包含部署域名；真实路由使用 Git 忽略的 `wrangler.local.jsonc`，详见[公开仓库与私有配置](docs/public-repository.md)。
+
 ```sh
 git clone https://github.com/YOUR_USERNAME/qianji-web.git
 cd qianji-web
@@ -98,7 +100,7 @@ pnpm test:e2e
 
 业务逻辑参考钱迹 **APK 4.5.4 / 1234**。提供范围内的原生业务已使用专用测试资源补验，正式 Web/MCP 写入已统一启用；测试资源已清理。接口已确认不支持或仍不明确的输入分支会在发送前拒绝，详见[验收矩阵](docs/acceptance/live-matrix.md)和[协议边界](docs/acceptance/protocol-gaps.md)。
 
-本项目面向单用户，不提供应用登录保护、多用户、第三方登录、数据导出、本位币修改、全局排序或账本成员管理；访问保护交由 Cloudflare 配置。目前已部署到 [qianji.example.com](https://qianji.example.com)，使用 Workers Free 并沿用现有 Cloudflare Access 保护。MCP 的 OAuth 配置及 ChatGPT 实接按用户要求稍后进行。
+本项目面向单用户，不提供应用登录保护、多用户、第三方登录、数据导出、本位币修改、全局排序或账本成员管理；访问保护交由 Cloudflare 配置。仓库只提供通用部署模板，不公开个人部署地址、Cloudflare 资源标识或客户端验收现场。可使用 Workers Free，并通过 Cloudflare MCP 门户、托管 OAuth 和 Gateway 接入客户端，详见[部署文档](docs/deployment.md)。文档中的示例域名不是真实服务。
 
 ## 文档导航
 

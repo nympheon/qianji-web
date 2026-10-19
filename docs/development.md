@@ -4,7 +4,7 @@
 
 ## 工具链
 
-使用Node 24及pnpm 11.25.0，所有直接依赖锁定确切版本并提交`pnpm-lock.yaml`。本机已有pnpm位于`C:/Users/USERNAME/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/fallback/pnpm.cmd`；可直接调用，无需修改全局PATH。
+使用Node 24及pnpm 11.25.0，所有直接依赖锁定确切版本并提交`pnpm-lock.yaml`。在自己的电脑上安装对应工具链后使用标准`pnpm`命令，不依赖首次开发机器的绝对路径或临时辅助脚本。真实部署配置使用[Git忽略的私有副本](public-repository.md)。
 
 2026-10-18核对并锁定：React 19.3.1、Vite 8.3.4、TypeScript 7.0.2、Tailwind CSS 4.3.3、Wrangler 4.151.1、Cloudflare Vite plugin 1.64.0、Cloudflare Vitest plugin 1.4.4、Vitest 5.0.5、MCP server SDK 2.3.1、shadcn 4.22.0（radix-nova）、Radix UI 1.8.1、Lucide React 1.59.0。pnpm只允许esbuild与workerd所需安装脚本，不放开所有依赖脚本。`pnpm-workspace.yaml`固定项目内的依赖store，不修改全局配置。
 

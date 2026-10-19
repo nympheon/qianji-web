@@ -10,6 +10,7 @@ dist/
 !.env.example
 .artifacts/
 .superpowers/
+wrangler.local.jsonc
 test-results/
 playwright-report/
 worker-configuration.d.ts

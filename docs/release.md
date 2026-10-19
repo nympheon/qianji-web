@@ -1,6 +1,6 @@
 # 0.1.0 版本与部署状态
 
-2026-10-19；参考钱迹APK 4.5.4/1234。主分支 `main`。已部署到 [qianji.example.com](https://qianji.example.com)，使用 Workers Free、一个 SQLite DO 和原有 Cloudflare Access 保护，未购买套餐。MCP OAuth 配置及 ChatGPT 实接按用户要求稍后进行。
+2026-10-19；参考钱迹APK 4.5.4/1234，主分支 `main`。项目支持 Workers Free、一个 SQLite DO 及外部 Cloudflare Access 保护。公开仓库只保留通用部署模板，个人实例的地址、资源标识和授权状态不公开。
 
 ## 功能与验证
 
@@ -15,6 +15,6 @@
 
 ## 部署阶段保留事项
 
-生产URL、Worker、独立加密Secret和SQLite命名空间已建立，`workers.dev` 与版本预览入口已关闭。匿名网页、API和MCP请求已验证受Access保护。本轮没有读取或修改生产账务数据；生产账号业务状态、Cloudflare出口三线路、CPU/费用、远端PITR演练与生产闲置观测仍需后续实际验收。MCP OAuth与ChatGPT连接按用户要求暂缓，原计划M4尚未全部完成。部署及后续更新步骤见 [部署文档](deployment.md) 与 [维护文档](maintenance.md)。
+每个实际部署需分别验证：外部 Access 拦截、MCP 门户 OAuth、Gateway 端到端请求、客户端授权与工具调用、钱迹出口三线路、生产账号业务、闲置观测、CPU/费用及远端 PITR。代码、本机上游验收、元数据和控制台开关不能代替这些现场验证。公开模板默认关闭 `workers.dev`、版本预览入口及路由，实际配置在 Git 忽略的本机文件中维护；不要为换电脑重建现有生产数据库或覆盖 Secret。见[部署文档](deployment.md)、[私有配置](public-repository.md)及[维护文档](maintenance.md)。
 
 手机已确认普通测试支出净额1元。手机离线计划执行、真实手机并发和真实服务端ID冲突未观察；没有增加Worker定时出账。早期私有未知操作历史保留；包含0.07实验差额的专用测试现金已删除，没有补记余额调整或改动个人现用资源。图片引用已清除，官方图片服务器底层对象永久擦除无法证明。
