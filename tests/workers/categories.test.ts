@@ -6,7 +6,7 @@ import { ResourceCache } from '../../src/storage/cache';
 import { CategoryService } from '../../src/features/categories/service';
 import { createCategoryMutationHandler } from '../../src/features/categories/use-cases';
 import { asBillObject, numericText } from '../../src/shared/bill-wire';
-import { billVersion } from '../../src/features/ledger/write';
+import { billVersion,createLedgerMutationHandler } from '../../src/features/ledger/write';
 import { parseWire, stringifyWire } from '../../src/shared/wire-json';
 import type { OperationContext } from '../../src/operations/contract';
 import { projectBill } from '../../src/features/sync/incremental';
@@ -69,6 +69,15 @@ describe('category submit hierarchy and sorting', () => {
   });
 });
 describe('category deletion and native migration', () => {
+  it('holds edits of actual affected bills while category migration has an unknown result',async()=>{
+    const s=await setup();s.upstream.respond(async()=>{const url=s.upstream.calls.at(-1)!.url;if(url.includes('/category/deletev2'))throw new Error('lost receipt');return new Response(stringifyWire({ec:200,data:url.includes('/category/listv2')?{list:s.catalog}:{count:1,other:1}}));});
+    await s.app.repository(async repository=>{const c=new Coordinator({repository,clock:s.clock,client:s.upstream.client},new Map([['categories.delete',createCategoryMutationHandler()],['ledger.edit',createLedgerMutationHandler()]]));
+      const deleted=await c.submit({action:'categories.delete',input:s.input,requestId:'unknown-category-migration',scope:s.app.scope});expect(deleted.state).toBe('uncertain');
+      const edited=await c.submit({action:'ledger.edit',input:{bills:[{id:s.own.id,expectedVersion:billVersion(s.own),changes:{remark:'later edit'}}]},requestId:'edit-during-unknown-migration',scope:s.app.scope});
+      expect(edited.state).toBe('queued');expect(edited.error?.code).toBe('TARGET_UNCERTAIN');expect(s.upstream.calls.some(call=>call.url.includes('/bill/syncall'))).toBe(false);
+    });
+  });
+
   it('blocks deletion while a queued bill could still upload the old category reference', async () => {
     const s = await setup(); const result = await s.run(async (c) => { c.store.create({ action: 'ledger.create', requestId: 'pending-bill', scope: s.app.scope, input: { bills: [{ categoryId: '11' }] } }, 'pending-category-bill'); return c.submit({ action: 'categories.delete', input: s.input, requestId: 'blocked-delete', scope: s.app.scope }); }); expect(result.error?.code).toBe('UNSYNCED_BILLS'); expect(s.upstream.calls.some((call) => call.url.includes('/category/deletev2'))).toBe(false);
   });

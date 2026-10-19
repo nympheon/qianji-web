@@ -1,6 +1,6 @@
 import { AttachmentGallery } from '../components/Attachments';
 import { displayedBillMoney } from '../lib/bill-money';
-import { useRef, useState } from 'react';
+import { useEffect,useRef, useState } from 'react';
 import { ReceiptTextIcon } from 'lucide-react';
 import type { BillDetail, BillFilter, BillSummary, LedgerOptions } from '../../features/ledger/contract';
 import { api } from '../api';
@@ -31,7 +31,14 @@ export function BillsPage({ initialDate }: { initialDate?: BillFilter['date'] })
   const query = useAction('ledger.list', filter), options = useAction('ledger.options', {}), statistics = useAction('ledger.statistics', { currency: options.data?.baseCurrency ?? 'CNY', filter: statFilter });
   const capabilities = useAction('capabilities.list', {}), allowed = (action: string) => capabilities.data?.some((item) => item.action === action && item.enabled) ?? false;
   const transferOptions = useAction('ledger.transfer.options', {});
-  const complete = () => { query.refetch(); statistics.refetch(); };
+  const complete = () => { query.refetch(); statistics.refetch();options.refetch();transferOptions.refetch(); };
+  const optionWatermark=useRef<string|null>(null),wasSyncing=useRef(false);
+  useEffect(()=>{
+    if(query.reply?.status==='running'){wasSyncing.current=true;return;}
+    if(query.reply?.status!=='ready'||!query.reply.freshness?.complete)return;
+    const watermark=JSON.stringify([query.reply.freshness.revision,query.reply.freshness.syncedAt]);
+    if(wasSyncing.current||optionWatermark.current!==watermark){wasSyncing.current=false;optionWatermark.current=watermark;options.refetch();transferOptions.refetch();}
+  },[query.reply?.status,query.reply?.freshness?.revision,query.reply?.freshness?.syncedAt,options.refetch,transferOptions.refetch]);
   // Statistics have a stricter schema: pagination belongs only to the bill query.
   const name = (bill: BillSummary) => category(bill, options.data);
   async function showDetail(bill: BillSummary) { detailRequest.current = bill.id; setSelected(bill.id); setDetail(null); setDetailError(null); const reply = await api('ledger.detail', { id: bill.id }); if (detailRequest.current !== bill.id) return; setDetail(reply.data); setDetailError(reply.error?.message ?? null); }
@@ -42,7 +49,7 @@ export function BillsPage({ initialDate }: { initialDate?: BillFilter['date'] })
     if (!reply.data) { setDetailError(reply.error?.message ?? '源账单尚未载入'); return; }
     setRefundSource(reply.data); setEditorBill(bill); setSelected(null); setEditor('refund');
   }
-  return <div className="page-stack"><DataStatus reply={query.reply} retained={!!query.data} /><TaskStatus jobId={query.reply?.jobId} onFinished={query.refetch} /><Filters filter={filter} options={options.data} onChange={setFilter} /><Totals currency={statistics.data?.currency ?? options.data?.baseCurrency ?? 'CNY'} totals={statistics.data?.totals ?? null} />
+  return <div className="page-stack"><DataStatus reply={query.reply} retained={!!query.data} /><TaskStatus jobId={query.reply?.jobId} onFinished={complete} /><Filters filter={filter} options={options.data} onChange={setFilter} /><Totals currency={statistics.data?.currency ?? options.data?.baseCurrency ?? 'CNY'} totals={statistics.data?.totals ?? null} />
     <div className="flex flex-wrap items-center gap-3"><Button variant="outline" asChild><a href="/reimbursements">报销管理</a></Button><Button disabled={!allowed('ledger.create')} onClick={() => { setEditorBill(undefined); setEditor('create'); }}>记一笔</Button><Button variant="outline" disabled={!allowed('ledger.transfer') || !transferOptions.data} onClick={() => { setEditorBill(undefined); setEditor('transfer'); }}>转账</Button><Button variant="outline" disabled={!allowed('ledger.repayCard') || !transferOptions.data} onClick={() => { setEditorBill(undefined); setEditor('repay-card'); }}>信用卡还款</Button>{!allowed('ledger.create') ? <p className="muted-copy">{capabilities.data?.find((item) => item.action === 'ledger.create')?.reason ?? '写入能力等待验证'}</p> : null}</div>
     {statistics.data && statistics.reply?.status !== 'ready' ? <p className="muted-copy">收支汇总保留上次计算结果，等待完整同步。</p> : null}
     {filter.date?.kind === 'day' ? <p className="muted-copy">日期：{filter.date.date}</p> : null}

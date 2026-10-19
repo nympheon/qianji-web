@@ -9,6 +9,7 @@ import { SyncService } from '../../src/features/sync/service';
 import { FreshnessService } from '../../src/features/sync/freshness';
 import { RebuildService } from '../../src/features/sync/rebuild';
 import { parseWire } from '../../src/shared/wire-json';
+import {ledgerOptionSources} from '../../src/features/ledger/options';
 import { page, bill } from '../support/fixtures';
 import type { MutationHandler } from '../../src/operations/contract';
 import fixtures from '../../fixtures/apk-454/sync-pages.json';
@@ -46,35 +47,48 @@ async function scenario() {
 }
 
 describe('on-use refresh and rebuild lifecycle', () => {
+  it('refreshes tags before a ledger-only on-use request and publishes new tag membership',async()=>{
+    const s=await scenario();s.upstream.respond(async()=>{if(s.upstream.calls.at(-1)!.url.endsWith('/tag/syncall')){const reply=JSON.parse(fixtures.tags[1]!);reply.data.update=[{id:'new-tag',name:'手机新增',status:1}];return Response.json(reply);}return new Response(fixtures.ledger[1]);});
+    await s.run(async({freshness,cache,repository})=>{await freshness.ensureFresh(s.app.scope,['ledger'],'normal');expect(s.upstream.calls.map(call=>new URL(call.url).pathname)).toEqual(['/tag/syncall','/syncv2/pull']);expect(cache.read(s.app.scope,{domain:'tags',queryKey:'rows:all'}).complete).toBe(true);expect(ledgerOptionSources(repository,s.clock,s.app.scope).tags.map(item=>item.id)).toEqual(['new-tag']);});
+  });
+  it('keeps the ledger waiting for paginated tags across restart without sending ledger first',async()=>{
+    const s=await scenario();let tagPages=0;s.upstream.respond(async()=>{if(s.upstream.calls.at(-1)!.url.endsWith('/tag/syncall')){tagPages++;const reply=JSON.parse(fixtures.tags[1]!);reply.data.hasmore=tagPages<5;return Response.json(reply);}return new Response(fixtures.ledger[1]);});
+    const job=await s.run(async({freshness})=>(await freshness.ensureFresh(s.app.scope,['ledger'],'manual-incremental')).job!);expect(job.domain).toBe('ledger');expect(job.state).toBe('running');expect(s.upstream.calls.some(call=>call.url.endsWith('/syncv2/pull'))).toBe(false);await s.app.restart();
+    await s.run(async({sync})=>{await sync.resume(job.id);expect(sync.getJob(s.app.scope,job.id)?.state).toBe('succeeded');});expect(s.upstream.calls.at(-1)!.url.endsWith('/syncv2/pull')).toBe(true);expect(tagPages).toBe(5);
+  });
+  it('runs tag children before ledger children in a multi-domain rebuild',async()=>{
+    const s=await scenario();s.upstream.respond(async()=>new Response(s.upstream.calls.at(-1)!.url.endsWith('/tag/list')?fixtures.groups:s.upstream.calls.at(-1)!.url.endsWith('/tag/syncall')?fixtures.tags[1]:fixtures.ledger[1]));
+    await s.run(async({rebuild})=>{const job=await rebuild.rebuild(s.app.scope,['ledger','tags']);await rebuild.resume(job.id);expect(s.upstream.calls[0]!.url.endsWith('/tag/syncall')).toBe(true);expect(rebuild.getJob(s.app.scope,job.id)?.state).toBe('succeeded');});
+  });
   it('checks at 60 seconds, never slides the check on a read, and merges cold concurrent requests', async () => {
-    const s = await scenario(); s.upstream.respond(async () => new Response(fixtures.ledger[1]));
+    const s = await scenario(); s.upstream.respond(async () => new Response(s.upstream.calls.at(-1)!.url.endsWith('/tag/syncall')?fixtures.tags[1]:fixtures.ledger[1]));
     await s.run(async ({ freshness }) => {
       const first = await Promise.all([freshness.ensureFresh(s.app.scope, ['ledger'], 'normal'), freshness.ensureFresh(s.app.scope, ['ledger'], 'normal')]);
-      expect(first[0]?.job?.id).toBe(first[1]?.job?.id); expect(s.upstream.calls).toHaveLength(1);
+      expect(first[0]?.job?.id).toBe(first[1]?.job?.id); expect(s.upstream.calls.filter(call=>call.url.endsWith('/syncv2/pull'))).toHaveLength(1);
       s.clock.advance(40_000); expect((await freshness.ensureFresh(s.app.scope, ['ledger'], 'normal')).job).toBeNull();
-      expect(s.upstream.calls).toHaveLength(1);
+      expect(s.upstream.calls.filter(call=>call.url.endsWith('/syncv2/pull'))).toHaveLength(1);
       s.clock.advance(40_000); expect((await freshness.ensureFresh(s.app.scope, ['ledger'], 'normal')).freshness.stale).toBe(false);
-      expect(s.upstream.calls).toHaveLength(2);
+      expect(s.upstream.calls.filter(call=>call.url.endsWith('/syncv2/pull'))).toHaveLength(2);
     });
   });
   it('preserves the five-second completed-sync cooldown for manual incremental refresh and does not clear its cursor', async () => {
-    const s = await scenario(); s.upstream.respond(async () => new Response(fixtures.ledger[1]));
+    const s = await scenario(); s.upstream.respond(async () => new Response(s.upstream.calls.at(-1)!.url.endsWith('/tag/syncall')?fixtures.tags[1]:fixtures.ledger[1]));
     await s.run(async ({ freshness }) => {
       await freshness.ensureFresh(s.app.scope, ['ledger'], 'normal');
       s.clock.advance(4000); expect((await freshness.ensureFresh(s.app.scope, ['ledger'], 'manual-incremental')).job).toBeNull();
       s.clock.advance(1001); await freshness.ensureFresh(s.app.scope, ['ledger'], 'manual-incremental');
-      expect(s.upstream.calls).toHaveLength(2);
-      expect(parseWire(new URLSearchParams(s.upstream.calls[1]?.body).get('lasttimes')!)).toEqual(parseWire('{"-1":201}'));
+      expect(s.upstream.calls.filter(call=>call.url.endsWith('/syncv2/pull'))).toHaveLength(2);
+      expect(parseWire(new URLSearchParams(s.upstream.calls.filter(call=>call.url.endsWith('/syncv2/pull'))[1]?.body).get('lasttimes')!)).toEqual(parseWire('{"-1":201}'));
     });
   });
   it('does not let a single bill receipt at t50 postpone the collection check at t65', async () => {
-    const s = await scenario(); s.upstream.respond(async () => new Response(fixtures.ledger[1]));
+    const s = await scenario(); s.upstream.respond(async () => new Response(s.upstream.calls.at(-1)!.url.endsWith('/tag/syncall')?fixtures.tags[1]:fixtures.ledger[1]));
     await s.run(async ({ freshness, coordinator }) => {
       await freshness.ensureFresh(s.app.scope, ['ledger'], 'normal');
       s.clock.advance(50_000); expect((await coordinator.submit({ scope: s.app.scope, action: 'test.write', input: {}, requestId: 'write-at-50' })).state).toBe('succeeded');
-      expect(s.upstream.calls).toHaveLength(1);
+      expect(s.upstream.calls.filter(call=>call.url.endsWith('/syncv2/pull'))).toHaveLength(1);
       s.clock.advance(15_000); await freshness.ensureFresh(s.app.scope, ['ledger'], 'normal');
-      expect(s.upstream.calls).toHaveLength(2);
+      expect(s.upstream.calls.filter(call=>call.url.endsWith('/syncv2/pull'))).toHaveLength(2);
     });
   });
   it('retains old data on an expired check failure, stops retries, and keeps its successful revision when no data changes', async () => {

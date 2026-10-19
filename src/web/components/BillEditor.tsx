@@ -43,6 +43,14 @@ export function BillEditor({ options, bill, onComplete }: { options: LedgerOptio
     });
     return () => { active = false; mounted.current = false; };
   }, [key,loadAttempt]);
+  useEffect(()=>{
+    if(!loaded||operationId||!options)return;
+    setDraft(current=>{
+      if(current.kind!=='create')return current;
+      const defaults={...(!current.fields.bookId&&options.books[0]?{bookId:options.books[0].id}:{}),...(!current.fields.categoryId&&options.categories[0]?{categoryId:options.categories[0].id}:{})};
+      return Object.keys(defaults).length?{...current,fields:{...current.fields,...defaults}}:current;
+    });
+  },[options,loaded,operationId]);
   useEffect(() => {
     if (!loaded || operationId || busy) return;
     const timer = setTimeout(() => { void persist(draft); }, 400);

@@ -1,6 +1,6 @@
 import {resourceExisted} from '../../operations/identity';
 import type { MutationHandler, OperationContext, PreparedMutation } from '../../operations/contract';
-import { asBillObject, billExtra, moneyText, numericText, positiveBillId } from '../../shared/bill-wire';
+import { asBillObject, sameBillReferences, billExtra, moneyText, numericText, positiveBillId } from '../../shared/bill-wire';
 import { stringifyWire } from '../../shared/wire-json';
 import { restoreBillInput } from '../ledger/write';
 import { assetDeleteSchema, assetReorderSchema, assetVisibleSchema, debtFinishSchema } from './contract';
@@ -97,7 +97,7 @@ export function createAssetMutationHandler(dependencies: { reconcileLedger?: (ct
       if (bill) {
         const source = asBillObject(bill.raw), extra = billExtra(source), curr = extra.curr == null ? null : asBillObject(extra.curr), delta = moneyText(p.delta), positive = compareMoney(delta, '0') > 0;
         const actual = curr && typeof curr.ts === 'string' && curr.ts ? moneyText(curr.tv) : bill.money, expected = positive ? delta : delta.slice(1), difference = asBillObject(p.difference);
-        if (bill.type !== (positive ? 1 : 0) || compareMoney(actual, expected) !== 0 || numericText(source.cateid, '') !== numericText(difference.cateid, '') || numericText(extra.flag, '0') !== numericText(difference.billflag, '0') || difference.remark !== undefined && source.remark !== difference.remark) return assetError('ASSET_DIFFERENCE_RECEIPT_INVALID', '差额账单的金额、类型、分类或标记与本次选择不一致');
+        if (bill.type !== (positive ? 1 : 0) || compareMoney(actual, expected) !== 0 || numericText(source.cateid, '') !== numericText(difference.cateid, '') || numericText(extra.flag, '0') !== numericText(difference.billflag, '0') || difference.remark !== undefined && source.remark !== difference.remark || Array.isArray(difference.images)&&!sameBillReferences(source.images,difference.images.map(value=>String(value)))) return assetError('ASSET_DIFFERENCE_RECEIPT_INVALID', '差额账单的金额、类型、分类或标记与本次选择不一致');
       }
       cache.confirmResources(p.scope, 'assets', [{ id: p.id, kind: 'asset', raw }]);
       if (bill) { const ledger = ctx.repository.dataset(p.scope, 'ledger'); if (!ledger) return assetError('DATASET_MISSING', '差额账单的数据集尚未准备'); ctx.repository.applyPage(p.scope, ledger.id, { upserts: [bill], deletes: [], resources: [], pageState: ctx.repository.syncState(p.scope, 'ledger', ledger.id)?.pageState ?? null }); }

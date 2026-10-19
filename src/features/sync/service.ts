@@ -1,4 +1,6 @@
 import type { ActorScope, Clock, Id } from '../../shared/model';
+import {ResourceCache} from '../../storage/cache';
+import {tagRowsKey,tagCatalogKey} from '../tags/source';
 import type { Repository } from '../../storage/database';
 import type { QianjiClient } from '../../protocol/client';
 import type { Coordinator } from '../../actor/coordinator';
@@ -45,7 +47,7 @@ export class SyncService {
     this.dependencies.repository.assertScope(scope);
     return this.dependencies.repository.sql.exec<SyncRow>('SELECT * FROM sync_jobs WHERE uid=? AND id=?', scope.uid, id).toArray()[0] ?? null;
   }
-  async start(input: SyncInput): Promise<JobView> {
+  async start(input: SyncInput,prerequisiteTagJobId?:Id): Promise<JobView> {
     const parsed = syncInputSchema.safeParse(input);
     if (!parsed.success) throw new DomainError('INVALID_SYNC_INPUT', '同步参数无效');
     const { repository, connection, coordinator, clock } = this.dependencies;
@@ -72,7 +74,7 @@ export class SyncService {
         const root = wireObject(cursor)['-1'];
         full = root == null || BigInt(integerText(root)) <= 0n;
       }
-      const checkpoint: SyncCheckpoint = { scope, datasetId, startCursor: cursor, collectedTimes: {}, bookId: '-1', pageOffset: '0', pageSign: '', tagPage: 0, full };
+      const checkpoint: SyncCheckpoint = { scope, datasetId, startCursor: cursor, collectedTimes: {}, bookId: '-1', pageOffset: '0', pageSign: '', tagPage: 0, full,...(input.domain==='ledger'&&prerequisiteTagJobId?{prerequisiteTagJobId}:{}) };
       const id = crypto.randomUUID();
       repository.sql.exec("INSERT INTO sync_jobs(id,uid,connection_epoch,domain,mode,state,checkpoint,started_ms) VALUES (?,?,?,?,?,'running',?,?)", id, scope.uid, scope.connectionEpoch, input.domain, input.mode,
         stringifyWire({ ...checkpoint, scope: { ...scope } }), clock.nowMs()).toArray();
@@ -118,6 +120,11 @@ export class SyncService {
     try {
       const checkpoint = parseCheckpoint(row.checkpoint);
       repository.assertScope(checkpoint.scope);
+      if(checkpoint.prerequisiteTagJobId){
+        const tag=this.getJob(scope,checkpoint.prerequisiteTagJobId);if(!tag||tag.domain!=='tags')throw new DomainError('SYNC_DEPENDENCY_INVALID','账单同步的标签前置任务不存在');
+        if(tag.state==='running')await this.resume(tag.id);
+        if(this.getJob(scope,tag.id)?.state==='running'){coordinator.jobs.put(id,scope,'sync',{jobId:id});return;}
+      }
       // Bounded invocation. The persisted checkpoint continues through the shared alarm.
       for (let chunk = 0; chunk < 2; chunk++) {
         if (row.pages >= (row.domain === 'ledger' ? 200 : 40)) {
@@ -162,7 +169,7 @@ export class SyncService {
         repository.transaction(() => {
           repository.assertScope(checkpoint.scope);
           repository.applyPage(scope, checkpoint.datasetId, { ...page, complete, ...(complete ? { cursor, validatedAt: clock.nowIso() } : {}) }, row!.domain as SyncInput['domain']);
-          if (complete && !checkpoint.ownerJobId) repository.switchDataset(scope, row!.domain as SyncInput['domain'], checkpoint.datasetId, cursor);
+          if (complete && !checkpoint.ownerJobId) {repository.switchDataset(scope, row!.domain as SyncInput['domain'], checkpoint.datasetId, cursor);if(row!.domain==='tags'){const cache=new ResourceCache(repository,clock);cache.publishSnapshot(scope,tagRowsKey,['tag']);cache.invalidateSource(scope,tagCatalogKey);}}
           repository.sql.exec('UPDATE sync_jobs SET state=?,pages=pages+1,changed_records=changed_records+?,checkpoint=?,finished_ms=? WHERE id=?', complete ? 'succeeded' : 'running', received,
             stringifyWire({ ...checkpoint, scope: { ...checkpoint.scope } }), complete ? clock.nowMs() : null, id).toArray();
           if (complete) coordinator.jobs.remove(id);

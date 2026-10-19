@@ -63,7 +63,7 @@ export class Repository {
       for (const resource of page.resourceDeletes ?? []) {
         const deleted = this.sql.exec('DELETE FROM resources WHERE uid=? AND domain=? AND dataset_id=? AND kind=? AND id=?', scope.uid, domain, datasetId, resource.kind, resource.id);
         deleted.toArray(); changed = deleted.rowsWritten > 0 || changed;
-        this.sql.exec('DELETE FROM source_members WHERE uid=? AND domain=? AND kind=? AND resource_id=?', scope.uid, domain, resource.kind, resource.id).toArray();
+        this.sql.exec('DELETE FROM source_members WHERE uid=? AND domain=? AND kind=? AND resource_id=? AND query_key IN (SELECT query_key FROM source_queries WHERE uid=? AND domain=? AND dataset_id=?)', scope.uid, domain, resource.kind, resource.id, scope.uid, domain, datasetId).toArray();
       }
       for (const id of page.deletes) {
         this.sql.exec("DELETE FROM bill_relations WHERE uid=? AND domain='ledger' AND dataset_id=? AND bill_id=?", scope.uid, datasetId, id).toArray();

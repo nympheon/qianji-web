@@ -18,6 +18,7 @@ export interface SyncCheckpoint {
   scope: ActorScope; datasetId: Id; startCursor: WireJson; collectedTimes: WireJson;
   bookId: Id; pageOffset: Id; pageSign: string; tagPage: number; full: boolean;
   ownerJobId?: Id;
+  prerequisiteTagJobId?:Id;
 }
 export type FreshnessMode = 'normal' | 'manual-incremental';
 export interface FreshnessResult { freshness: Freshness; job: JobView | null; jobs: JobView[] }

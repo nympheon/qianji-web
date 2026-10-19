@@ -32,6 +32,10 @@ function sourceAmount(raw: BillObject): string {
   const extra = billExtra(raw), curr = extra.curr == null ? null : asBillObject(extra.curr);
   return curr ? moneyText(curr.sv) : moneyText(raw.money);
 }
+function sourceNetAmount(raw:BillObject):string{
+  const extra=billExtra(raw),fee=moneyText(extra.transfee);
+  return extra.curr==null?moneyText(raw.money):subtractMoney(sourceAmount(raw),fee.startsWith('-')?fee.slice(1):fee);
+}
 function matchesIntent(raw: BillObject, wire: BillObject): boolean {
   if (Number(numericText(raw.time, '0')) !== Number(numericText(wire.time, '0')) || compareMoney(sourceAmount(raw), moneyText(wire.money)) !== 0
     || numericText(raw.assetid, '-1') !== numericText(wire.assetid, '-1')) return false;
@@ -98,8 +102,9 @@ export function createRefundMutationHandler(dependencies: { baseCurrency?: () =>
       if (!old && billLinks(rawSource).some((link) => link.kind === 'refund') && nativeRefundCount(rawSource) >= 25) return fail('REFUND_COUNT_LIMIT', '该源账单已达到 APK 的25次退款上限');
       const categoryId = positiveBillId(rawSource.cateid);
       if (!categoryId || !repository.readResources(scope, 'category', { domain: 'ledger', ids: [categoryId] }).items.length) return fail('CATEGORY_NOT_LOADED', '源账单分类尚未载入');
-      let amount = input.money ?? (rawOld ? sourceAmount(rawOld) : subtractMoney(source.money, nativeRefundTotal(rawSource)));
-      if (!rawOld && compareMoney(amount, '0') <= 0) amount = subtractMoney(source.money, nativeRefundTotal(rawSource));
+      const remaining=subtractMoney(sourceNetAmount(rawSource),nativeRefundTotal(rawSource));
+      let amount = input.money ?? (rawOld ? sourceAmount(rawOld) : remaining);
+      if (!rawOld && compareMoney(amount, '0') <= 0) amount = remaining;
       if (compareMoney(amount, '0') <= 0) return fail('REFUND_AMOUNT_INVALID', '退款金额必须大于零');
       const baseCurrency = dependencies.baseCurrency?.() ?? 'CNY';
       const ids = [...new Set([input.assetId, rawOld ? positiveBillId(rawOld.assetid) : null].filter((value): value is string => !!value))];

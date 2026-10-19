@@ -37,7 +37,7 @@ export class RebuildService {
     const { repository, connection, coordinator, clock } = this.dependencies;
     repository.assertScope(scope);
     if (connection.view().state !== 'connected') throw new DomainError('CONNECTION_REQUIRED', '请先连接钱迹');
-    const selected = [...new Set(domains)].sort();
+    const selected = [...new Set(domains)].sort((a,b)=>a===b?0:a==='tags'?-1:1);
     if (selected.length === 0 || selected.some((domain) => domain !== 'ledger' && domain !== 'tags')) throw new DomainError('INVALID_REBUILD_SCOPE', '当前重建范围为账单和标签');
     const id = await coordinator.jobs.persistWithWakeup(() => {
       repository.assertScope(scope);

@@ -51,7 +51,7 @@ function aggregate(items: readonly OperationItem[]): OperationState {
   return 'uncertain';
 }
 function encodePrepared(prepared: PreparedMutation): string {
-  return stringifyWire({ ...(prepared.identityBaseline?{identityBaseline:{...prepared.identityBaseline}}:{}), payload: prepared.payload, affectedIds: [...prepared.affectedIds], affectedDomains: [...prepared.affectedDomains ?? []], items: prepared.items.map((item) => ({ id: item.id, affectedIds: [...item.affectedIds], ...(item.assetEffects ? { assetEffects: item.assetEffects.map((effect) => ({ ...effect })) } : {}) })),...(prepared.received?{received:{applied:prepared.received.applied,reply:{...prepared.received.reply}}}:{}) });
+  return stringifyWire({ ...(prepared.identityBaseline?{identityBaseline:{...prepared.identityBaseline}}:{}), payload: prepared.payload, affectedIds: [...prepared.affectedIds], affectedDomains: [...prepared.affectedDomains ?? []], items: prepared.items.map((item) => ({ id: item.id, affectedIds: [...item.affectedIds], ...(item.assetEffects ? { assetEffects: item.assetEffects.map((effect) => ({ ...effect })) } : {}) })),...(prepared.batchReceipts?{batchReceipts:prepared.batchReceipts.map(proof=>({...proof,reply:{...proof.reply}}))}:{}),...(prepared.received?{received:{...prepared.received,reply:{...prepared.received.reply}}}:{}) });
 }
 
 export class OperationStore {
@@ -104,17 +104,20 @@ export class OperationStore {
     }
     return this.get(operation.scope, operation.id)!;
   }
-  saveReceived(operation:StoredOperation,reply:ProtocolReply):StoredOperation{
+  saveReceived(operation:StoredOperation,reply:ProtocolReply,batchIds?:readonly Id[],sentBatch?:WireJson):StoredOperation{
     this.repository.assertScope(operation.scope);
     if(!operation.prepared||operation.sendCount!==1)throw new DomainError('RECEIPT_WITHOUT_SEND','回执缺少已发送操作');
-    rejectCredentials(reply.data);
-    const prepared:PreparedMutation={...operation.prepared,received:{applied:false,reply:{ec:reply.ec,data:reply.data,httpStatus:String(reply.httpStatus),...(reply.hasMore===undefined?{}:{hasMore:reply.hasMore})}}};
+    rejectCredentials(reply.data);if(sentBatch!==undefined)rejectCredentials(sentBatch);
+    if(batchIds&&(!batchIds.length||batchIds.length>200||new Set(batchIds).size!==batchIds.length||batchIds.some(id=>!operation.items.some(item=>item.id===id))||(operation.prepared.batchReceipts?.length??0)>=5))throw new DomainError('RECEIPT_BATCH_INVALID','批次回执范围无效');
+    const received={applied:false,reply:{ec:reply.ec,data:reply.data,httpStatus:String(reply.httpStatus),...(reply.hasMore===undefined?{}:{hasMore:reply.hasMore})},...(batchIds?{batchIds:[...batchIds],...(sentBatch===undefined?{}:{sentBatch})}:{})};
+    const prepared:PreparedMutation={...operation.prepared,received,...(batchIds?{batchReceipts:[...operation.prepared.batchReceipts??[],received]}:{})};
     this.repository.sql.exec('UPDATE operations SET prepared=?,updated_ms=? WHERE id=?',encodePrepared(prepared),this.clock.nowMs(),operation.id).toArray();
     return this.get(operation.scope,operation.id)!;
   }
   markReceiptApplied(operation:StoredOperation,replayed=false):StoredOperation{
     if(!operation.prepared?.received)return operation;
-    const prepared:PreparedMutation={...operation.prepared,received:{...operation.prepared.received,applied:true}};
+    const received={...operation.prepared.received,applied:true},history=operation.prepared.batchReceipts;
+    const prepared:PreparedMutation={...operation.prepared,received,...(received.batchIds&&history?.length?{batchReceipts:[...history.slice(0,-1),received]}:{})};
     this.repository.sql.exec('UPDATE operations SET prepared=?,updated_ms=? WHERE id=?',encodePrepared(prepared),this.clock.nowMs(),operation.id).toArray();
     if(replayed)for(const domain of new Set(prepared.affectedDomains??[])){
       this.repository.bumpSourceGeneration(operation.scope,domain);

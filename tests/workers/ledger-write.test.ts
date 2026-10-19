@@ -41,6 +41,15 @@ async function scenario() {
 }
 
 describe('native bill writes', () => {
+  it.each([1,2])('retains every original batch receipt before a checkpoint interruption in batch %s and replays only its proof',async interrupted=>{
+    const s=await scenario();s.upstream.respond(async()=>s.receipt(s.sent().at(-1)!.changed.map(row=>numericText(row.id,''))));
+    const cmd=s.command('ledger.create',{bills:Array.from({length:interrupted===1?1:201},()=>s.newInput())});
+    const result=await s.app.repository(async repository=>{const handler=createLedgerMutationHandler(),wrapped={...handler,send:async(prepared:Parameters<typeof handler.send>[0],ctx:Parameters<typeof handler.send>[1])=>handler.send(prepared,{...ctx,checkpoint:(next,update)=>{if(s.upstream.calls.length===interrupted)throw new Error('checkpoint interrupted');ctx.checkpoint!(next,update);}})},c=new Coordinator({repository,clock:s.clock,client:s.upstream.client},new Map([['ledger.create',wrapped]])),result=await c.submit(cmd),stored=c.store.get(s.app.scope,result.id)!;
+      expect(stored.prepared?.received?.applied).toBe(false);expect(stored.prepared?.batchReceipts).toHaveLength(interrupted);expect(stored.prepared?.batchReceipts?.[0]).toHaveProperty('sentBatch.0.wire',s.sent()[0]!.changed[0]);return result;
+    });
+    expect(result.items.filter(item=>item.state==='succeeded')).toHaveLength(interrupted===1?0:200);await s.app.restart();
+    const recovered=await s.run(c=>c.reconcileOperation(s.app.scope,result.id));expect(recovered.state).toBe('succeeded');expect(s.upstream.calls).toHaveLength(interrupted);
+  });
   it('reconciles a lost no-asset write when native sync omits unbound asset ID sentinels and zero extras',async()=>{
     const s=await scenario();s.upstream.respond(async()=>{throw new Error('accepted response lost');});
     await s.app.repository(async repository=>{

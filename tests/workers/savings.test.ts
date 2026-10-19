@@ -26,6 +26,15 @@ async function setup() {
   return { app, clock, upstream, run, sends: () => sends, lose: () => { loseDeposit = true; }, ledger: () => { ledgerReady = true; }, withTransaction: () => { current = { ...plan(), transactions: [{ transid: 'trans-opaque', planid: 'plan-opaque', userid: app.scope.uid, amount: '100', time: 1770000000, billid: '600', remark: '' }] }; } };
 }
 const deposit = { planId: 'plan-opaque', expectedCurrency: 'CNY', amount: '100', remark: '', timeSec: 1770000000 };
+it.each(['images','tags'])('retains a proven deposit but does not confirm its linked bill with omitted %s',async missing=>{
+ const s=await setup(),key='_'+'f'.repeat(32),tx={transid:'metadata-tx',planid:'plan-opaque',userid:s.app.scope.uid,amount:'100',time:1770000000,remark:'',billid:'600'};let accepted=false,matching=false;
+ const bill=()=>({id:'600',userid:s.app.scope.uid,bookid:'1',type:2,fromid:'10',targetid:'20',money:'100',time:1770000000,...(matching||missing!=='images'?{images:[key]}:{}),extra:{...(matching||missing!=='tags'?{tags:['wanted']}:{})}});
+ s.upstream.respond(async()=>{if(s.upstream.calls.at(-1)!.url.endsWith('/list'))return new Response(stringifyWire({ec:200,data:{list:[{...plan(),transactions:accepted?[tx]:[]}]}}));accepted=true;return new Response(stringifyWire({ec:200,data:{transaction:tx,bill:bill()}}));});
+ await s.app.repository(async repository=>{const cache=new ResourceCache(repository,s.clock);cache.confirmResources(s.app.scope,'attachments',[{id:key,kind:'attachment',raw:{key,purpose:'bill',proof:'qiniu-receipt'}}]);cache.confirmResources(s.app.scope,'tags',[{id:'wanted',kind:'tag',raw:{id:'wanted',name:'wanted'}}]);
+ const handler=createSavingsMutationHandler({refreshLedger:async()=>{repository.applyPage(s.app.scope,'ledger',{upserts:[projectBill(bill())],deletes:[],resources:[],pageState:null,complete:true,validatedAt:s.clock.nowIso()});return true;}}),c=new Coordinator({repository,clock:s.clock,client:s.upstream.client},new Map([['savings.deposit',handler]]));const result=await c.submit({action:'savings.deposit',scope:s.app.scope,requestId:'missing-'+missing,input:{...deposit,billInfo:{bookId:'1',outAssetId:'10',inAssetId:'20',images:[key],tagIds:['wanted']}}});
+ expect(result.state).toBe('partial');expect(result.items.map(item=>item.state)).toEqual(['succeeded','uncertain']);expect((await c.reconcileOperation(s.app.scope,result.id)).state).toBe('partial');matching=true;expect((await c.reconcileOperation(s.app.scope,result.id)).state).toBe('succeeded');expect(s.upstream.calls.filter(call=>call.url.endsWith('/deposit'))).toHaveLength(1);
+ });
+});
 it('rejects nonzero linked savings fees before sending because the native endpoint omits them',async()=>{
  const s=await setup(),op=await s.run(c=>c.submit({action:'savings.deposit',scope:s.app.scope,requestId:'unsupported-saving-fee',input:{...deposit,billInfo:{bookId:'1',outAssetId:'10',inAssetId:'20',currency:{srcSymbol:'CNY',srcValue:'100',targetSymbol:'CNY',targetValue:'100',baseSymbol:'CNY',baseValue:'100',srcFee:'1'}}}}));expect(op.error?.code).toBe('SAVINGS_FEE_UNSUPPORTED');expect(s.sends()).toBe(0);
 });

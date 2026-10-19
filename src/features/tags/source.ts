@@ -8,6 +8,7 @@ import { assetError } from '../assets/model';
 import { parseTagGroups } from '../sync/incremental';
 import { billVersion } from '../ledger/write';
 import type { TagView, TagGroupView } from './contract';
+export const tagRowsKey:CacheKey={domain:'tags',queryKey:'rows:all',resourceKind:'tag'};
 export const tagCatalogKey: CacheKey = { domain: 'tags', queryKey: 'catalog:all' };
 export function tagView(raw: BillObject): TagView { const id = wireId(raw.id ?? null), status = numericText(raw.status, '1'); if (typeof raw.name !== 'string' || !['1', '2'].includes(status)) return assetError('TAG_RESPONSE_INVALID', '标签名称或状态无法核对'); return { id, name: raw.name, groupId: raw.groupid == null || raw.groupid === '' ? null : wireId(raw.groupid), color: typeof raw.color === 'string' && /^(?:[\da-f]{6}|[\da-f]{8})$/i.test(raw.color) ? raw.color : null, archived: status === '2', sort: Number(numericText(raw.sort, '0')), editVersion: billVersion(raw) }; }
 export function tagGroupView(raw: BillObject): TagGroupView { if (typeof raw.name !== 'string') return assetError('TAG_GROUP_INVALID', '标签分组缺少名称'); return { id: wireId(raw.id ?? null), name: raw.name, sort: Number(numericText(raw.sort, '0')), editVersion: billVersion(raw) }; }

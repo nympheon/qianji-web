@@ -182,7 +182,7 @@ export function createLedgerMutationHandler(dependencies: { baseCurrency?:()=>st
       return encode({ scope, entries, preparedAt: String(ctx.clock.nowMs()) });
     },
     send: async (prepared, ctx) => {
-      if (!ctx.checkpoint) return fail('BILL_EXECUTION_REQUIRED', '账单写入需要持久操作上下文');
+      if (!ctx.checkpoint||!ctx.captureReceipt) return fail('BILL_EXECUTION_REQUIRED', '账单写入需要持久操作上下文');
       const payload = decode(prepared), used = new Set(prepared.affectedIds);
       let last: ProtocolReply = { ec: '200', data: {}, httpStatus: 200 };
       for (let iteration = 0; iteration < 5; iteration++) {
@@ -190,6 +190,7 @@ export function createLedgerMutationHandler(dependencies: { baseCurrency?:()=>st
         if (!batch.length) break;
         const v = stringifyWire({ bills: { changelist: batch.filter((entry) => entry.mode !== 'delete').map((entry) => entry.wire), dellist: batch.filter((entry) => entry.mode === 'delete').map((entry) => entry.wire.id!) } });
         last = await ctx.client.request('bill.syncall', { uid: payload.scope.uid, v }, payload.scope);
+        ctx.captureReceipt(last,batch.map(entry=>entry.logicalId),batch.map(entry=>({logicalId:entry.logicalId,mode:entry.mode,wire:entry.wire,done:false})));
         const receipt = parseReceipt(last, batch, payload.scope), updates: ItemUpdate[] = [], idMap: Record<string, string> = {};
         for (const entry of batch) {
           const id = numericText(entry.wire.id, '');
@@ -211,8 +212,12 @@ export function createLedgerMutationHandler(dependencies: { baseCurrency?:()=>st
       }
       return last;
     },
-    // Each batch has already atomically published its receipt and canonical rows.
-    applyReceipt: () => ({ items: [] }),
+    // Historical reparse proves only the saved sent batch; the caller rolls canonical writes back.
+    applyReceipt: (prepared,reply,ctx) => {
+      const ids=prepared.received?.batchIds;if(!ids)return {items:[]};const payload=decode(prepared.received?.sentBatch?{...prepared,payload:{...asBillObject(prepared.payload),entries:prepared.received.sentBatch}}:prepared),batch=ids.map(id=>payload.entries.find(entry=>entry.logicalId===id));
+      if(batch.some(entry=>!entry))return fail('BILL_RECEIPT_INVALID','持久批次与原逻辑项目不匹配');const entries=batch as Entry[],receipt=parseReceipt(reply,entries,payload.scope),update=applyBatch(payload,entries,receipt,ctx);
+      return {items:[...update.items,...entries.filter(entry=>receipt.conflicts.has(numericText(entry.wire.id,''))).map(entry=>({id:entry.logicalId,state:'failed' as const,error:{code:'EXISTING_ID_REJECTED',message:'钱迹明确拒绝此ID；历史核查不再次发送'}}))]};
+    },
     reconcile: async (operation, ctx) => {
       if (!operation.prepared) return { items: [] };
       const payload = decode(operation.prepared);

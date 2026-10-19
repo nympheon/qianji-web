@@ -34,15 +34,18 @@ export async function runMutation(operation: StoredOperation, handler: MutationH
   // This durable marker is deliberately conservative, even if a crash occurs before fetch.
   operation = repository.transaction(() => store.markSending(operation));
   const currentOperation = () => store.get(operation.scope, operation.id)!;
+  let batchCaptured=false;
   const sendContext: OperationContext = { ...context, currentOperation,
-    checkpoint: (prepared, update) => { repository.transaction(() => store.checkpoint(currentOperation(), prepared, typeof update === 'function' ? update() : update)); },
+    captureReceipt:(reply,batchIds,sentBatch)=>{store.saveReceived(currentOperation(),reply,batchIds,sentBatch);batchCaptured=true;},
+    checkpoint: (prepared, update) => { repository.transaction(() => {const current=currentOperation(),proof=current.prepared;const saved=store.checkpoint(current,{...prepared,...(proof?.received?{received:proof.received}:{}),...(proof?.batchReceipts?{batchReceipts:proof.batchReceipts}:{})},typeof update === 'function' ? update() : update);if(proof?.received?.batchIds)store.markReceiptApplied(saved);}); },
   };
   try {
     const reply = await handler.send(operation.prepared!, sendContext);
     repository.assertScope(operation.scope);
     operation = currentOperation();
-    operation = store.saveReceived(operation,reply);
-    operation = repository.transaction(() => store.markReceiptApplied(store.apply(operation, handler.applyReceipt(operation.prepared!, reply, {...context,client:context.client.asReadOnly()}))));
+    if(!batchCaptured)operation = store.saveReceived(operation,reply);
+    if(!batchCaptured||!operation.prepared?.received?.applied)operation = repository.transaction(() => store.markReceiptApplied(store.apply(operation, handler.applyReceipt(operation.prepared!, reply, {...context,client:context.client.asReadOnly()}))));
+    else operation=store.apply(operation,{items:[]});
   } catch (error) {
     operation = currentOperation();
     const knownRejected = error instanceof ProtocolError && error.certainty !== 'unknown';

@@ -48,7 +48,7 @@ describe('stateless MCP transport', () => {
   it('returns confirmed cached bills and one durable running job while the upstream read is held', async () => {
     const app = await createTestApp(), background: Promise<unknown>[] = [];
     let finish!: () => void;
-    const upstream = vi.spyOn(globalThis, 'fetch').mockImplementationOnce(async () => new Response('{"ec":200,"data":{"user":{"id":"slow-user"},"token":"NON_REAL","books":[]}}')).mockImplementationOnce(() => new Promise((resolve) => { finish = () => resolve(new Response('{"ec":200,"data":{"bookid":-1,"pageoffset":0,"pagesign":"","hasmore":0,"count":0,"lasttimes":{"-1":100},"changes":[],"deletes":[],"categories":[]}}')); }));
+    const upstream = vi.spyOn(globalThis, 'fetch').mockImplementationOnce(async () => new Response('{"ec":200,"data":{"user":{"id":"slow-user"},"token":"NON_REAL","books":[]}}')).mockImplementationOnce(async()=>Response.json({ec:200,data:{update:[],delete:[],hasmore:false}})).mockImplementationOnce(() => new Promise((resolve) => { finish = () => resolve(new Response('{"ec":200,"data":{"bookid":-1,"pageoffset":0,"pagesign":"","hasmore":0,"count":0,"lasttimes":{"-1":100},"changes":[],"deletes":[],"categories":[]}}')); }));
     await app.repository(async (repo) => {
       const ctx = createActorContext(repo.storage, { QIANJI_CREDENTIAL_KEY: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=' }, { waitUntil: (promise) => { background.push(promise); } });
       await ctx.connection.login({ account: 'person@example.test', password: 'NON_REAL' }); const scope = ctx.connection.scope()!;
@@ -56,7 +56,7 @@ describe('stateless MCP transport', () => {
       const registry = new AppRegistry(ctx), first = await registry.invoke('ledger.list', {}), second = await registry.invoke('ledger.list', {});
       expect(first).toMatchObject({ status: 'running', jobId: expect.any(String), data: { items: [{ money: '90' }] } }); expect(second.jobId).toBe(first.jobId);
       expect(await registry.invoke('ledger.statistics', { currency: 'CNY' })).toMatchObject({ status: 'running', jobId: first.jobId, data: null });
-      expect(await registry.invoke('sync.status', { jobId: first.jobId })).toMatchObject({ status: 'running', jobId: first.jobId }); expect(upstream).toHaveBeenCalledTimes(2);
+      expect(await registry.invoke('sync.status', { jobId: first.jobId })).toMatchObject({ status: 'running', jobId: first.jobId }); await vi.waitFor(()=>expect(upstream).toHaveBeenCalledTimes(3));
       finish(); await Promise.all(background);
       expect(await registry.invoke('ledger.list', {})).toMatchObject({ status: 'ready', freshness: { complete: true, stale: false } });
     });

@@ -28,6 +28,13 @@ async function setup() {
   return { app, clock, upstream, data, source, service, run };
 }
 describe('native budget configuration and progress', () => {
+  it('does not publish a same-scope old budget receipt as a successful new target',async()=>{
+    const s=await setup(),before=await s.service(v=>v.list(query));
+    const result=await s.run(c=>c.submit({action:'budget.submit',scope:s.app.scope,requestId:'stale-budget-ack',input:{...query,expectedVersion:before.editVersion,changes:[{categoryId:null,limit:'1100'}]}}));
+    expect(result.state).toBe('uncertain');expect(result.error?.code).toBe('BUDGET_RECEIPT_MISMATCH');
+    expect((await s.service(v=>v.list(query))).configurations.find(row=>row.categoryId===null)?.limit).toBe('1000');
+    expect(s.upstream.calls.filter(call=>call.url.endsWith('/submitv2'))).toHaveLength(1);
+  });
   it('rejects an effective zero total before sending after confirming the native API rejects that collection',async()=>{
     const s=await setup(),before=await s.service(v=>v.list(query));await s.app.repository(async repository=>{await expect(createBudgetMutationHandler().prepare({action:'budget.submit',scope:s.app.scope,requestId:'native-total-zero',input:{...query,expectedVersion:before.editVersion,changes:[{categoryId:null,limit:'0'}]}},{repository,clock:s.clock,client:s.upstream.client})).rejects.toMatchObject({code:'BUDGET_TOTAL_ZERO_UNSUPPORTED'});});expect(s.upstream.calls.some(call=>call.url.includes('/submitv2'))).toBe(false);
   });
@@ -65,8 +72,8 @@ describe('native budget configuration and progress', () => {
     const s = await setup(); s.data.list = []; await s.service((v) => v.list(query)); await s.service((v) => v.list(query)); expect(s.upstream.calls).toHaveLength(1); await s.service((v) => v.list({ ...query, range: '' })); await s.service((v) => v.list({ ...query, date: { kind: 'year', year: 2026 } })); expect(s.upstream.calls).toHaveLength(3); const form = new URLSearchParams(s.upstream.calls[0]!.body); expect(JSON.parse(form.get('flts')!)).toEqual({ month: '2026,10' }); expect(form.get('range')).toBe('m10');
   });
   it('applies the authoritative returned budget collection rather than copying submitted values', async () => {
-    const s = await setup(), prior = await s.service((v) => v.list(query)); s.upstream.respond(async () => new Response(stringifyWire({ ec: 200, data: s.upstream.calls.at(-1)!.url.includes('/submitv2') ? { ...s.data, list: [{ ...config, money: '1200', serverUnknown: 'keep' }] } : s.data })));
-    const op = await s.run((c) => c.submit({ action: 'budget.submit', requestId: 'budget-write', scope: s.app.scope, input: { ...query, expectedVersion: prior.editVersion, changes: [{ categoryId: null, limit: '1100' }] } })); expect(op.state).toBe('succeeded'); const after = await s.service((v) => v.list(query)); expect(after.configurations[0]!.limit).toBe('1200'); const form = new URLSearchParams(s.upstream.calls.find((call) => call.url.includes('/submitv2'))!.body), raw = asBillObject((parseWire(form.get('changelist')!) as import('../../src/shared/wire-json').WireJson[])[0]); expect(numericText(raw.money, '')).toBe('1100'); expect(raw.category).toBeUndefined(); expect(raw.createtime).toBeUndefined();
+    const s = await setup(), prior = await s.service((v) => v.list(query)); s.upstream.respond(async () => new Response(stringifyWire({ ec: 200, data: s.upstream.calls.at(-1)!.url.includes('/submitv2') ? { ...s.data, list: [{ ...config, money: '1100.00', serverUnknown: 'keep' }] } : s.data })));
+    const op = await s.run((c) => c.submit({ action: 'budget.submit', requestId: 'budget-write', scope: s.app.scope, input: { ...query, expectedVersion: prior.editVersion, changes: [{ categoryId: null, limit: '1100' }] } })); expect(op.state).toBe('succeeded'); const after = await s.service((v) => v.list(query)); expect(after.configurations[0]!.limit).toBe('1100.00'); const form = new URLSearchParams(s.upstream.calls.find((call) => call.url.includes('/submitv2'))!.body), raw = asBillObject((parseWire(form.get('changelist')!) as import('../../src/shared/wire-json').WireJson[])[0]); expect(numericText(raw.money, '')).toBe('1100'); expect(raw.category).toBeUndefined(); expect(raw.createtime).toBeUndefined();
   });
   it('counts one spend at parent and child while keeping total100 and independent not-budget/statistics flags', async () => {
     const s = await setup(); s.data.list.push({ ...config, budgetid: '9002', flag: 2, cateid: 10, money: '500' }, { ...config, budgetid: '9003', flag: 2, cateid: 11, money: '300' });

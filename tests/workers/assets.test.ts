@@ -136,6 +136,11 @@ describe('native assets and balance changes', () => {
     const form = new URLSearchParams(s.upstream.calls[0]!.body), diff = asBillObject(parseWire(form.get('diffparams')!)); expect(numericText(diff.cateid, '')).toBe('2'); expect(numericText(diff.billflag, '')).toBe('1'); expect(diff.remark).toBe('difference');
     await s.app.repository((repo) => expect(repo.readBill(s.app.scope, '9007199254740999')?.money).toBe('20'));
   });
+  it('does not confirm a native balance difference receipt that omitted selected uploaded images',async()=>{
+    const s=await setup(),key='_'+'e'.repeat(32);await s.app.repository(repository=>new ResourceCache(repository,s.clock).confirmResources(s.app.scope,'attachments',[{id:key,kind:'attachment',raw:{key,purpose:'bill',proof:'qiniu-receipt'}}]));
+    s.upstream.respond(async()=>new Response(stringifyWire({ec:200,data:{asset:asset('10','120'),bill:{id:'9007199254740999',bookid:'1',type:1,money:'20',time:100,assetid:'10',userid:s.app.scope.uid,cateid:'2',extra:{flag:0}}}})));
+    const result=await s.run(c=>c.submit(s.command({recordDifference:true,difference:{categoryId:'2',countInStatistics:true,countInBudget:true,images:[key]}})));expect(result.state).toBe('uncertain');expect(result.error?.code).toBe('ASSET_DIFFERENCE_RECEIPT_INVALID');
+  });
   it('rejects a mismatched official difference amount without applying either resource', async () => {
     const s = await setup(); s.upstream.respond(async () => new Response(stringifyWire({ ec: 200, data: { asset: asset('10', '120'), bill: parseWire('{"id":9007199254740999,"bookid":1,"type":1,"money":999,"time":100,"assetid":10,"userid":"user-A","cateid":2}') } })));
     const result = await s.run((coordinator) => coordinator.submit(s.command({ recordDifference: true, difference: { categoryId: '2', countInStatistics: true, countInBudget: true } }))); expect(result.state).toBe('uncertain');

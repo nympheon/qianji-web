@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { detail, mockReadApp, ready } from './read-fixtures';
+import { detail, ledger, freshness, mockReadApp, ready } from './read-fixtures';
 import { join } from 'node:path';
 
 test('recovers the original submitted draft after reload and never suggests recreating an unknown write', async ({ page }, testInfo) => {
@@ -48,4 +48,18 @@ test('uses edit versions and displays explicit failure without changing the long
   await page.getByLabel('备注', { exact: true }).fill('修改备注'); await page.getByRole('button', { name: '保存账单', exact: true }).click();
   await expect(page.getByText('钱迹明确拒绝该 ID').first()).toBeVisible();
   expect(edited).toMatchObject({ bills: [{ id: '1792000000123100000', expectedVersion: 'a'.repeat(64) }] });
+});
+
+test('refreshes late category options after first sync while preserving an already open empty draft',async({page})=>{
+ await mockReadApp(page);let finished=false,optionsReads=0;
+ await page.route('**/api/actions',async route=>{const {action,input}=route.request().postDataJSON();
+  if(action==='capabilities.list'){await route.fulfill({json:ready([{action:'ledger.create',enabled:true,kind:'write'}])});return;}
+  if(action==='ledger.options'){optionsReads++;await route.fulfill({json:ready({books:finished?[{id:'10',name:'同步账本',visible:true}]:[],categories:finished?[{id:'50',name:'同步分类',parentId:null}]:[],tags:[],complete:finished})});return;}
+  if(action==='ledger.list'){await route.fulfill({json:finished?ready(ledger,freshness):{status:'running',data:{...ledger,items:[],rows:[]},freshness:{...freshness,complete:false},jobId:'first-sync'}});return;}
+  if(action==='sync.status'){finished=true;await route.fulfill({json:ready({id:'first-sync',state:'succeeded'})});return;}
+  if(action==='ledger.draft.save'){await route.fulfill({json:ready({draft:input.draft,operationId:null})});return;}
+  await route.fallback();
+ });
+ await page.goto('/bills');await page.getByRole('button',{name:'记一笔',exact:true}).click();await page.getByLabel('录入金额').fill('12');
+ await page.clock.runFor(2100);await expect(page.getByLabel('记账分类',{exact:true})).toContainText('同步分类');await expect(page.getByLabel('记账账本',{exact:true})).toContainText('同步账本');await expect(page.getByLabel('录入金额')).toHaveValue('12');expect(optionsReads).toBeGreaterThan(1);
 });

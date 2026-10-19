@@ -15,6 +15,11 @@ import { addMoney } from '../../src/shared/numbers';
 import { calculateBudget } from '../../src/features/budget/calculate';
 
 const sourceId = '1792000000123100001', childId = '1792000000123100010';
+it('defaults a foreign refund from the net source amount and subtracts previous refunds in that same currency',async()=>{
+ for(const prior of ['0','0.5']){const s=await setup(),raw={...asBillObject(source()),money:'12.6',assetid:10,extra:{curr:{ss:'USD',sv:2,ts:'CNY',tv:'12.6',bs:'CNY',bv:'12.6'},transfee:'-0.2',...(prior==='0'?{}:{rfds:{[childId]:prior}})}};
+  await s.app.repository(async repository=>{repository.applyPage(s.app.scope,'ledger',{upserts:[projectBill(raw)],deletes:[],resources:[],pageState:null});const amount=prior==='0'?'1.8':'1.3',prepared=await createRefundMutationHandler().prepare(s.command({expectedVersion:billVersion(raw),money:undefined,assetId:'10',currency:{srcSymbol:'USD',srcValue:amount,targetSymbol:'CNY',targetValue:'9.1',baseSymbol:'CNY',baseValue:'9.1'}}),{repository,clock:s.clock,client:s.upstream.client});expect(numericText(asBillObject(asBillObject(prepared.payload).wire).money,'')).toBe(amount);});
+ }
+});
 it('uses a null zero target for a foreign refund without an associated asset',async()=>{
  const s=await setup(),raw=asBillObject(source());raw.extra={curr:{ss:'USD',sv:100,ts:'CNY',tv:700,bs:'CNY',bv:700}};
  await s.app.repository(async repository=>{repository.applyPage(s.app.scope,'ledger',{upserts:[projectBill(raw)],deletes:[],resources:[],pageState:null});const handler=createRefundMutationHandler(),ctx={repository,clock:s.clock,client:s.upstream.client},command=s.command({expectedVersion:billVersion(raw),currency:{srcSymbol:'USD',srcValue:'30',targetSymbol:null,targetValue:'0',baseSymbol:'CNY',baseValue:'210'}});const prepared=await handler.prepare(command,ctx);expect(parseWire(String(asBillObject(asBillObject(prepared.payload).wire).currency))).toMatchObject({ss:'USD',ts:null});await expect(handler.prepare(s.command({expectedVersion:billVersion(raw),currency:{srcSymbol:'USD',srcValue:'30',targetSymbol:null,targetValue:'210',baseSymbol:'CNY',baseValue:'210'}}),ctx)).rejects.toMatchObject({code:'REFUND_CURRENCY_INVALID'});});

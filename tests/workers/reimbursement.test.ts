@@ -9,6 +9,7 @@ import { billVersion } from '../../src/features/ledger/write';
 import { Coordinator } from '../../src/actor/coordinator';
 import { createLedgerDeletionHandler } from '../../src/features/ledger/deletion';
 import { createReimbursableMutationHandler } from '../../src/features/ledger/reimbursement';
+import {ResourceCache} from '../../src/storage/cache';
 import { addMoney } from '../../src/shared/numbers';
 
 const a = '1792000000123100001', b = '1792000000123100002', ca = '1792000000123100011', cb = '1792000000123100012';
@@ -31,6 +32,13 @@ async function setup() {
   return { app, clock, upstream, sources, updated, command, run };
 }
 describe('native reimbursement allocation and receipt', () => {
+  it.each([false,true])('keeps reimbursement with missing images unknown until matching readonly proof (lost=%s)',async lost=>{
+    const s=await setup(),key='_'+'d'.repeat(32);if(lost)s.upstream.respond(async()=>{throw new Error('lost response');});
+    await s.app.repository(async repository=>{new ResourceCache(repository,s.clock).confirmResources(s.app.scope,'attachments',[{id:key,kind:'attachment',raw:{key,purpose:'bill',proof:'qiniu-receipt'}}]);let matching=false;
+      const handler=createReimbursementMutationHandler({reconcileSource:async()=>{s.clock.advance(1);repository.applyPage(s.app.scope,'ledger',{upserts:[...s.updated,...[child(ca,a,'50'),child(cb,b,'70')].map(value=>({...asBillObject(value),...(matching?{images:[key]}:{})}))].map(projectBill),deletes:[],resources:[],pageState:null,complete:true,validatedAt:s.clock.nowIso()});return true;}}),c=new Coordinator({repository,clock:s.clock,client:s.upstream.client},new Map([['ledger.reimburse',handler]])),command=s.command();
+      command.input={...command.input,images:[key]} as typeof command.input;const result=await c.submit(command);expect(result.state).toBe('uncertain');expect((await c.reconcileOperation(s.app.scope,result.id)).state).toBe('uncertain');matching=true;expect((await c.reconcileOperation(s.app.scope,result.id)).state).toBe('succeeded');expect(s.upstream.calls).toHaveLength(1);
+    });
+  });
   it('sorts by time and exact long ID; last source takes residual even beyond principal', () => {
     const allocated = allocateReimbursement([source(b, 100), source(a, 100)], '120');
     expect(Object.keys(allocated)).toEqual([a, b]); expect(numericText(asBillObject(allocated[a]).money, '')).toBe('50'); expect(numericText(asBillObject(allocated[b]).money, '')).toBe('70');

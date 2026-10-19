@@ -31,6 +31,14 @@ export function moneyText(value: WireJson | undefined, fallback: Money = '0'): M
   }
   throw new DomainError('BILL_MONEY_UNSUPPORTED', '账单金额编码需要核验');
 }
+/** Exact selected reference sets; omitted native empty arrays are equivalent to an empty selection. */
+export function sameBillReferences(actual:WireJson|undefined,expected:readonly string[],numeric=false):boolean{
+ if(actual==null)return expected.length===0;
+ if(!Array.isArray(actual))return false;
+ const values:string[]=[];
+ for(const item of actual){if(!numeric&&typeof item!=='string')return false;try{values.push(numericText(item,''));}catch{return false;}}
+ return JSON.stringify([...new Set(values)].sort())===JSON.stringify([...new Set(expected)].sort());
+}
 export function positiveBillId(value: WireJson | undefined): string | null {
   const text = numericText(value, '-1');
   return /^\d+$/.test(text) && BigInt(text) > 0n ? text : null;

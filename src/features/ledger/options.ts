@@ -4,7 +4,7 @@ import type {ResourceKind} from '../../storage/resources';
 import {ResourceCache,type CacheKey} from '../../storage/cache';
 import {bookListKey} from '../books/source';
 import {categoryKey} from '../categories/source';
-import {tagCatalogKey} from '../tags/source';
+import {tagCatalogKey,tagRowsKey} from '../tags/source';
 import {asBillObject,numericText} from '../../shared/bill-wire';
 
 export function optionSource(repository:Repository,clock:Clock,scope:ActorScope,key:CacheKey,kind:ResourceKind){
@@ -14,7 +14,8 @@ export function optionSource(repository:Repository,clock:Clock,scope:ActorScope,
 }
 export const bookOptions=(repository:Repository,clock:Clock,scope:ActorScope)=>optionSource(repository,clock,scope,bookListKey,'book');
 export function ledgerOptionSources(repository:Repository,clock:Clock,scope:ActorScope){
- const books=bookOptions(repository,clock,scope),tags=optionSource(repository,clock,scope,tagCatalogKey,'tag');
+ const newest=repository.sql.exec<{query_key:string}>("SELECT query_key FROM source_queries WHERE uid=? AND domain='tags' AND query_key IN (?,?) AND complete=1 AND invalidated=0 ORDER BY validated_ms DESC,query_key=? DESC LIMIT 1",scope.uid,tagRowsKey.queryKey,tagCatalogKey.queryKey,tagCatalogKey.queryKey).toArray()[0];
+ const books=bookOptions(repository,clock,scope),tags=optionSource(repository,clock,scope,newest?.query_key===tagRowsKey.queryKey?tagRowsKey:tagCatalogKey,'tag');
  const categories=new Map<string,import('../../storage/resources').ResourceRecord>();let complete=books.complete&&tags.complete;
  for(const book of books.items)for(const type of [0,1] as const){
   const source=optionSource(repository,clock,scope,categoryKey({bookId:book.id,type}),'category');complete&&=source.complete;

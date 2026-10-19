@@ -4,10 +4,13 @@ import type { MutationHandler } from '../../operations/contract';
 import { asBillObject, moneyText, numericText, positiveBillId, type BillObject } from '../../shared/bill-wire';
 import { stringifyWire } from '../../shared/wire-json';
 import { budgetChangesSchema, budgetQuerySchema } from './contract';
-import { budgetKey, budgetParams, budgetTypeInfo, publishBudget, refreshBudget } from './source';
+import { budgetKey, budgetParams, budgetTypeInfo, parseBudgets, publishBudget, refreshBudget } from './source';
 import { restoreBillInput } from '../ledger/write';
 import { assetError } from '../assets/model';
 import {normalizeBudgetCollection,budgetCollectionGoals} from './normalization';
+function matchesGoals(changes:unknown,configurations:ReturnType<typeof parseBudgets>['configurations']):boolean{
+ return Array.isArray(changes)&&changes.every(value=>{const change=asBillObject(value),id=typeof change.categoryId==='string'?change.categoryId:null,row=configurations.find(row=>row.categoryId===id);return row?compareMoney(row.limit,numericText(change.limit,'0'))===0:numericText(change.limit,'')==='0';});
+}
 export function createBudgetMutationHandler(): MutationHandler { return {
   prepare: async (command, ctx) => {
     if (command.action !== 'budget.submit') return assetError('BUDGET_ACTION_UNSUPPORTED', '预算动作尚未实现'); const input = budgetChangesSchema.parse(restoreBillInput(command.input)), scope = command.scope;
@@ -32,6 +35,6 @@ export function createBudgetMutationHandler(): MutationHandler { return {
     const logicalId = `budget:${command.requestId}`, affectedIds = [budgetKey(query).queryKey]; return { payload: { scope: { ...scope }, query, params: { ...budgetParams(scope, query), changelist: stringifyWire(changes) }, logicalId, changes: goals }, items: [{ id: logicalId, affectedIds }], affectedIds, affectedDomains: ['budget'] };
   },
   send: async (prepared, ctx) => { const p = asBillObject(prepared.payload), s = asBillObject(p.scope); return ctx.client.request('budget.submit', asBillObject(p.params), { uid: String(s.uid), connectionEpoch: String(s.connectionEpoch) }); },
-  applyReceipt: (prepared, reply, ctx) => { const p = asBillObject(prepared.payload), s = asBillObject(p.scope), query = budgetQuerySchema.parse(restoreBillInput(p.query!)); publishBudget(ctx, { uid: String(s.uid), connectionEpoch: String(s.connectionEpoch) }, query, reply.data); return { items: [{ id: String(p.logicalId), state: 'succeeded' }] }; },
-  reconcile: async (operation, ctx) => { if (!operation.prepared) return { items: [] }; const p = asBillObject(operation.prepared.payload), query = budgetQuerySchema.parse(restoreBillInput(p.query!)), value = await refreshBudget(ctx, operation.scope, query); if (!Array.isArray(p.changes)) return { items: [] }; const matches = p.changes.every((value2) => { const change = asBillObject(value2), id = typeof change.categoryId === 'string' ? change.categoryId : null, row = value.configurations.find((row) => row.categoryId === id); return row ? compareMoney(row.limit, numericText(change.limit, '0')) === 0 : numericText(change.limit, '') === '0'; }); return matches ? { items: [{ id: String(p.logicalId), state: 'succeeded' }] } : { items: [] }; },
+  applyReceipt: (prepared, reply, ctx) => { const p = asBillObject(prepared.payload), s = asBillObject(p.scope), query = budgetQuerySchema.parse(restoreBillInput(p.query!)); if(!matchesGoals(p.changes,parseBudgets(reply.data,query).configurations))return assetError('BUDGET_RECEIPT_MISMATCH','官方预算回执未保存本次归一后的额度，请保留原操作核查'); publishBudget(ctx, { uid: String(s.uid), connectionEpoch: String(s.connectionEpoch) }, query, reply.data); return { items: [{ id: String(p.logicalId), state: 'succeeded' }] }; },
+  reconcile: async (operation, ctx) => { if (!operation.prepared) return { items: [] }; const p = asBillObject(operation.prepared.payload), query = budgetQuerySchema.parse(restoreBillInput(p.query!)), value = await refreshBudget(ctx, operation.scope, query); if (!Array.isArray(p.changes)) return { items: [] }; const matches = matchesGoals(p.changes,value.configurations); return matches ? { items: [{ id: String(p.logicalId), state: 'succeeded' }] } : { items: [] }; },
 }; }

@@ -1,7 +1,7 @@
 import { LosslessNumber } from 'lossless-json';
 import type { MutationHandler, OperationContext, PreparedMutation, ItemUpdate } from '../../operations/contract';
 import type { ActorScope } from '../../shared/model';
-import { asBillObject, billExtra, moneyText, numericText, positiveBillId, type BillObject } from '../../shared/bill-wire';
+import { asBillObject, sameBillReferences, billExtra, moneyText, numericText, positiveBillId, type BillObject } from '../../shared/bill-wire';
 import { stringifyWire, type WireJson } from '../../shared/wire-json';
 import { DomainError } from '../../shared/errors';
 import { compareMoney } from '../../shared/numbers';
@@ -25,6 +25,7 @@ function putTransaction(ctx:OperationContext,scope:ActorScope,before:BillObject,
 function linkedBill(value:WireJson,ctx:OperationContext,scope:ActorScope,input:ReturnType<typeof savingsDepositSchema.parse>,tx:ReturnType<typeof transactionView>){
   const record=projectBill(value),raw=asBillObject(record.raw),info=input.billInfo!,extra=billExtra(raw),c=info.currency,actual=extra.curr==null?{}:asBillObject(extra.curr);
   if(record.id!==tx.billId||numericText(raw.userid,'')!==scope.uid||record.bookId!==info.bookId||record.type!==2||record.timeSec!==input.timeSec||positiveBillId(raw.fromid)!==info.outAssetId||positiveBillId(raw.targetid)!==info.inAssetId||compareMoney(record.money,c?.srcValue??input.amount)!==0||compareMoney(moneyText(extra.transfee),c?.srcFee??'0')!==0||c&&(!['ss','ts','bs'].every((key,index)=>actual[key]===[c.srcSymbol,c.targetSymbol,c.baseSymbol][index])||!['sv','tv','bv'].every((key,index)=>compareMoney(moneyText(actual[key]),[c.srcValue,c.targetValue,c.baseValue][index]!)===0)))throw new DomainError('SAVINGS_BILL_INVALID','存入关联的官方转账与本次金额、资产、账本或币种不一致');
+  if(!sameBillReferences(raw.images,info.images)||!sameBillReferences(extra.tags,info.tagIds,true))throw new DomainError('SAVINGS_BILL_INVALID','存入关联转账未保存本次选择的图片或标签');
   const dataset=ctx.repository.dataset(scope,'ledger');if(!dataset?.complete)throw new DomainError('LEDGER_INCOMPLETE','请先完成账单同步');ctx.repository.applyPage(scope,dataset.id,{upserts:[record],deletes:[],resources:[],pageState:ctx.repository.syncState(scope,'ledger',dataset.id)?.pageState??null});return record.id;
 }
 export function createSavingsMutationHandler(dependencies:{baseCurrency?:()=>string;refreshLedger?:(ctx:OperationContext,scope:ActorScope)=>Promise<boolean>}={}):MutationHandler{return {

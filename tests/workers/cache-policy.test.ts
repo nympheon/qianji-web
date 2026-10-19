@@ -11,6 +11,18 @@ const all: CacheKey = { domain: 'assets', queryKey: 'all', resourceKind: 'asset'
 const asset = (name: string) => ({ id: 'asset-A', kind: 'asset' as const, raw: { name } });
 
 describe('source metadata and canonical resource cache', () => {
+  it('keeps active catalog membership unchanged when a staged rebuild deletes a resource and then fails',async()=>{
+    const app=await createTestApp();await app.repository(repo=>{
+      const cache=new ResourceCache(repo,new TestClock(0)),key:CacheKey={domain:'tags',queryKey:'catalog:all'},tag={id:'retained',kind:'tag' as const,raw:{id:'retained',name:'retained'}};
+      cache.applyRead(cache.captureRead(app.scope,key),{items:[tag],complete:true});const active=repo.dataset(app.scope,'tags')!;
+      repo.createDataset(app.scope,'tags','staged');repo.applyPage(app.scope,'staged',page({upserts:[],resources:[tag]}),'tags');
+      repo.applyPage(app.scope,'staged',page({upserts:[],resources:[],resourceDeletes:[{id:tag.id,kind:'tag'}]}),'tags');
+      expect(()=>repo.switchDataset(app.scope,'tags','staged',null)).toThrow('DATASET_INCOMPLETE');
+      expect(repo.dataset(app.scope,'tags')?.id).toBe(active.id);expect(cache.read(app.scope,key)).toMatchObject({items:[tag],complete:true});
+      repo.applyPage(app.scope,active.id,page({upserts:[],resources:[],resourceDeletes:[{id:tag.id,kind:'tag'}]}),'tags');
+      expect(cache.read(app.scope,key).items).toEqual([]);
+    });
+  });
   it('keeps a complete empty result fresh for 60 seconds without sliding expiration on reads', async () => {
     const app = await createTestApp();
     await app.repository((repo) => {

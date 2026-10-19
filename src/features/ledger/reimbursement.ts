@@ -1,5 +1,5 @@
 import type { MutationHandler, OperationContext, PreparedMutation } from '../../operations/contract';
-import { asBillObject, billExtra, billLinks, moneyText, numericText, positiveBillId, type BillObject } from '../../shared/bill-wire';
+import { asBillObject, sameBillReferences, billExtra, billLinks, moneyText, numericText, positiveBillId, type BillObject } from '../../shared/bill-wire';
 import type { HistoricalCurrency } from './contract';
 import { addMoney, compareMoney, divideMoney, multiplyMoney, subtractMoney } from '../../shared/numbers';
 import { LosslessNumber } from 'lossless-json';
@@ -64,6 +64,7 @@ function childMatches(raw: BillObject, expected: BillObject, payload: Payload) {
     if (!Array.isArray(tags) || typeof payload.wire.tags !== 'string') return false;
     if (JSON.stringify(tags.map((v) => numericText(v, '')).sort()) !== JSON.stringify((JSON.parse(payload.wire.tags) as string[]).sort())) return false;
   }
+  if(typeof payload.wire.images==='string'&&!sameBillReferences(raw.images,JSON.parse(payload.wire.images) as string[]))return false;
   return true;
 }
 function parseGroup(payload: Payload, reply: ProtocolReply) {

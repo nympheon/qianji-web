@@ -43,7 +43,7 @@ function createCategoryDeletionHandler(dependencies: { reconcileSource?: (ctx: O
       const before = ctx.repository.sql.exec<{ id: string }>("SELECT id FROM bills WHERE uid=? AND domain='ledger' AND dataset_id=? AND category_id=? AND member_id=? AND status_code<>0 LIMIT 10001", scope.uid, dataset.id, input.id, scope.uid).toArray();
       if (before.length > 10000) return assetError('CATEGORY_VERIFICATION_LIMIT', '本次操作涉及超过10000笔本人账单，需先使用更小范围处理');
       if (before.length !== counts.count) return assetError('CATEGORY_LEDGER_CHANGED', '官方本人账单计数与当前副本不一致，请先同步后重新核对');
-      const id = `category:${input.id}`, affectedIds = [id, ...(input.newCategoryId ? [`category:${input.newCategoryId}`, `book:${targetBookId}`] : [])];
+      const id = `category:${input.id}`, affectedIds = [id, ...before.map(row=>row.id), ...(input.newCategoryId ? [`category:${input.newCategoryId}`, `book:${targetBookId}`] : [])];
       return { payload: { kind: 'delete', scope: { ...scope }, id: input.id, input: { ...input }, preparedAt: String(ctx.clock.nowMs()), beforeIds: before.map((row) => row.id), targetBookId, params: { uid: scope.uid, did: input.id, deletebills: input.deleteBills ? 1 : 0, ...(input.newCategoryId ? { newcateid: input.newCategoryId } : {}) } },
         items: [{ id, affectedIds }, ...(before.length ? [{ id: `category-ledger:${input.id}`, affectedIds }] : [])], affectedIds, affectedDomains: ['ledger', 'categories', 'assets', 'budget', 'repeat', 'installments', 'savings'] };
     },
