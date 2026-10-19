@@ -60,7 +60,7 @@ export class AssetService {
     const scope = this.scope(), row = this.dependencies.repository.readResources(scope, 'asset', { domain: 'assets', ids: [id] }).items[0]; if (!row) return assetError('ASSET_NOT_LOADED', '请先载入资产');
     const raw = asBillObject(row.raw), check = await assetDeleteDependencies(this.dependencies.client, scope, id, numericText(raw.type, '-1'));
     const impact = assetDeletionImpact({ repository: this.dependencies.repository }, scope, id);
-    return { id, ...check, blocked: check.installCount > 0 || check.repeatCount > 0, deleteBillIds: impact.filter((item) => item.kind === 'delete').map((item) => item.id), detachBillIds: impact.filter((item) => item.kind === 'detach').map((item) => item.id), expectedVersion: billVersion(raw) };
+    return { id, ...check, blocked: check.installCount > 0 || check.repeatCount > 0, deleteBillIds: impact.filter((item) => item.kind === 'delete').map((item) => item.id), retainedBillIds: impact.filter((item) => item.kind === 'retain').map((item) => item.id), expectedVersion: billVersion(raw) };
   }
   private freshness(source: CacheView & { problem?: Problem }) { return { revision: source.revision, complete: source.complete, stale: source.stale || !this.connected() || !!source.problem, syncedAt: source.validatedAt === null ? null : new Date(source.validatedAt).toISOString() }; }
   private async resources(key: CacheKey, load: (scope: ActorScope) => Promise<ResourceRecord[]>): Promise<CacheView & { problem?: Problem }> {

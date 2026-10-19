@@ -4,6 +4,20 @@ import { mockReadApp,ready,freshness } from './read-fixtures';
 import {summarizeBill} from '../../src/features/ledger/model';
 import {projectBill} from '../../src/features/sync/incremental';
 
+test('omits global asset, group and savings ordering controls even if an older server lists them',async({page})=>{
+ await mockReadApp(page);await page.route('**/api/actions',async route=>{
+  const {action}=route.request().postDataJSON();
+  if(action==='capabilities.list')return route.fulfill({json:ready(['assets.reorder','assets.groups.reorder','tags.reorderGroups','savings.reorder'].map(action=>({action,enabled:true})))});
+  if(action==='assets.list')return route.fulfill({json:ready({items:[],groups:[],nextCursor:null,summary:{currencies:[],complete:true,incompleteReasons:[]},freshness},freshness)});
+  if(action==='assets.groups.list')return route.fulfill({json:ready({items:[],freshness},freshness)});
+  if(action==='savings.list')return route.fulfill({json:ready({items:['a','b'].map(id=>({planId:id,name:'测试计划'+id,currency:'CNY',mode:'custom',fields:null,status:1,savedAmount:'0',transactions:[],editVersion:'a'.repeat(64),unsupportedReason:'只读测试'})),freshness},freshness)});
+  await route.fallback();
+ });
+ await page.goto('/assets');await expect(page.getByRole('button',{name:'新增资产',exact:true})).toBeVisible();await expect(page.getByRole('button',{name:'排序资产',exact:true})).toHaveCount(0);await page.getByRole('button',{name:'管理分组',exact:true}).click();await expect(page.getByRole('button',{name:'新增分组',exact:true})).toBeVisible();await expect(page.getByRole('button',{name:'分组排序',exact:true})).toHaveCount(0);
+ await page.goto('/tags');await expect(page.getByRole('button',{name:'新增分组',exact:true})).toBeVisible();await expect(page.getByRole('button',{name:'分组排序',exact:true})).toHaveCount(0);
+ await page.goto('/savings');await expect(page.getByText('测试计划a',{exact:true})).toBeVisible();for(const name of ['上移计划','下移计划'])await expect(page.getByRole('button',{name,exact:true})).toHaveCount(0);
+});
+
 test('matches the bill list when showing source currency and gross input on the overview',async({page})=>{
  await mockReadApp(page);const items=[
   {id:'101',assetid:20,money:14,remark:'外币资产换算'},

@@ -86,7 +86,7 @@ export class QianjiState extends DurableObject<Env>{
     if(acceptedPartial)partialReads.push(action);
     return reply.data as ActionOutputs[A];
    };
-   const write=async(step:string,action:ActionName,input:Record<string,unknown>)=>{
+   const write=async(step:string,action:ActionName,input:Record<string,unknown>,expectedPartialCodes:readonly string[]=[])=>{
     const requestId=current.prefix+':'+step,prior=current.intents[step];
     if(prior&&prior.action!==action)throw new DomainError('ACCEPTANCE_INTENT_CHANGED','原验收步骤不能更换操作');
     if(!prior){const {dataBase64:_bytes,...metadata}=input;current.intents[step]={action,input:action==='attachments.upload'?metadata:input};this.save(current);}
@@ -97,7 +97,8 @@ export class QianjiState extends DurableObject<Env>{
      await synchronize();
      operation=await this.context.coordinator.reconcileOperation(account,operation.id);operations.push(operation);
     }
-    if(operation.state!=='succeeded')throw new DomainError(operation.error?.code??'ACCEPTANCE_OPERATION_UNCONFIRMED',`原操作 ${operation.id} 为 ${operation.state}，停止后续写入`);
+    const expectedPartial=operation.state==='partial'&&operation.items.every(item=>item.state==='succeeded'||item.state==='failed'&&expectedPartialCodes.includes(item.error?.code??''));
+    if(operation.state!=='succeeded'&&!expectedPartial)throw new DomainError(operation.error?.code??'ACCEPTANCE_OPERATION_UNCONFIRMED',`原操作 ${operation.id} 为 ${operation.state}，停止后续写入`);
     return operation;
    };
    const known=(alias:string)=>{const id=current.aliases[alias];if(!id)throw new DomainError('ACCEPTANCE_PREREQUISITE',`先完成测试资源：${alias}`);return id;};
@@ -120,7 +121,9 @@ export class QianjiState extends DurableObject<Env>{
     }
    };
    const checkpoint=<T,>(key:string,value:T):T=>{const observations=current.observations??={};if(Object.hasOwn(observations,key))return observations[key] as T;observations[key]=value;this.save(current);return value;};
-   const result=await runCase(name,{prefix:current.prefix,read,write,remember,known,synchronize,checkpoint,invalidateSource:key=>this.context.cache.invalidateSource(account,key),optional:alias=>current.aliases[alias],billPostCount:()=>this.#billPosts,armReceiptLoss:()=>{if(name!=='receipt-loss')throw new DomainError('ACCEPTANCE_SCOPE_DENIED','故障仅限专用响应丢失场景');this.#dropBillReceipt=true;}});
+   const phase=async<T,>(key:string,run:()=>Promise<T>):Promise<T>=>{const phases=(current.observations??={});const id='phase:'+key;if(Object.hasOwn(phases,id))return phases[id] as T;const value=await run();phases[id]=value??null;this.save(current);return value;};
+   const requireNotSentFailure=(step:string,code:string)=>{const operation=this.context.coordinator.store.find(account,current.prefix+':'+step);if(!operation||operation.state!=='failed'||operation.sendCount!==0||operation.error?.code!==code)throw new DomainError('ACCEPTANCE_RETRY_DENIED','只有明确未发送且错误完全匹配的准备失败才可建立后续测试意图');};
+   const result=await runCase(name,{phase,requireNotSentFailure,hasIntent:step=>!!current.intents[step],prefix:current.prefix,read,write,remember,known,synchronize,checkpoint,invalidateSource:key=>this.context.cache.invalidateSource(account,key),optional:alias=>current.aliases[alias],billPostCount:()=>this.#billPosts,armReceiptLoss:()=>{if(name!=='receipt-loss')throw new DomainError('ACCEPTANCE_SCOPE_DENIED','故障仅限专用响应丢失场景');this.#dropBillReceipt=true;}});
    return {...result,case:name,resources:Object.fromEntries(Object.entries(current.resources).map(([kind,ids])=>[kind,ids?.length??0])),operations,partialReads,trace:this.#trace,...this.monitor.snapshot(),observedAt:new Date().toISOString()};
   }catch(error){return {case:name,state:'error',error:error instanceof DomainError?{code:error.code,message:error.detail}:{code:'ACCEPTANCE_FAILED',message:'本地验收未完成'},operations,trace:this.#trace};}
  }

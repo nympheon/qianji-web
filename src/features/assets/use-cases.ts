@@ -112,9 +112,10 @@ export function createAssetMutationHandler(dependencies: { reconcileLedger?: (ct
         return JSON.stringify(order) === JSON.stringify(observed) ? { items: [{ id: p.logicalId, state: 'succeeded' }] } : { items: [] };
       }
       if (p.kind === 'delete') {
+        if(!operation.items.some(item=>item.id===p.logicalId&&item.state==='succeeded'))return {items:[]};
         if (!await dependencies.reconcileLedger?.(ctx) || !Array.isArray(p.impact)) return { items: [] };
         const ledger = ctx.repository.dataset(p.scope, 'ledger'); if (!ledger?.complete || !ledger.validatedAt || Date.parse(ledger.validatedAt) < Number(p.preparedAt)) return { items: [] };
-        const verified = p.impact.every((value) => { const item = asBillObject(value), row = ctx.repository.readBill(p.scope, numericText(item.id, '')); if (item.kind === 'delete') return !row; if (!row) return true; const raw = asBillObject(row.raw); return ['assetid', 'fromid', 'targetid'].every((key) => numericText(raw[key], '-1') !== p.id); });
+        const verified = p.impact.every((value) => { const item = asBillObject(value), row = ctx.repository.readBill(p.scope, numericText(item.id, '')); if (item.kind === 'delete') return !row; return ctx.repository.readResources(p.scope,'asset',{domain:'assets',ids:[p.id]}).items.length===0; });
         return verified ? { items: [{ id: `asset-ledger:${p.id}`, state: 'succeeded' }] } : { items: [] };
       }
       if (p.create) return { items: [] };

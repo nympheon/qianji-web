@@ -8,6 +8,7 @@ import { loadTransferAsset } from './transfer';
 import type { BillRecord } from '../../storage/mirror';
 import type { WireJson } from '../../shared/wire-json';
 import { debtDeletionEffects } from '../debt/deletion';
+import {confirmedDeletedAsset} from '../assets/deleted';
 
 const fail = (code: string, message: string): never => { throw new DomainError(code, message); };
 function deleteRefundIds(raw: BillObject): string[] {
@@ -17,6 +18,7 @@ function deleteRefundIds(raw: BillObject): string[] {
 function deletionEffect(record: BillRecord, context: OperationContext, scope: { uid: string; connectionEpoch: string }, baseCurrency: string): ExpectedAssetEffect[] {
   if ([4, 6, 7, 9, 10, 11].includes(record.type)) return debtDeletionEffects(record, context, scope, baseCurrency);
   const raw = asBillObject(record.raw), assetId = positiveBillId(raw.assetid); if (!assetId) return [];
+  if(confirmedDeletedAsset(context.repository,scope,assetId))return [];
   const asset = loadTransferAsset(context, scope, assetId, baseCurrency);
   let amount = record.money;
   if ([20, 21].includes(record.type)) {

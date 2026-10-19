@@ -20,11 +20,18 @@ async function setup() {
   return { app, clock, upstream, catalog, run, service };
 }
 describe('native tag management', () => {
+  it('settles a legacy tag-ledger checkpoint from the official absent tag without rewriting historical bills or resending',async()=>{
+    const s=await setup(),op=await s.run(c=>c.submit({scope:s.app.scope,action:'tags.deleteTag',input:{id:tag.id,expectedVersion:billVersion(tag)},requestId:'legacy-tag-delete'}));
+    s.catalog[0]!.tags=s.catalog[0]!.tags.filter(row=>row.id!==tag.id);
+    await s.app.repository(repository=>repository.sql.exec("UPDATE operations SET state='partial',items=? WHERE id=?",JSON.stringify([...op.items,{id:`tag-ledger:${tag.id}`,affectedIds:['1001'],state:'uncertain',error:null}]),op.id).toArray());
+    const checked=await s.run(c=>c.reconcileOperation(s.app.scope,op.id));expect(checked.state).toBe('succeeded');expect(s.upstream.calls.filter(call=>call.url.includes('/deletetag'))).toHaveLength(1);
+    await s.app.repository(repository=>expect(asBillObject(asBillObject(repository.readBill(s.app.scope,'1001')!.raw).extra).tags).toEqual([tag.id]));
+  });
   it('does not confirm a lost group deletion while archived tags still reference that group', async () => {
     const s = await setup(); s.upstream.respond(async () => { if (s.upstream.calls.at(-1)!.url.includes('/deletegroup')) { s.catalog[0]!.id = ''; throw new Error('lost delete'); } return new Response(stringifyWire({ ec: 200, data: { list: s.catalog } })); }); const lost = await s.run((c) => c.submit({ action: 'tags.deleteGroup', input: { id: group.id, expectedVersion: billVersion(group) }, requestId: 'lost-group-delete', scope: s.app.scope })); expect((await s.run((c) => c.reconcileOperation(s.app.scope, lost.id))).state).toBe('uncertain');
   });
-  it('does not rewrite bills after a tag delete ack and keeps its references awaiting readonly verification', async () => {
-    const s = await setup(), op = await s.run((c) => c.submit({ action: 'tags.deleteTag', input: { id: tag.id, expectedVersion: billVersion(tag) }, requestId: 'delete-tag', scope: s.app.scope })); expect(op.state).toBe('partial'); expect(op.items.find((item) => item.id.startsWith('tag-ledger:'))?.state).toBe('uncertain'); await s.app.repository((r) => { expect(r.readResources(s.app.scope, 'tag', { domain: 'tags', ids: [tag.id] }).items).toHaveLength(0); expect(asBillObject(asBillObject(r.readBill(s.app.scope, '1001')!.raw).extra).tags).toEqual([tag.id]); }); expect(s.upstream.calls.some((call) => call.url.includes('/bill/'))).toBe(false);
+  it('confirms native tag deletion while retaining historical bill tag IDs without a fabricated ledger mutation', async () => {
+    const s = await setup(), op = await s.run((c) => c.submit({ action: 'tags.deleteTag', input: { id: tag.id, expectedVersion: billVersion(tag) }, requestId: 'delete-tag', scope: s.app.scope })); expect(op.state).toBe('succeeded'); expect(op.items.some((item) => item.id.startsWith('tag-ledger:'))).toBe(false); await s.app.repository((r) => { expect(r.readResources(s.app.scope, 'tag', { domain: 'tags', ids: [tag.id] }).items).toHaveLength(0); expect(asBillObject(asBillObject(r.readBill(s.app.scope, '1001')!.raw).extra).tags).toEqual([tag.id]); }); expect(s.upstream.calls.some((call) => call.url.includes('/bill/'))).toBe(false);
   });
   it('rejects stale versions and invalid colors without any upstream mutation', async () => {
     const s = await setup(); const stale = await s.run((c) => c.submit({ action: 'tags.submitTag', input: { mode: 'edit', id: tag.id, expectedVersion: 'a'.repeat(64), name: '修改', groupId: group.id, color: '3792FA' }, requestId: 'stale', scope: s.app.scope })); expect(stale.error?.code).toBe('DRAFT_SOURCE_CHANGED');

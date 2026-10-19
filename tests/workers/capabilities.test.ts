@@ -8,6 +8,13 @@ import { Coordinator } from '../../src/actor/coordinator';
 import { AppRegistry } from '../../src/app/registry';
 import { createActorContext } from '../../src/actor/context';
 const manifest={uid:'test-user',prefix:'QJ验收-20261019-',actions:['books.submit','ledger.create','ledger.edit','books.setBaseCurrency'],resources:{book:['100'],asset:['200'],category:['300'],bill:['400']}};
+it('removes excluded account, member and global ordering operations from discovery and every public invocation',async()=>{
+ const app=await createTestApp();await app.repository(async(_repository,storage)=>{
+  const context=createActorContext(storage),registry=new AppRegistry(context),removed=['books.setBaseCurrency','books.quit','books.members','books.reorder','assets.reorder','assets.groups.reorder','tags.reorderGroups','savings.reorder'];
+  const listed=await registry.invoke('capabilities.list',{});expect((listed.data as {action:string}[]).some(row=>removed.includes(row.action))).toBe(false);
+  for(const action of removed){expect(await registry.invoke(action,{})).toMatchObject({status:'error',error:{code:'ACTION_NOT_FOUND'}});expect(await new AppRegistry(context,()=>{}).invoke(action,{})).toMatchObject({status:'error',error:{code:'ACTION_NOT_FOUND'}});}
+ });
+});
 it('keeps every unverified production write closed',()=>{
   for(const definition of Object.values(actionDefinitions))if(definition.kind==='write'&&definition.evidence!=='live-verified')expect(definition.unavailable?.code).toBe('WRITE_LIVE_UNVERIFIED');
 });

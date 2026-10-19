@@ -1,3 +1,4 @@
+import {isPublicAction} from '../contracts/scope';
 import { actionDefinitions, actionSchemas, type ActionName } from '../contracts/actions';
 import type { AppReply } from '../shared/reply';
 import { DomainError } from '../shared/errors';
@@ -121,7 +122,7 @@ export class AppRegistry {
   }
   async invoke(name: string, input: unknown, _meta: unknown = {}): Promise<AppReply<unknown>> {
     try {
-      if (!Object.hasOwn(handlers, name)) throw new DomainError('ACTION_NOT_FOUND', '该操作不存在');
+      if (!isPublicAction(name)||!Object.hasOwn(handlers, name)) throw new DomainError('ACTION_NOT_FOUND', '该操作不存在');
       const action = name as ActionName, definition = actionDefinitions[action];
       if (!actionSchemas[action].safeParse(input).success) throw new DomainError('INVALID_ACTION_INPUT', '操作参数无效，请检查筛选或输入');
       if (definition.kind === 'write') this.authorizeWrite?.(action,input);

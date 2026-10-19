@@ -30,7 +30,7 @@ test('shows native deletion dependencies and prevents deletion of an asset still
     if (action === 'assets.list') { await route.fulfill({ json: ready(list, freshness) }); return; }
     if (action === 'assets.detail') { await route.fulfill({ json: ready({ asset, freshness }) }); return; }
     if (action === 'capabilities.list') { await route.fulfill({ json: ready([{ action: 'assets.delete', enabled: true, reason: null }]) }); return; }
-    if (action === 'assets.deleteCheck') { await route.fulfill({ json: ready({ id: '10', installCount: 1, repeatCount: 0, nativeCheckSkipped: false, blocked: true, deleteBillIds: [], detachBillIds: ['99'], expectedVersion: asset.editVersion }) }); return; }
+    if (action === 'assets.deleteCheck') { await route.fulfill({ json: ready({ id: '10', installCount: 1, repeatCount: 0, nativeCheckSkipped: false, blocked: true, deleteBillIds: [], retainedBillIds: ['99'], expectedVersion: asset.editVersion }) }); return; }
     if (action === 'assets.draft.get') { await route.fulfill({ json: ready(null) }); return; }
     if (action === 'assets.delete') { writes++; }
     await route.fallback();

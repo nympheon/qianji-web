@@ -1,4 +1,7 @@
 import {runLedgerExtended} from './ledger-extended.mts';
+import {runReimbursable,runForeignTransfers,runDebtExtended} from './financial-extended.mts';
+import {runTagsExtended,runCatalogsExtended} from './catalogs-extended.mts';
+import {runLinkedCategories,runLinkedTags,runLinkedAssets,inspectLinked,inspectLinkedAssets,runDeleteBalance} from './linked-deletions.mts';
 import {runSavingsLinked,runSavingsModes} from './savings-linked.mts';
 import {runConflicts,runReceiptLoss} from './conflicts.mts';
 import {runManagement,runCategoryManagement,runTagManagement} from './management.mts';
@@ -18,13 +21,16 @@ import { runForeign,runTransferRefund,runReimbursement } from './ledger.mts';
 import { runRepeat,runSavings,runNativeSavings,runRepeatWire } from './plans.mts';
 
 import type { CaseName } from './contract.mts';
-export const testActions=['books.submit','categories.submit','categories.submitMany','books.configure','books.setVisible','books.delete','assets.delete','categories.changeLevel','categories.move','categories.reorder','categories.delete','tags.reorderTags','tags.deleteTag','tags.deleteGroup','attachments.upload','installments.create','installments.configure','installments.prepay','installments.delete','debt.create','debt.appendPrincipal','debt.pay','assets.setFinished','assets.submit','assets.adjustBalance','assets.setVisible','assets.groups.submit','assets.groups.delete','assets.groups.add','assets.groups.remove','ledger.create','ledger.edit','ledger.delete','ledger.transfer','ledger.repayCard','ledger.refund','ledger.reimburse','ledger.cancelReimbursement','tags.submitGroup','tags.submitTag','tags.setArchived','budget.submit','repeat.submit','repeat.setPaused','repeat.delete','savings.submit','savings.deposit','savings.cancelDeposit','savings.delete'] as const;
+export const testActions=['ledger.setReimbursable','debt.editPrincipal','books.submit','categories.submit','categories.submitMany','books.configure','books.setVisible','books.delete','assets.delete','categories.changeLevel','categories.move','categories.reorder','categories.delete','tags.reorderTags','tags.deleteTag','tags.deleteGroup','attachments.upload','installments.create','installments.configure','installments.prepay','installments.delete','debt.create','debt.appendPrincipal','debt.pay','assets.setFinished','assets.submit','assets.adjustBalance','assets.setVisible','assets.groups.submit','assets.groups.delete','assets.groups.add','assets.groups.remove','ledger.create','ledger.edit','ledger.delete','ledger.transfer','ledger.repayCard','ledger.refund','ledger.reimburse','ledger.cancelReimbursement','tags.submitGroup','tags.submitTag','tags.setArchived','budget.submit','repeat.submit','repeat.setPaused','repeat.delete','savings.submit','savings.deposit','savings.cancelDeposit','savings.delete'] as const;
 export interface CaseEnvironment {
+ phase<T>(key:string,run:()=>Promise<T>):Promise<T>;
+ hasIntent(step:string):boolean;
+ requireNotSentFailure(step:string,code:string):void;
  armReceiptLoss():void;
  billPostCount():number;
  prefix:string;
  read<A extends ActionName>(action:A,input:ActionInput<A>,allowFreshPartial?:boolean):Promise<ActionOutputs[A]>;
- write(step:string,action:ActionName,input:Record<string,unknown>):Promise<OperationView>;
+ write(step:string,action:ActionName,input:Record<string,unknown>,expectedPartialCodes?:readonly string[]):Promise<OperationView>;
  remember(alias:string,kind:TestResource,id:string):void;
  known(alias:string):string;
  optional(alias:string):string|undefined;
@@ -39,6 +45,17 @@ function created(operation:OperationView):string{
  return ids[0]!;
 }
 export async function runCase(name:CaseName,e:CaseEnvironment){
+ if(name==='reimbursable-flags')return runReimbursable(e);
+ if(name==='foreign-transfers')return runForeignTransfers(e);
+ if(name==='debt-extended')return runDebtExtended(e);
+ if(name==='linked-assets-inspect')return inspectLinkedAssets(e);
+ if(name==='delete-balance')return runDeleteBalance(e);
+ if(name==='linked-inspect')return inspectLinked(e);
+ if(name==='linked-categories')return runLinkedCategories(e);
+ if(name==='linked-tags')return runLinkedTags(e);
+ if(name==='linked-assets')return runLinkedAssets(e);
+ if(name==='tags-extended')return runTagsExtended(e);
+ if(name==='catalogs-extended')return runCatalogsExtended(e);
  if(name==='ledger-extended')return runLedgerExtended(e);
  if(name==='cache-routes')return runCache(e,true);
  if(name==='budget-native')return runBudgetNative(e);

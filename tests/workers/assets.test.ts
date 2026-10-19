@@ -12,6 +12,7 @@ import { AssetService } from '../../src/features/assets/service';
 import { ResourceCache } from '../../src/storage/cache';
 import { createAssetGroupMutationHandler } from '../../src/features/assets/groups';
 import {commandDigest} from '../../src/operations/store';
+import {createLedgerDeletionHandler} from '../../src/features/ledger/deletion';
 
 it('never lets a saved create receipt claim an ID that existed before sending even after that ID disappears',async()=>{
  const s=await setup();s.upstream.respond(async()=>new Response(stringifyWire({ec:200,data:{asset:{...asset('10'),icon:'official-cash'}}})));
@@ -198,10 +199,14 @@ describe('native assets and balance changes', () => {
     await s.app.repository(async (repository) => {
       repository.applyPage(s.app.scope, 'ledger', { upserts: [projectBill(ordinary), projectBill(transfer)], deletes: [], resources: [], pageState: null });
       s.upstream.respond(async () => new Response(s.upstream.calls.at(-1)!.url.includes('/asset/deletecheck') ? '{"ec":200,"data":{"installcount":0,"repeatcount":0}}' : '{"ec":200,"data":{"list":[]}}'));
-      const handler = createAssetMutationHandler({ reconcileLedger: async () => { s.clock.advance(1); repository.applyPage(s.app.scope, 'ledger', { upserts: [projectBill({ ...asBillObject(ordinary), assetid: -1 })], deletes: ['92'], resources: [], pageState: null, complete: true, validatedAt: s.clock.nowIso() }); return true; } });
+      const handler = createAssetMutationHandler({ reconcileLedger: async () => { s.clock.advance(1); repository.applyPage(s.app.scope, 'ledger', { upserts: [projectBill(ordinary)], deletes: ['92'], resources: [], pageState: null, complete: true, validatedAt: s.clock.nowIso() }); return true; } });
       const coordinator = new Coordinator({ repository, client: s.upstream.client, clock: s.clock }, new Map([['assets.delete', handler]]));
       const result = await coordinator.submit({ action: 'assets.delete', requestId: 'asset-delete-related', scope: s.app.scope, input: { id: '10', expectedVersion: billVersion(s.original) } }); expect(result.state).toBe('partial'); expect(repository.readResources(s.app.scope, 'asset', { domain: 'assets', ids: ['10'] }).items).toHaveLength(0); expect(repository.readBill(s.app.scope, '92')).not.toBeNull();
       expect((await coordinator.reconcileOperation(s.app.scope, result.id)).state).toBe('succeeded'); expect(s.upstream.calls).toHaveLength(2); expect(s.upstream.calls.every((call) => call.url.includes('/asset/'))).toBe(true);
+      const deletion=createLedgerDeletionHandler(),ctx={repository,clock:s.clock,client:s.upstream.client},command={scope:s.app.scope,action:'ledger.delete',requestId:'delete-retained-after-asset',input:{bills:[{id:'91',expectedVersion:billVersion(repository.readBill(s.app.scope,'91')!.raw)}]}};
+      const prepared=await deletion.prepare(command,ctx);expect(prepared.items[0]?.assetEffects??[]).toEqual([]);
+      repository.applyPage(s.app.scope,'ledger',{upserts:[projectBill({...asBillObject(ordinary),id:'93',assetid:777})],deletes:[],resources:[],pageState:null});
+      await expect(deletion.prepare({...command,input:{bills:[{id:'93',expectedVersion:billVersion(repository.readBill(s.app.scope,'93')!.raw)}]}},ctx)).rejects.toThrow('ASSET_NOT_LOADED');
     });
   });
   it('deletes only the official group and removes stale canonical group metadata after a complete list proof', async () => {

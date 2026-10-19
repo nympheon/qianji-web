@@ -38,7 +38,7 @@ export const assetGroupAddSchema = z.strictObject({ groupId, assetIds: z.array(a
 export const assetGroupRemoveSchema = z.strictObject({ groupId, assetId: assetIdSchema });
 export interface AssetGroupsView { items: { id: string; name: string; sort: number; editVersion: string }[]; freshness: Freshness; problem?: Problem }
 export interface AssetDetailView { asset: AssetView | null; freshness: Freshness; problem?: Problem }
-export interface AssetDeleteCheckView { id: string; installCount: number; repeatCount: number; nativeCheckSkipped: boolean; blocked: boolean; deleteBillIds: string[]; detachBillIds: string[]; expectedVersion: string }
+export interface AssetDeleteCheckView { id: string; installCount: number; repeatCount: number; nativeCheckSkipped: boolean; blocked: boolean; deleteBillIds: string[]; retainedBillIds: string[]; expectedVersion: string }
 export const assetWriteSchemas = {
   'assets.submit': assetSubmitSchema, 'assets.adjustBalance': balanceAdjustmentSchema, 'assets.setFinished': debtFinishSchema, 'assets.setVisible': assetVisibleSchema, 'assets.reorder': assetReorderSchema, 'assets.delete': assetDeleteSchema,
   'assets.groups.submit': assetGroupSubmitSchema, 'assets.groups.delete': assetGroupDeleteSchema, 'assets.groups.reorder': assetGroupReorderSchema, 'assets.groups.add': assetGroupAddSchema, 'assets.groups.remove': assetGroupRemoveSchema,
