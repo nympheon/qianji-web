@@ -86,8 +86,9 @@ export function createBookMutationHandler(): MutationHandler {
       if (p.kind === 'submit' || p.kind === 'configure') {
         const raw = validateBook(asBillObject(reply.data), p.create ? undefined : p.id), id = numericText(raw.bookid, ''), expected = asBillObject(p.expected);
         if (p.create && (id === '-1' || numericText(raw.userid, '') !== p.scope.uid || resourceExisted(prepared,ctx.repository,p.scope,'books','book',id,ctx.validatingHistoricalReceipt))) return assetError('BOOK_NEW_ID_INVALID', '新增账本回执复用了ID或不属于当前用户');
-        if (!matchesBook(raw, expected)) return assetError('BOOK_RECEIPT_INVALID', '账本回执与本次名称、类型、封面或账期不一致');
-        new ResourceCache(ctx.repository, ctx.clock).confirmResources(p.scope, 'books', [{ id, kind: 'book', raw }]); const affectedIds = [...prepared.affectedIds, `book:${id}`]; return { items: [{ id: p.logicalId, state: 'succeeded', affectedIds }], affectedIds, ...(p.create ? { idMap: { [p.logicalId]: id } } : {}) };
+        const nameTruncated=typeof expected.name==='string'&&expected.name.length>15&&raw.name===expected.name.slice(0,15)&&matchesBook(raw,{...expected,name:raw.name});
+        if (!matchesBook(raw, expected)&&!nameTruncated) return assetError('BOOK_RECEIPT_INVALID', '账本回执与本次名称、类型、封面或账期不一致');
+        new ResourceCache(ctx.repository, ctx.clock).confirmResources(p.scope, 'books', [{ id, kind: 'book', raw }]); const affectedIds = [...prepared.affectedIds, `book:${id}`]; return { items: [{ id: p.logicalId, state: nameTruncated?'failed':'succeeded', affectedIds, ...(nameTruncated?{error:{code:'BOOK_NAME_TRUNCATED',message:'钱迹已保存账本，但名称被截短；请查看已返回账本，不要重新创建'}}:{}) }], affectedIds, ...(p.create ? { idMap: { [p.logicalId]: id } } : {}) };
       }
       if (p.self) removeLocalBook(ctx, p.scope, p.id); return { items: [{ id: p.logicalId, state: 'succeeded' }] };
     },

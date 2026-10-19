@@ -15,6 +15,11 @@ import { AcceptanceScope,type AcceptanceManifest,type TestResource } from './sco
 import { caseNames,type CaseName } from './contract.mts';
 import { runCase,testActions } from './cases.mts';
 import {AcceptanceMonitor} from './monitor.mts';
+import {repeatView} from '../../src/features/repeat/source';
+import {installmentView} from '../../src/features/installments/source';
+import {isLosslessNumber} from 'lossless-json';
+import {assetView} from '../../src/features/assets/model';
+import {bookView} from '../../src/features/books/model';
 
 interface Manifest extends AcceptanceManifest {
  aliases:Record<string,string>;
@@ -78,6 +83,30 @@ export class QianjiState extends DurableObject<Env>{
    if(!manifest){manifest={uid:account.uid,prefix:'验261019A',actions:[...testActions],resources:{},aliases:{},intents:{}};this.save(manifest);}
    if(manifest.uid!==account.uid)throw new DomainError('ACCEPTANCE_SCOPE_DENIED','当前账号与测试范围不同');
    manifest.actions=[...testActions];this.save(manifest);
+   if(name==='book-template-inspect'){
+    const step=Object.keys(manifest.intents).find(key=>key.startsWith('book-template-')&&key.endsWith('-create'));
+    const operation=step?this.context.coordinator.store.find(account,manifest.prefix+':'+step):null,reply=operation?.prepared?.received?.reply,raw=asBillObject(reply?.data);
+    if(!String(raw.name).startsWith(manifest.prefix))throw new DomainError('ACCEPTANCE_SCOPE_DENIED','仅允许检查本次新测试账本');
+    return {state:'ready',step,expected:restoreBillInput(asBillObject(operation?.prepared?.payload).expected!),actual:bookView(raw,account.uid)};
+   }
+   if(name==='credit-inspect'){
+    const operation=this.context.coordinator.store.find(account,manifest.prefix+':credit-metadata-b-false'),reply=operation?.prepared?.received?.reply,raw=asBillObject(asBillObject(reply?.data).asset);
+    if(numericText(raw.id,'')!==manifest.aliases['credit-metadata-b']||numericText(raw.userid,'')!==account.uid)throw new DomainError('ACCEPTANCE_SCOPE_DENIED','仅允许检查本次测试卡');
+    return {state:'ready',expected:assetView(asBillObject(asBillObject(operation?.prepared?.payload).raw)),actual:assetView(raw),sharedWireType:typeof asBillObject(raw.credit).shareid,sharedWireValue:numericText(asBillObject(raw.credit).shareid,'absent')};
+   }
+   if(name==='installment-inspect'){
+    const operation=this.context.coordinator.store.find(account,manifest.prefix+':binding-installments-create'),reply=operation?.prepared?.received?.reply,raw=asBillObject(asBillObject(reply?.data).install);
+    if(numericText(raw.userid,'')!==account.uid||!String(raw.name).startsWith(manifest.prefix))throw new DomainError('ACCEPTANCE_SCOPE_DENIED','仅允许检查专用分期回执');
+    return {state:'ready',expected:restoreBillInput(asBillObject(operation?.prepared?.payload).input!),actual:installmentView(raw),feePlacementWireType:typeof asBillObject(raw.data).feetype};
+   }
+   if(name==='repeat-inspect'){
+    const operation=['repeat-extended-bystep-create','repeat-extended-week-create'].map(step=>this.context.coordinator.store.find(account,manifest.prefix+':'+step)).find(row=>row?.prepared?.received);
+    const reply=operation?.prepared?.received?.reply,task=asBillObject(asBillObject(reply?.data).task),fields=asBillObject(operation?.prepared?.payload).fields;
+    if(numericText(task.userid,'')!==account.uid||!String(asBillObject(task.data).remark).startsWith(manifest.prefix))throw new DomainError('ACCEPTANCE_SCOPE_DENIED','仅允许检查已绑定的测试回执');
+    const safe=(value:unknown):unknown=>isLosslessNumber(value)?value.value:Array.isArray(value)?value.map(safe):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).map(([key,child])=>[key,safe(child)])):value;
+    const {category:_category,...data}=asBillObject(task.data);
+    return {state:'ready',case:name,expected:restoreBillInput(fields!),actual:repeatView(task),data:safe(data),ruleTypes:(asBillObject(data.repeat).value as unknown[]).map(value=>isLosslessNumber(value)?'number':typeof value)};
+   }
    const current=manifest,registry=new AppRegistry(this.context,(action,input)=>this.policy().authorize(account.uid,action,input));
    const read=async<A extends ActionName>(action:A,input:ActionInput<A>,allowFreshPartial=false):Promise<ActionOutputs[A]>=>{
     const reply=await registry.invoke(action,input);
@@ -90,7 +119,10 @@ export class QianjiState extends DurableObject<Env>{
     const requestId=current.prefix+':'+step,prior=current.intents[step];
     if(prior&&prior.action!==action)throw new DomainError('ACCEPTANCE_INTENT_CHANGED','原验收步骤不能更换操作');
     if(!prior){const {dataBase64:_bytes,...metadata}=input;current.intents[step]={action,input:action==='attachments.upload'?metadata:input};this.save(current);}
-    const reply=await registry.invoke(action,{...(prior?.input??input),...(action==='attachments.upload'?{dataBase64:input.dataBase64}:{}),requestId});
+    const stored=prior?this.context.coordinator.store.find(account,requestId):null;
+    if(prior)this.policy().authorize(account.uid,action,{...prior.input,requestId});
+    // Original journal entries remain inspectable when a later schema disallows their old input.
+    const reply=stored&&['uncertain','partial','succeeded','failed'].includes(stored.state)?{data:this.context.coordinator.getOperation(account,stored.id),error:null}:await registry.invoke(action,{...(prior?.input??input),...(action==='attachments.upload'?{dataBase64:input.dataBase64}:{}),requestId});
     if(!reply.data)throw new DomainError(reply.error?.code??'ACCEPTANCE_WRITE_BLOCKED',reply.error?.message??'验收操作未返回结果');
     let operation=reply.data as OperationView;operations.push(operation);
     if((operation.state==='uncertain'||operation.state==='partial')&&operation.items.some(item=>item.state==='uncertain')){
@@ -98,7 +130,8 @@ export class QianjiState extends DurableObject<Env>{
      operation=await this.context.coordinator.reconcileOperation(account,operation.id);operations.push(operation);
     }
     const expectedPartial=operation.state==='partial'&&operation.items.every(item=>item.state==='succeeded'||item.state==='failed'&&expectedPartialCodes.includes(item.error?.code??''));
-    if(operation.state!=='succeeded'&&!expectedPartial)throw new DomainError(operation.error?.code??'ACCEPTANCE_OPERATION_UNCONFIRMED',`原操作 ${operation.id} 为 ${operation.state}，停止后续写入`);
+    const expectedFailure=operation.state==='failed'&&operation.items.length>0&&operation.items.every(item=>item.state==='failed'&&expectedPartialCodes.includes(item.error?.code??''));
+    if(operation.state!=='succeeded'&&!expectedPartial&&!expectedFailure)throw new DomainError(operation.error?.code??'ACCEPTANCE_OPERATION_UNCONFIRMED',`原操作 ${operation.id} 为 ${operation.state}，停止后续写入`);
     return operation;
    };
    const known=(alias:string)=>{const id=current.aliases[alias];if(!id)throw new DomainError('ACCEPTANCE_PREREQUISITE',`先完成测试资源：${alias}`);return id;};
@@ -108,7 +141,11 @@ export class QianjiState extends DurableObject<Env>{
     if(kind==='bill'){const row=this.context.repository.readBill(account,id);if(!row||!current.resources.book?.includes(row.bookId))throw new DomainError('ACCEPTANCE_SCOPE_DENIED','账单不在专用测试账本中');}
     const category=kind==='category'?this.context.repository.readResources(account,'category',{domain:'ledger',ids:[id]}).items[0]:null;
     const fromTestBook=category&&current.resources.book?.includes(numericText(asBillObject(category.raw).bookid,''));
-    if(!fromReceipt&&!fromTestBook)throw new DomainError('ACCEPTANCE_ID_UNPROVEN','不能把无新建回执的既有资源加入测试清单');
+    const fromTestPlan=kind==='pack'&&(['repeat','installment'] as const).some(planKind=>(current.resources[planKind]??[]).some(planId=>{
+     const row=this.context.repository.readResources(account,planKind,{domain:planKind==='repeat'?'repeat':'installments',ids:[planId]}).items[0];
+     return row&&numericText(asBillObject(row.raw).packid,'')===id;
+    }));
+    if(!fromReceipt&&!fromTestBook&&!fromTestPlan)throw new DomainError('ACCEPTANCE_ID_UNPROVEN','不能把无新建回执的既有资源加入测试清单');
     current.aliases[alias]=id;current.resources[kind]=[...new Set([...(current.resources[kind]??[]),id])];this.save(current);
    };
    const synchronize=async()=>{

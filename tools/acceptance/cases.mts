@@ -1,3 +1,5 @@
+import {runAssetTypesAndBalance,runCreditMetadata,runBookTemplates,runBookRanges,runSavingsMetadata} from './remaining-management.mts';
+import {runRepeatNativeCurrency,runRepeatExtended,runPlanBinding,runInstallmentModes} from './plans-extended.mts';
 import {runLedgerExtended} from './ledger-extended.mts';
 import {runReimbursable,runForeignTransfers,runDebtExtended} from './financial-extended.mts';
 import {runTagsExtended,runCatalogsExtended} from './catalogs-extended.mts';
@@ -21,7 +23,7 @@ import { runForeign,runTransferRefund,runReimbursement } from './ledger.mts';
 import { runRepeat,runSavings,runNativeSavings,runRepeatWire } from './plans.mts';
 
 import type { CaseName } from './contract.mts';
-export const testActions=['ledger.setReimbursable','debt.editPrincipal','books.submit','categories.submit','categories.submitMany','books.configure','books.setVisible','books.delete','assets.delete','categories.changeLevel','categories.move','categories.reorder','categories.delete','tags.reorderTags','tags.deleteTag','tags.deleteGroup','attachments.upload','installments.create','installments.configure','installments.prepay','installments.delete','debt.create','debt.appendPrincipal','debt.pay','assets.setFinished','assets.submit','assets.adjustBalance','assets.setVisible','assets.groups.submit','assets.groups.delete','assets.groups.add','assets.groups.remove','ledger.create','ledger.edit','ledger.delete','ledger.transfer','ledger.repayCard','ledger.refund','ledger.reimburse','ledger.cancelReimbursement','tags.submitGroup','tags.submitTag','tags.setArchived','budget.submit','repeat.submit','repeat.setPaused','repeat.delete','savings.submit','savings.deposit','savings.cancelDeposit','savings.delete'] as const;
+export const testActions=['repeat.setBillBinding','installments.setBillBinding','ledger.setReimbursable','debt.editPrincipal','books.submit','categories.submit','categories.submitMany','books.configure','books.setVisible','books.delete','assets.delete','categories.changeLevel','categories.move','categories.reorder','categories.delete','tags.reorderTags','tags.deleteTag','tags.deleteGroup','attachments.upload','installments.create','installments.configure','installments.prepay','installments.delete','debt.create','debt.appendPrincipal','debt.pay','assets.setFinished','assets.submit','assets.adjustBalance','assets.setVisible','assets.groups.submit','assets.groups.delete','assets.groups.add','assets.groups.remove','ledger.create','ledger.edit','ledger.delete','ledger.transfer','ledger.repayCard','ledger.refund','ledger.reimburse','ledger.cancelReimbursement','tags.submitGroup','tags.submitTag','tags.setArchived','budget.submit','repeat.submit','repeat.setPaused','repeat.delete','savings.submit','savings.deposit','savings.cancelDeposit','savings.delete'] as const;
 export interface CaseEnvironment {
  phase<T>(key:string,run:()=>Promise<T>):Promise<T>;
  hasIntent(step:string):boolean;
@@ -45,9 +47,20 @@ function created(operation:OperationView):string{
  return ids[0]!;
 }
 export async function runCase(name:CaseName,e:CaseEnvironment){
+ if(name==='asset-types-balance')return runAssetTypesAndBalance(e);
+ if(name==='credit-metadata')return runCreditMetadata(e);
+ if(name==='book-templates')return runBookTemplates(e);
+ if(name==='book-ranges')return runBookRanges(e);
+ if(name==='savings-metadata')return runSavingsMetadata(e);
+ if(name==='repeat-native-currency')return runRepeatNativeCurrency(e);
+ if(name==='repeat-extended')return runRepeatExtended(e);
+ if(name==='repeat-binding')return runPlanBinding(e,'repeat');
+ if(name==='installment-binding')return runPlanBinding(e,'installments');
+ if(name.startsWith('installment-mode-'))return runInstallmentModes(e,name.slice(17) as import('../../src/features/installments/contract').RemainderMode);
  if(name==='reimbursable-flags')return runReimbursable(e);
  if(name==='foreign-transfers')return runForeignTransfers(e);
  if(name==='debt-extended')return runDebtExtended(e);
+ if(name==='debt-native-images')return runDebtExtended(e,'v2');
  if(name==='linked-assets-inspect')return inspectLinkedAssets(e);
  if(name==='delete-balance')return runDeleteBalance(e);
  if(name==='linked-inspect')return inspectLinked(e);

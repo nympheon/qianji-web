@@ -7,7 +7,7 @@ import { assetError, validateAsset } from '../assets/model';
 import { debtAmount, debtCashDelta } from './accounting';
 import { compareMoney, subtractMoney } from '../../shared/numbers';
 import { LosslessNumber } from 'lossless-json';
-import { stringifyWire } from '../../shared/wire-json';
+import { stringifyWire,parseWire } from '../../shared/wire-json';
 import { debtCash, debtEffect, debtState } from './model';
 import { projectBill } from '../sync/incremental';
 import { ResourceCache } from '../../storage/cache';
@@ -27,7 +27,8 @@ export function createDebtMutationHandler(dependencies: { baseCurrency?: () => s
       const cash = debtCash(ctx, scope, input.aboutAssetId, base), signed = input.direction === 'borrow' ? subtractMoney('0', principal) : principal;
       const raw = { id: -1, userid: scope.uid, type: 5, stype: input.direction === 'borrow' ? 51 : 52, name: input.name, money: new LosslessNumber(signed), status: 0, sort: 0, incount: input.inCount ? 1 : 0, lastPayTime: 0,
         loan: { money: new LosslessNumber(signed), totalpay: 0, startdate: input.startDate, enddate: input.endDate ?? null } };
-      const extra = { bookid: new LosslessNumber(input.bookId), ...(input.aboutAssetId ? { accountId: new LosslessNumber(input.aboutAssetId) } : {}), ...(input.remark ? { remark: input.remark } : {}), ...(input.images?.length ? { images: assertImageReferences(ctx, scope, input.images) } : {}) };
+      // APK puts a Gson JsonArray into Android JSONObject: this field is a JSON string.
+      const extra = { bookid: new LosslessNumber(input.bookId), ...(input.aboutAssetId ? { accountId: new LosslessNumber(input.aboutAssetId) } : {}), ...(input.remark ? { remark: input.remark } : {}), ...(input.images?.length ? { images: JSON.stringify(assertImageReferences(ctx, scope, input.images)) } : {}) };
       const logicalId = `debt:${command.requestId}`, affectedIds = [`asset-new:${command.requestId}`, ...(cash ? [`asset:${input.aboutAssetId}`] : [])], effects = cash ? [debtEffect(cash, debtCashDelta(input.direction, 'append', principal), base)] : [];
       return { payload: { scope: { ...scope }, logicalId, raw, extra, base, bookId: input.bookId, principal, direction: input.direction, cashId: input.aboutAssetId ?? null, remark: input.remark ?? '' }, items: [{ id: logicalId, affectedIds, assetEffects: effects }], affectedIds, affectedDomains: ['assets', 'ledger'] };
     },
@@ -40,6 +41,8 @@ export function createDebtMutationHandler(dependencies: { baseCurrency?: () => s
       if (resourceExisted(prepared,ctx.repository,scope,'assets','asset',id,ctx.validatingHistoricalReceipt)) return assetError('ASSET_NEW_ID_CONFLICT', '新增借贷回执复用了已有资产ID');
       const bill = projectBill(data.bill!), wire = asBillObject(bill.raw), cashField = p.direction === 'borrow' ? 'targetid' : 'fromid';
       if (bill.type !== (p.direction === 'borrow' ? 6 : 7) || positiveBillId(wire.assetid) !== id || positiveBillId(wire[cashField]) !== (p.cashId ?? null) || numericText(wire.bookid, '') !== p.bookId || numericText(wire.userid, '') !== scope.uid || compareMoney(bill.money, String(p.principal)) !== 0 || billExisted(prepared,ctx.repository,scope,bill.id,ctx.validatingHistoricalReceipt) || p.remark && wire.remark !== p.remark) return assetError('DEBT_INITIAL_BILL_INVALID', '官方初始本金账单缺失或与本次借贷不一致');
+      const imageField=asBillObject(p.extra).images;
+      if(imageField!==undefined){const images=typeof imageField==='string'?parseWire(imageField):imageField;if(!Array.isArray(images)||!images.every(image=>typeof image==='string')||!Array.isArray(wire.images)||stringifyWire(images)!==stringifyWire(wire.images))return assetError('DEBT_INITIAL_BILL_INVALID','官方初始本金账单未保留本次选择的图片');}
       const ledger = ctx.repository.dataset(scope, 'ledger'); if (!ledger) return assetError('DATASET_MISSING', '账单数据集不存在');
       new ResourceCache(ctx.repository, ctx.clock).confirmResources(scope, 'assets', [{ id, kind: 'asset', raw }]);
       ctx.repository.applyPage(scope, ledger.id, { upserts: [bill], deletes: [], resources: [], pageState: ctx.repository.syncState(scope, 'ledger', ledger.id)?.pageState ?? null });

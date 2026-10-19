@@ -5,7 +5,7 @@ export const bookIdSchema = z.string().regex(/^(?:-1|[1-9]\d{0,24})$/);
 export const bookRangeSchema = z.string().regex(/^(?:|all|y|q|m(?:[1-9]|1\d|2[0-8]))$/);
 const version = z.string().length(64);
 export const bookListSchema = z.strictObject({ includeHidden: z.boolean().default(false) });
-export const bookSubmitSchema = z.discriminatedUnion('mode', [z.strictObject({ mode: z.literal('create'), name: z.string().trim().min(1).max(100), type: z.int(), cover: z.string().max(2048).nullable().optional(), range: bookRangeSchema.optional() }), z.strictObject({ mode: z.literal('edit'), id: bookIdSchema, expectedVersion: version, name: z.string().trim().min(1).max(100).optional(), cover: z.string().max(2048).nullable().optional(), range: bookRangeSchema.optional() }).refine((input) => input.name !== undefined || input.cover !== undefined || input.range !== undefined)]);
+export const bookSubmitSchema = z.discriminatedUnion('mode', [z.strictObject({ mode: z.literal('create'), name: z.string().trim().min(1).max(15), type: z.int(), cover: z.string().max(2048).nullable().optional(), range: bookRangeSchema.optional() }), z.strictObject({ mode: z.literal('edit'), id: bookIdSchema, expectedVersion: version, name: z.string().trim().min(1).max(15).optional(), cover: z.string().max(2048).nullable().optional(), range: bookRangeSchema.optional() }).refine((input) => input.name !== undefined || input.cover !== undefined || input.range !== undefined)]);
 export const bookConfigureSchema = z.strictObject({ id: bookIdSchema, expectedVersion: version, range: bookRangeSchema });
 export const bookVisibleSchema = z.strictObject({ id: bookIdSchema, visible: z.boolean() });
 export const bookDeleteSchema = z.strictObject({ id: bookIdSchema, expectedVersion: version });

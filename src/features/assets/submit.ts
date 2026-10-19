@@ -1,5 +1,5 @@
 import type { MutationCommand, OperationContext } from '../../operations/contract';
-import { asBillObject, moneyText, numericText, type BillObject } from '../../shared/bill-wire';
+import { asBillObject, moneyText, numericText, positiveBillId, type BillObject } from '../../shared/bill-wire';
 import { LosslessNumber } from 'lossless-json';
 import { billVersion, restoreBillInput } from '../ledger/write';
 import { assetSubmitSchema } from './contract';
@@ -49,7 +49,8 @@ export function assetMatchesIntent(actual: BillObject, expected: BillObject): bo
   if (expected.credit != null) {
     if (actual.credit == null) return false;
     const a = asBillObject(actual.credit), b = asBillObject(expected.credit);
-    for (const key of ['statedate', 'paydate2', 'statein', 'shareid']) if (b[key] !== undefined && numericText(a[key], '') !== numericText(b[key], '')) return false;
+    for (const key of ['statedate', 'paydate2', 'statein']) if (b[key] !== undefined && numericText(a[key], '') !== numericText(b[key], '')) return false;
+    if(b.shareid!==undefined&&positiveBillId(a.shareid)!==positiveBillId(b.shareid))return false;
     if (b.limit !== undefined && compareMoney(moneyText(a.limit), moneyText(b.limit)) !== 0) return false;
   }
   return true;

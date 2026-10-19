@@ -48,7 +48,7 @@ export function BookEditor({ initial, draftKey, allowed, types, deletion, books,
   return <form className="bill-editor" onSubmit={(event) => { void submit(event); }}><FieldGroup>
     {draft.action === 'books.submit' ? <>
       {draft.input.mode === 'create' ? <Field><FieldLabel>账本类型</FieldLabel><Select value={String(draft.input.type)} disabled={disabled} onValueChange={(value) => { const type = types?.items.find((type) => String(type.type) === value); if (type) patch({ type: type.type, cover: type.cover, range: type.range }); }}><SelectTrigger aria-label="账本类型"><SelectValue /></SelectTrigger><SelectContent>{types?.items.map((type) => <SelectItem key={type.type} value={String(type.type)}>{type.name}</SelectItem>)}</SelectContent></Select></Field> : null}
-      <Field><FieldLabel htmlFor="book-name">账本名称</FieldLabel><Input id="book-name" value={draft.input.name ?? ''} maxLength={100} required disabled={disabled} onChange={(event) => patch({ name: event.target.value })} /></Field>
+      <Field><FieldLabel htmlFor="book-name">账本名称</FieldLabel><Input id="book-name" value={draft.input.name ?? ''} maxLength={15} required disabled={disabled} onChange={(event) => patch({ name: event.target.value })} /></Field>
       {draft.input.mode === 'create' ? <BookRangeSelect value={draft.input.range ?? ''} disabled={disabled} onChange={(range) => patch({ range })} /> : null}
     </> : null}
     {draft.action === 'books.configure' ? <BookRangeSelect value={draft.input.range} disabled={disabled} onChange={(range) => patch({ range })} /> : null}

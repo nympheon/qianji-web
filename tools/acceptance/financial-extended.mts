@@ -35,15 +35,15 @@ export async function runForeignTransfers(e:CaseEnvironment){
  }
  return {state:'ready',foreignTransferAndCardCreateEditDeleteHistoricalAmountsAndRealBalances:true};
 }
-export async function runDebtExtended(e:CaseEnvironment){
- await e.synchronize();const before=await balances(e,'extended-debt-before',['cash-a']);
- for(const direction of ['borrow','lend'] as const){const label='extended-debt-'+direction;
+export async function runDebtExtended(e:CaseEnvironment,variant='legacy'){
+ await e.synchronize();if(variant==='v2'&&e.optional('extended-debt-borrow'))await e.phase('early-debt-image-cleanup',async()=>{if(e.hasIntent('early-debt-image-cleanup'))await e.write('early-debt-image-cleanup','assets.delete',{});else{const old=await asset(e,'extended-debt-borrow');await e.write('early-debt-image-cleanup','assets.delete',{id:old.id,expectedVersion:old.editVersion});}await e.synchronize();});const before=await balances(e,`extended-debt-${variant}-before`,['cash-a']);
+ for(const direction of ['borrow','lend'] as const){const label=(variant==='v2'?'extended-debt-v2-':'extended-debt-')+direction;
   await e.phase(label+'-create',async()=>{
    const result=await e.write(label+'-create','debt.create',{direction,name:e.prefix+(direction==='borrow'?'补验借入':'补验借出'),principal:'0.2',bookId:e.known('book'),aboutAssetId:e.known('cash-a'),startDate:'2026-10-19',endDate:null,inCount:false,remark:e.prefix+'本金编辑',images:[e.known('image-bill')]});const entries=Object.entries(result.idMap),principal=entries.find(([key])=>key.endsWith(':principal')),debt=entries.find(([key])=>!key.endsWith(':principal'));check(principal&&debt,'借贷资产和初始账单未分别确认');e.remember(label,'asset',debt![1]);e.remember(label+'-initial','bill',principal![1]);await e.synchronize();const row=await e.read('ledger.detail',{id:principal![1]});check(row.images.includes(e.known('image-bill')),'借贷初始图片未回拉');
   });
   await e.phase(label+'-edit',async()=>{const row=await e.read('ledger.detail',{id:e.known(label+'-initial')});await e.write(label+'-edit','debt.editPrincipal',{id:row.id,expectedVersion:row.editVersion,changes:{principal:'0.3',remark:e.prefix+'本金编辑已改'}});await e.synchronize();check(compareMoney((await asset(e,label)).money,direction==='borrow'?'-0.3':'0.3')===0,'初始本金编辑未更新借贷余额');const after=await e.read('ledger.detail',{id:row.id});check(compareMoney(after.money,'0.3')===0,'本金账单编辑未回拉');});
   await e.phase(label+'-interest',async()=>{const debt=await asset(e,label),result=await e.write(label+'-interest','debt.pay',{id:debt.id,expectedVersion:debt.editVersion,principal:'0',interest:'0.01',bookId:e.known('book'),aboutAssetId:e.known('cash-a'),timeSec:Math.floor(Date.now()/60000)*60,remark:e.prefix+'仅利息'});await e.synchronize();check(compareMoney((await asset(e,label)).money,direction==='borrow'?'-0.3':'0.3')===0,'仅利息不应修改本金余额');const ids=result.affectedIds.filter(id=>/^[1-9]\d+$/.test(id));check(ids.length===1,'仅利息应有一笔独立账单');const row=await e.read('ledger.detail',{id:ids[0]!});check(row.type===(direction==='borrow'?10:11)&&compareMoney(row.money,'0.01')===0,'仅利息原生账单未回拉');});
-  await e.phase(label+'-delete',async()=>{const debt=await asset(e,label);await e.write(label+'-delete','assets.delete',{id:debt.id,expectedVersion:debt.editVersion});await e.synchronize();});
+  await e.phase(label+'-delete',async()=>{const debt=await asset(e,label);await e.write(label+'-delete','assets.delete',{id:debt.id,expectedVersion:debt.editVersion});await e.synchronize();for(const finished of [false,true]){e.invalidateSource({domain:'assets',queryKey:`asset:loans:${direction==='borrow'?51:52}:${finished?1:0}`,resourceKind:'asset'});const list=await e.read('debt.list',{direction,finished},true);check(!list.items.some(row=>row.asset.id===debt.id),'删除借贷后官方已结/未结列表仍有该测试对象');}});
  }
  await checkBalances(e,before);return {state:'ready',borrowAndLendInitialImagePrincipalEditInterestOnlyAndDelete:true,symmetricCashEffectsNetZero:true};
 }

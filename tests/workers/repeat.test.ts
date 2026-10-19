@@ -10,6 +10,23 @@ import { asBillObject } from '../../src/shared/bill-wire';
 import { parseWire, stringifyWire } from '../../src/shared/wire-json';
 import { projectBill } from '../../src/features/sync/incremental';
 const task = () => ({ id: '100', packid: '900', userid: 'user-A', type: 0, count: 3, status: 0, createtime: 100, updatetime: 200, unknown: true, data: { bookid: '1', cateid: '2', fromid: '-1', targetid: '-1', money: '10', fee: '0', start: '2026-01-01', time: '08:30', repeat: { type: 'day', value: [] }, remark: 'test', billflag: 0, images: [], tags: [], unknownData: 'keep' } });
+it('reads an official weekly income task with a date limit and omitted zero fee',()=>{
+ const raw={...task(),type:1,data:{bookid:'1',cateid:'2',fromid:'3',money:'1',start:'2026-12-31',time:'12:30',repeat:{type:'week',value:['1','7']},end:{date:'2028-12-31'},remark:'test',billflag:3,images:['image-key'],tags:['tag-key']}};
+ expect(repeatView(raw).fields).toMatchObject({type:1,enteredMoney:'1',fee:'0',repeat:{type:'week',values:['1','7']},end:{kind:'date',date:'2028-12-31'}});
+});
+it('normalizes official numeric repeat values without changing the saved raw task',()=>{
+ const raw=asBillObject(parseWire(JSON.stringify({...task(),type:1,data:{...task().data,repeat:{type:'week',value:[1,7]},end:{date:'2028-12-31'}}})));
+ expect(repeatView(raw).fields).toMatchObject({repeat:{type:'week',values:['1','7']},end:{kind:'date',date:'2028-12-31'}});
+ expect(stringifyWire(asBillObject(raw.data).repeat!)).toContain('[1,7]');
+});
+it('accepts native foreign-asset amounts and rejects a preset exchange snapshot before sending',async()=>{
+ const s=await setup();await s.app.repository(async repository=>{
+  repository.createDataset(s.app.scope,'assets','assets');repository.applyPage(s.app.scope,'assets',{upserts:[],deletes:[],resources:[{id:'3',kind:'asset',raw:{id:'3',type:1,stype:11,currency:'USD',money:'0'}}],pageState:null,complete:true},'assets');repository.switchDataset(s.app.scope,'assets','assets',null);
+  const ctx={repository,clock:s.clock,client:s.upstream.client},handler=createRepeatMutationHandler(),fields={...repeatView(task()).fields!,fromAssetId:'3'},command={action:'repeat.submit',scope:s.app.scope,requestId:'native-fx',input:{mode:'create',fields}};
+  const prepared=await handler.prepare(command,ctx);expect(asBillObject(asBillObject(prepared.payload).raw).data).toMatchObject({fromid:expect.anything()});
+  await expect(handler.prepare({...command,requestId:'unsupported-snapshot',input:{mode:'create',fields:{...fields,currency:{srcSymbol:'USD',srcValue:'10',targetSymbol:'USD',targetValue:'10',baseSymbol:'CNY',baseValue:'70'}}}},ctx)).rejects.toMatchObject({code:'REPEAT_CURRENCY_UNSUPPORTED'});
+ });expect(s.upstream.calls.filter(call=>call.url.includes('/submit'))).toHaveLength(0);
+});
 async function setup() {
   const app = await createTestApp(), clock = new TestClock(), upstream = createUpstream(clock, app.scope); let current = task(), binding = '999', mutations = 0, lost = false, present = true, ledgerReady = true,emptyAck=false;
   await app.repository((repository) => { repository.sql.exec("UPDATE connection SET state='connected' WHERE singleton=1").toArray(); for (const domain of ['ledger', 'books'] as const) { repository.createDataset(app.scope, domain, domain); repository.applyPage(app.scope, domain, { upserts: domain === 'ledger' ? [projectBill({ id: '500', userid: app.scope.uid, bookid: '1', type: 0, time: 100, money: '10', packid: binding, extra: {} })] : [], deletes: [], resources: domain === 'books' ? [{ id: '1', kind: 'book', raw: { bookid: '1' } }] : [{ id: '2', kind: 'category', raw: { id: '2', bookid: '1', type: 0 } }], complete: true, validatedAt: clock.nowIso(), pageState: null }, domain); repository.switchDataset(app.scope, domain, domain, null); } });
@@ -57,6 +74,13 @@ it('preserves a prior saved base currency when only the task remark changes', as
   const s = await setup(), native = task(), curr = { ss: 'USD', sv: '10', ts: 'CNY', tv: '70', bs: 'EUR', bv: '8' }; const raw = { ...native, data: { ...native.data, curr } }; let posted: unknown;
   s.upstream.respond(async () => { const call = s.upstream.calls.at(-1)!; if (call.url.includes('/list')) return new Response(stringifyWire({ ec: 200, data: { list: [raw], hasmore: false } })); const body = asBillObject(parseWire(new URLSearchParams(call.body).get('v')!)); posted = body; return new Response(stringifyWire({ ec: 200, data: { task: body, bills: [] } })); });
   const result = await s.run(({ coordinator }) => coordinator.submit({ action: 'repeat.submit', scope: s.app.scope, requestId: 'metadata-old-base', input: { mode: 'edit', id: '100', expectedVersion: repeatView(raw).editVersion, changes: { ...repeatView(raw).fields!, remark: 'updated' } } })); expect(result.state).toBe('succeeded'); expect(posted).toMatchObject({ data: { curr: { bs: 'EUR' }, remark: 'updated' } });
+});
+it('reports a proved dropped currency field as a failed setting with the created task ID, never a successful request',async()=>{
+ const s=await setup();
+ // A saved pre-upgrade request may already have been accepted with this field omitted.
+ await s.app.repository(async repository=>{const ctx={repository,clock:s.clock,client:s.upstream.client},handler=createRepeatMutationHandler(),fields={...repeatView(task()).fields!,currency:{srcSymbol:'USD',srcValue:'10',targetSymbol:'CNY',targetValue:'70',baseSymbol:'CNY',baseValue:'70'}},prepared={payload:{scope:{...s.app.scope},kind:'submit',id:'-1',logicalId:'legacy-create',create:true,beforeIds:['100'],fields},items:[{id:'legacy-create',affectedIds:[]}],affectedIds:[]};
+ const result=handler.applyReceipt(prepared,{ec:'200',httpStatus:200,data:asBillObject(parseWire(JSON.stringify({task:{...task(),id:'101',packid:'901'},bills:[]})))},ctx);
+ expect(result.items[0]).toMatchObject({state:'failed',error:{code:'REPEAT_CURRENCY_NOT_SAVED'}});expect(Object.values(result.idMap??{})).toEqual(['101']);});
 });
 it('applies only official task and bill receipts and leaves previous bill history intact', async () => {
   const s = await setup(); s.upstream.respond(async () => { const call = s.upstream.calls.at(-1)!; if (call.url.includes('/list')) return Response.json({ ec: 200, data: { list: [task()], hasmore: false } }); const raw = asBillObject(parseWire(new URLSearchParams(call.body).get('v')!)); return new Response(stringifyWire({ ec: 200, data: { task: { ...raw, id: '101', packid: '901', userid: s.app.scope.uid, status: 1 }, bills: [{ id: '600', userid: s.app.scope.uid, bookid: '1', packid: '901', type: 0, time: 200, money: '10', extra: {} }] } })); });

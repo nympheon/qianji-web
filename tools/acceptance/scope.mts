@@ -3,7 +3,7 @@ import { isLosslessNumber } from 'lossless-json';
 import { parseWire } from '../../src/shared/wire-json';
 import type { PreparedMutation } from '../../src/operations/contract';
 
-export type TestResource = 'book'|'asset'|'category'|'bill'|'tag'|'tagGroup'|'assetGroup'|'repeat'|'installment'|'saving'|'transaction'|'attachment';
+export type TestResource = 'book'|'asset'|'category'|'bill'|'tag'|'tagGroup'|'assetGroup'|'repeat'|'installment'|'pack'|'saving'|'transaction'|'attachment';
 export interface AcceptanceManifest {
   uid:string; prefix:string; actions:readonly string[];
   resources:Partial<Record<TestResource,readonly string[]>>;
@@ -70,6 +70,7 @@ export class AcceptanceScope {
       else if(/tagId$/i.test(key))kind='tag';
       else if(/billId$/i.test(key)||key==='sourceId')kind='bill';
       else if(key==='transId')kind='transaction';
+      else if(key==='packId')kind='pack';
       else if(key==='planId')kind=target;
       else if(key==='groupId')kind=action.startsWith('tags.')?'tagGroup':'assetGroup';
       else if(key==='id')kind=target;

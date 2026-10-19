@@ -30,7 +30,7 @@ it('associates confirmed bill images using each native business payload and keep
     const payment = prepareDebtBills(command('debt.pay', { id: '30', expectedVersion: billVersion(debt), bookId: '1', aboutAssetId: '10', principal: '5', interest: '1', timeSec: 200, images }), ctx).prepared, entries = asBillObject(payment.payload).entries as WireJson[];
     expect(asBillObject(asBillObject(entries[0]).wire).images).toEqual(images); expect(asBillObject(asBillObject(entries[1]).wire).images).toEqual([]);
     const create = await createDebtMutationHandler().prepare(command('debt.create', { direction: 'borrow', name: 'test', principal: '5', bookId: '1', aboutAssetId: '10', startDate: '2026-01-01', inCount: true, images }), ctx);
-    expect(asBillObject(asBillObject(create.payload).extra).images).toEqual(images);
+    expect(asBillObject(asBillObject(create.payload).extra).images).toBe(JSON.stringify(images));
     expect(() => prepareTransfer(command('ledger.transfer', { mode: 'create', bookId: '1', fromAssetId: '10', targetAssetId: '20', enteredMoney: '5', fee: '0', timeSec: 200, images: ['https://example.test/fake.jpg'] }), ctx)).toThrowError(expect.objectContaining({ code: 'IMAGE_UPLOAD_REQUIRED' }));
   });
 });

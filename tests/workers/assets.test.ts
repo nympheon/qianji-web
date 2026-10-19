@@ -1,4 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import {assetMatchesIntent} from '../../src/features/assets/submit';
+it('recognizes an omitted official shared credit ID as the requested unlink, retaining positive-ID checks',()=>{
+ const common={id:'20',type:2,money:'0',credit:{statedate:2,paydate2:'12',limit:'200',statein:1}};
+ expect(assetMatchesIntent(common,{...common,credit:{...common.credit,shareid:-1}})).toBe(true);
+ expect(assetMatchesIntent(common,{...common,credit:{...common.credit,shareid:'21'}})).toBe(false);
+});
 import { summarizeAssets } from '../../src/features/assets/summary';
 import { createAssetMutationHandler } from '../../src/features/assets/use-cases';
 import { createTestApp } from '../support/app';

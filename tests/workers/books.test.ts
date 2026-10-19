@@ -16,6 +16,15 @@ import { AccountingConfiguration, createAccountingConfigurationHandler } from '.
 import { billChangesSchema } from '../../src/features/ledger/write-contract';
 import { transferFieldsSchema } from '../../src/features/ledger/transfer-contract';
 import { createDebtSchema } from '../../src/features/debt/contract';
+import {bookSubmitSchema} from '../../src/features/books/contract';
+it('rejects a book name longer than the upstream fifteen-character limit before sending',()=>{
+ expect(bookSubmitSchema.safeParse({mode:'create',name:'一'.repeat(16),type:-1}).success).toBe(false);
+ expect(bookSubmitSchema.safeParse({mode:'create',name:'一'.repeat(15),type:-1}).success).toBe(true);
+});
+it('retains the created ID but reports failure for a proved truncated legacy book name',async()=>{
+ const s=await setup();await s.app.repository(repository=>{const name='验261019Abook-template--1',handler=createBookMutationHandler(),prepared={payload:{scope:{...s.app.scope},id:'-1',logicalId:'legacy-book',kind:'submit',create:true,expected:{name,type:-1},raw:{},params:{}},items:[{id:'legacy-book',affectedIds:[]}],affectedIds:[]},raw={bookid:'30',userid:s.app.scope.uid,name:name.slice(0,15),type:-1,visible:1};
+ const result=handler.applyReceipt(prepared,{ec:'200',httpStatus:200,data:raw},{repository,clock:s.clock,client:s.upstream.client});expect(result.items[0]).toMatchObject({state:'failed',error:{code:'BOOK_NAME_TRUNCATED'}});expect(Object.values(result.idMap??{})).toEqual(['30']);});
+});
 const owned = { bookid: '10', name: '测试自建账本', userid: 'user-A', memberid: 'user-A', type: 1, visible: 1, sort: 0, expired: 0, membercount: 1, config: { range: 'm10' } };
 const joined = { ...owned, bookid: '20', name: '测试参与账本', userid: 'other-owner', memberid: 'user-A', visible: 0, sort: 1, expired: 1 };
 async function setup() {
