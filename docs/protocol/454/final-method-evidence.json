@@ -1,0 +1,61 @@
+{
+  "apk": {
+    "package": "com.mutangtech.qianji",
+    "version": "4.5.4",
+    "versionCode": 1234
+  },
+  "checkedAt": "2026-10-19",
+  "format": "MT decoded smali UTF-8 text, exact returned text; hashes are not APK binary hashes",
+  "entries": [
+    {
+      "locator": "dex_class:Lcom/mutangtech/qianji/data/model/BudgetSetNew;",
+      "textSha256": "9b618642cbdf71a01b9361d3c26df2d7a6c2ee80cbfc8b26690b73e4f0e12590",
+      "truncated": false
+    },
+    {
+      "locator": "dex_method:Lcom/mutangtech/qianji/data/model/Installment;->calculateAverageValue(Lcom/mutangtech/qianji/data/model/Installment;DLjava/lang/String;)D",
+      "textSha256": "6c19bbff807f1ef772be535b104bdd47f686f0b44c61cdb64ff4f92d82a1808c",
+      "truncated": false
+    },
+    {
+      "locator": "dex_method:Lcom/mutangtech/qianji/data/model/Installment;->calculateLeftValue(Lcom/mutangtech/qianji/data/model/Installment;DLjava/lang/String;)D",
+      "textSha256": "6f0aa205d11f7e3fc152b7b618e340ccb9c6a275e84bc75640bb9d19591d3560",
+      "truncated": false
+    },
+    {
+      "locator": "dex_class:Lch/c$c$a;",
+      "textSha256": "29a28ca3bc1c0a8af5b0c81ac178133ca09b07f134d9ee673b2a8a31be14e457",
+      "truncated": false
+    },
+    {
+      "locator": "dex_method:Lwf/n;->j1()V",
+      "textSha256": "75875d339c4f69886de70baf43efd91a7a85f88d7fee24ddb435818fa42ba6ed",
+      "truncated": false
+    },
+    {
+      "locator": "dex_method:Lwf/n;->W0()V",
+      "textSha256": "5824d3a29c17b948b153bbc11fef4a2a2905868dcec09295ba1d6199d83a8d66",
+      "truncated": false
+    },
+    {
+      "locator": "dex_method:Lcom/mutangtech/qianji/bill/add/image/AddBillImagePresenter;->removeImage(I)V",
+      "textSha256": "6cbc160be1e935a199d4845104dfe42eea27dbbda479f5d8fb607b19dbe5763b",
+      "truncated": false
+    },
+    {
+      "locator": "dex_method:Lzf/b;->getNextRepeatTime(Ljava/util/Calendar;Lcom/mutangtech/qianji/data/model/RepeatConfig;Z)Ljava/util/Calendar;",
+      "textSha256": "79f731986cf66b949b952577bd64cb95111d40d22411fa973c5e0424cfa4d46f",
+      "truncated": false
+    },
+    {
+      "locator": "dex_class:Lbl/c;",
+      "textSha256": "6a4d7880015aa26e68a889523c498a425d45564fcc7bd104c7f2ed551204e8d9",
+      "truncated": false
+    },
+    {
+      "locator": "dex_class:Ldh/c;",
+      "textSha256": "b53aae492f71b9850cfd7306df2b5cc89cb4931182f4b1f11a189ac960f29d27",
+      "truncated": false
+    }
+  ]
+}

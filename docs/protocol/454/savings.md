@@ -45,6 +45,6 @@ transaction核对账号、原planId、新transId、amount/time/remark及是否�
 
 ## 验证边界
 
-实际只读目录已返回ready/complete（空目录），未保存个人原始数据。业务、HTTP和桌面/手机测试包含目标币种金额、部分成功、未知存入不重发、规则编辑保留历史、撤销及deleteBills两种策略。真实写入、撤销已有/已删Bill、图片与多币种服务端语义，均等待任务27专用测试资源验收，正式写能力仍为WRITE_LIVE_UNVERIFIED。
+业务、HTTP和桌面/手机测试包含目标币种金额、部分成功、未知存入不重发、规则编辑保留历史、撤销及deleteBills两种策略。七模式、真实写入、撤销已有/已删Bill、图片及多币种已在专用新资源补验，提供范围的正式写能力已启用；历史币种变更等未核验分支继续拒绝。当前结果见[真实验收矩阵](../../acceptance/live-matrix.md)及[协议边界](../../acceptance/protocol-gaps.md)。
 
 官方[存钱计划说明](https://docs.qianjiapp.com/saving/saving_plan.html)补充365天模式的用户语义；私有接口与其余规则以本次APK证据为准。

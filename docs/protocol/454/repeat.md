@@ -40,6 +40,6 @@
 
 证据：`network/api/repeattask/a,b,c`、`network/api/bill/f`、`SortFilter.getValue`、`RepeatTaskSubmitAct.A0/h1/E1` 及 k/n 回调、`zf/b.g/h/k/l/m/n/o/buildPreviewBills`、`zf/a`、`rf/c` 绑定回调、`Bill.importPackId` 注解。另见[周期域静态审查](../../research/2026-10-18-apk-scheduled-plans-audit.md)。
 
-真实写入仍待 Task27 的专用测试资源验收，包括手机离线时执行、后续任务生成、删除历史关系、结束边界及会员额度；未增加 Worker 定时出账器。
+配置新增/编辑、暂停恢复、规则、历史绑定、删除及关联资产币种已用专用新资源补验，提供范围写入已启用，见[真实矩阵](../../acceptance/live-matrix.md)。手机离线执行、未来任务实际生成和真实账号额度边界仍未观察；未增加 Worker 定时出账器。
 
 Task27 当前上游补充：对专门新建、尚未到期的月末任务，暂停和恢复均实际返回 `ec=200,data={}`。这与 APK 静态 parser/b 的列表形式不同。仅 repeat.toggle 允许这一确切的空对象 ACK，归一为 null，不能伪造空账单列表。返回真实 data.list 时照常保存官方账单；ACK 或列表均需只读核对实际启停目标，并核验写后账单来源，才确认原操作。未知非空对象及其他列表接口的空对象仍明确报结构变化。

@@ -20,6 +20,8 @@ import {installmentView} from '../../src/features/installments/source';
 import {isLosslessNumber} from 'lossless-json';
 import {assetView} from '../../src/features/assets/model';
 import {bookView} from '../../src/features/books/model';
+import {cleanupInventory,cleanupSnapshot,runCleanup} from './cleanup.mts';
+import {assertOrphanSavingProvenance,cleanupWriteStep} from './cleanup-guard.mts';
 
 interface Manifest extends AcceptanceManifest {
  aliases:Record<string,string>;
@@ -83,6 +85,13 @@ export class QianjiState extends DurableObject<Env>{
    if(!manifest){manifest={uid:account.uid,prefix:'验261019A',actions:[...testActions],resources:{},aliases:{},intents:{}};this.save(manifest);}
    if(manifest.uid!==account.uid)throw new DomainError('ACCEPTANCE_SCOPE_DENIED','当前账号与测试范围不同');
    manifest.actions=[...testActions];this.save(manifest);
+   if(name==='cleanup-inventory'){
+    const nodes=await cleanupSnapshot(this.context,account),inventory=cleanupInventory(manifest,nodes);
+    const oldSaving=this.context.coordinator.store.find(account,manifest.prefix+':saving-create'),params=asBillObject(asBillObject(oldSaving?.prepared?.payload).params);
+    const savingEvidence=nodes.filter(node=>node.kind==='saving'&&inventory.unregistered.some(item=>item.id===node.id)).map(node=>({id:node.id,expected:{name:params.name,currency:params.currency,mode:params.mode,rule:params.rule,remark:params.remark,icon:params.icon,color:params.color},actual:{name:node.raw.name,currency:node.raw.currency,mode:node.raw.mode,rule:node.raw.rule,remark:node.raw.remark,icon:node.raw.icon,color:node.raw.color},ownerMatches:numericText(node.raw.userid,'')===account.uid}));
+    const unknown=Object.entries(manifest.intents).flatMap(([step,intent])=>{const op=this.context.coordinator.store.find(account,manifest!.prefix+':'+step);if(!op||!['uncertain','partial'].includes(op.state))return [];const p=asBillObject(op.prepared?.payload);return [{step,action:intent.action,state:op.state,sendCount:op.sendCount,idMap:op.idMap,hasOriginalReceipt:!!op.prepared?.received,payloadKeys:Object.keys(p),beforeIds:Array.isArray(p.beforeIds)?p.beforeIds.length:null}];});
+    return JSON.parse(JSON.stringify({state:'ready',...inventory,resources:manifest.resources,aliases:manifest.aliases,unknown,savingEvidence},(_key,value:unknown)=>isLosslessNumber(value)?value.value:value));
+   }
    if(name==='prepay-card-inspect'){
     const operation=this.context.coordinator.store.find(account,manifest.prefix+':installment-fx-prepay-card-create'),reply=operation?.prepared?.received?.reply,raw=asBillObject(asBillObject(reply?.data).asset),expected=asBillObject(asBillObject(operation?.prepared?.payload).raw);
     if(numericText(raw.userid,'')!==account.uid||!String(raw.name).startsWith(manifest.prefix)||!String(expected.name).startsWith(manifest.prefix))throw new DomainError('ACCEPTANCE_SCOPE_DENIED','仅允许检查新提前还款测试卡');
@@ -127,7 +136,9 @@ export class QianjiState extends DurableObject<Env>{
     if(acceptedPartial)partialReads.push(action);
     return reply.data as ActionOutputs[A];
    };
-   const write=async(step:string,action:ActionName,input:Record<string,unknown>,expectedPartialCodes:readonly string[]=[])=>{
+   const write=async(step:string,action:ActionName,input:Record<string,unknown>,expectedPartialCodes:readonly string[]=[]):Promise<OperationView>=>{
+    const cleanupStep=cleanupWriteStep(step,this.context.coordinator.store.find(account,current.prefix+':'+step));
+    if(cleanupStep!==step)return write(cleanupStep,action,input,expectedPartialCodes);
     const requestId=current.prefix+':'+step,prior=current.intents[step];
     if(prior&&prior.action!==action)throw new DomainError('ACCEPTANCE_INTENT_CHANGED','原验收步骤不能更换操作');
     if(!prior){const {dataBase64:_bytes,...metadata}=input;current.intents[step]={action,input:action==='attachments.upload'?metadata:input};this.save(current);}
@@ -172,7 +183,17 @@ export class QianjiState extends DurableObject<Env>{
    const checkpoint=<T,>(key:string,value:T):T=>{const observations=current.observations??={};if(Object.hasOwn(observations,key))return observations[key] as T;observations[key]=value;this.save(current);return value;};
    const phase=async<T,>(key:string,run:()=>Promise<T>):Promise<T>=>{const phases=(current.observations??={});const id='phase:'+key;if(Object.hasOwn(phases,id))return phases[id] as T;const value=await run();phases[id]=value??null;this.save(current);return value;};
    const requireNotSentFailure=(step:string,code:string)=>{const operation=this.context.coordinator.store.find(account,current.prefix+':'+step);if(!operation||operation.state!=='failed'||operation.sendCount!==0||operation.error?.code!==code)throw new DomainError('ACCEPTANCE_RETRY_DENIED','只有明确未发送且错误完全匹配的准备失败才可建立后续测试意图');};
-   const result=await runCase(name,{phase,requireNotSentFailure,hasIntent:step=>!!current.intents[step],prefix:current.prefix,read,write,remember,known,synchronize,checkpoint,invalidateSource:key=>this.context.cache.invalidateSource(account,key),optional:alias=>current.aliases[alias],billPostCount:()=>this.#billPosts,armReceiptLoss:()=>{if(name!=='receipt-loss')throw new DomainError('ACCEPTANCE_SCOPE_DENIED','故障仅限专用响应丢失场景');this.#dropBillReceipt=true;}});
+   const environment={phase,requireNotSentFailure,hasIntent:(step:string)=>!!current.intents[step],prefix:current.prefix,read,write,remember,known,synchronize,checkpoint,invalidateSource:(key:import('../../src/storage/cache').CacheKey)=>this.context.cache.invalidateSource(account,key),optional:(alias:string)=>current.aliases[alias],billPostCount:()=>this.#billPosts,armReceiptLoss:()=>{if(name!=='receipt-loss')throw new DomainError('ACCEPTANCE_SCOPE_DENIED','故障仅限专用响应丢失场景');this.#dropBillReceipt=true;}};
+   if(name==='cleanup-execute'){
+    const nodes=await cleanupSnapshot(this.context,account),unregistered=cleanupInventory(current,nodes).unregistered;
+    if(unregistered.length===1&&unregistered[0]?.kind==='saving'){
+     const node=nodes.find(node=>node.kind==='saving'&&node.id===unregistered[0]!.id)!,op=this.context.coordinator.store.find(account,current.prefix+':saving-create');
+     if(!op?.prepared)throw new DomainError('CLEANUP_ID_UNPROVEN','缺少旧测试计划的原准备命令');
+     assertOrphanSavingProvenance(current,{uid:op.scope.uid,sendCount:op.sendCount,payload:asBillObject(op.prepared.payload)},node.raw);
+     current.resources.saving=[...(current.resources.saving??[]),node.id];checkpoint('cleanup:orphan-saving',{id:node.id,proof:'empty-complete-before-snapshot-and-exact-immutable-config',originalOperationState:op.state});this.save(current);
+    }
+   }
+   const result=name==='cleanup-execute'||name==='cleanup-verify'?await runCleanup(this.context,account,current,environment,name==='cleanup-verify'):await runCase(name,environment);
    return {...result,case:name,resources:Object.fromEntries(Object.entries(current.resources).map(([kind,ids])=>[kind,ids?.length??0])),operations,partialReads,trace:this.#trace,...this.monitor.snapshot(),observedAt:new Date().toISOString()};
   }catch(error){return {case:name,state:'error',error:error instanceof DomainError?{code:error.code,message:error.detail}:{code:'ACCEPTANCE_FAILED',message:'本地验收未完成'},operations,trace:this.#trace};}
  }

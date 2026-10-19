@@ -55,6 +55,7 @@ export class AcceptanceScope {
     if(action==='books.setBaseCurrency'||action==='books.quit'||action.startsWith('connection.'))deny('全局配置与现有成员不属于测试资源');
     const root=object(input),prefix=this.manifest.prefix;
     if(typeof root.requestId!=='string'||!root.requestId.startsWith(prefix))deny('验收请求必须沿用本次稳定命名编号');
+    if(root.requestId.startsWith(prefix+':cleanup-')&&action==='savings.delete'&&root.deleteBills!==false)deny('清理计划必须保留关联账单，只由已证明的新测试账本负责删除');
     const target=this.target(action);
     const named=(value:unknown)=>{if(typeof value!=='string'||!value.startsWith(prefix))deny('新建或改名必须使用本次测试前缀');};
     const walk=(value:unknown,key:string):void=>{
