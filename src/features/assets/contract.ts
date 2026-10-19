@@ -10,7 +10,7 @@ export const debtFinishSchema = z.strictObject({ id: assetIdSchema, finished: z.
 export type DebtFinishInput = z.infer<typeof debtFinishSchema>;
 export interface AssetCurrencySummary { currency: string; assets: string; liabilities: string; borrowed: string; lent: string; net: string; installments: string }
 export interface AssetSummary { currencies: AssetCurrencySummary[]; complete: boolean; incompleteReasons: string[] }
-export interface AssetView { id: string; name: string; type: number; subtype: number; currency: string; money: string; status: number; visible: boolean; finished: boolean; inCount: boolean; groupId: string | null; remark: string; editVersion: string; knownType: boolean; enteredBalance?: string; installmentMoney?: string;
+export interface AssetView { id: string; name: string; type: number; subtype: number; currency: string; money: string; status: number; visible: boolean; finished: boolean; inCount: boolean; groupId: string | null; remark: string; editVersion: string; knownType: boolean; enteredBalance?: string; installmentMoney?: string; icon?: string; color?: string;
   credit?: { statementDay: number | null; paymentRule: string | null; limit: string; statementIncludesPrevious: boolean; sharedLimitAssetId: string | null } }
 export interface AssetListView { items: AssetView[]; groups: { id: string; name: string; sort: number }[]; summary: AssetSummary; freshness: Freshness; nextCursor: string | null; problem?: Problem }
 export const assetListSchema = z.strictObject({ status: z.union([z.literal(0), z.literal(2)]).default(0), includeInstallments: z.boolean().default(true), limit: z.int().min(1).max(200).default(100), cursor: z.string().max(4096).optional() });

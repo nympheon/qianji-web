@@ -3,6 +3,34 @@ import { freshness, mockReadApp, ready } from './read-fixtures';
 import { join } from 'node:path';
 const asset = { id: '10', name: '测试现金', type: 1, subtype: 11, currency: 'CNY', money: '100', status: 0, visible: true, finished: false, inCount: true, groupId: null, remark: '', editVersion: 'a'.repeat(64), knownType: true };
 const list = { items: [asset], groups: [], nextCursor: null, summary: { currencies: [{ currency: 'CNY', assets: '100', liabilities: '0', borrowed: '0', lent: '0', net: '100', installments: '0' }], complete: true, incompleteReasons: [] }, freshness };
+
+test('shows official bank and Mastercard artwork with a safe fallback when an icon fails', async ({ page }, testInfo) => {
+  await mockReadApp(page);
+  const mastercard = 'http://res.qianjiapp.com/bank_wsd.png', postal = 'http://res3.qianjiapp.com/ic_bank_youzheng2.png';
+  const items = [{ ...asset, id: '11', name: 'Mastercard', type: 2, subtype: 21, icon: mastercard, color: 'FFFFFF' }, { ...asset, id: '12', name: '邮储银行卡', subtype: 12, icon: postal, color: '008E56' }, { ...asset, id: '13', name: '图标失效卡', type: 2, subtype: 21, icon: 'http://res.qianjiapp.com/missing.png', color: 'not-a-color' }, asset];
+  const references: string[] = [];
+  await page.route('**/api/actions', async (route) => {
+    const { action } = route.request().postDataJSON();
+    if (action === 'assets.list') return route.fulfill({ json: ready({ ...list, items }, freshness) });
+    return route.fallback();
+  });
+  await page.route('**/api/images?*', async (route) => {
+    const url = new URL(route.request().url());
+    expect(url.origin).toBe('http://127.0.0.1:5173'); expect(url.searchParams.get('purpose')).toBe('asset');
+    const reference = url.searchParams.get('reference')!; references.push(reference);
+    if (reference.endsWith('missing.png')) return route.fulfill({ status: 502 });
+    return route.fulfill({ contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==', 'base64') });
+  });
+  await page.goto('/assets');
+  await expect(page.getByRole('img', { name: 'Mastercard 图标', exact: true })).toBeVisible();
+  await expect(page.getByRole('img', { name: '邮储银行卡 图标', exact: true })).toBeVisible();
+  await expect.poll(() => references.includes(mastercard) && references.includes(postal)).toBe(true);
+  const failed = page.getByRole('button', { name: '查看资产 图标失效卡', exact: true });
+  await expect(failed.locator('img')).toHaveCount(0); await expect(failed.locator('svg')).toHaveCount(1);
+  await expect(page.getByRole('button', { name: '查看资产 测试现金', exact: true }).locator('svg')).toHaveCount(1);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  if (process.env.QIANJI_VISUAL_DIR) await page.screenshot({ path: join(process.env.QIANJI_VISUAL_DIR, `${testInfo.project.name}-asset-icons.png`), fullPage: true });
+});
 test('creates an asset with a persistent request key and restores the same unknown operation', async ({ page }, testInfo) => {
   await mockReadApp(page); let saved: unknown = null, sent = 0, received: unknown = null;
   await page.route('**/api/actions', async (route) => {
